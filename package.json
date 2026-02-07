@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./api": {
+      "types": "./dist/api/index.d.ts",
+      "import": "./dist/api/index.js",
+      "require": "./dist/api/index.cjs"
     }
   },
   "files": [
@@ -44,12 +49,21 @@
   "engines": {
     "node": ">=18"
   },
+  "peerDependencies": {
+    "hono": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "hono": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
     "@types/bun": "^1.2.5",
     "@types/proper-lockfile": "^4.1.4",
+    "hono": "^4.7.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   }
