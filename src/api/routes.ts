@@ -368,10 +368,12 @@ export function buildRoutes(state: ApiState) {
     if (!body.subject || !body.description) {
       return c.json({ error: "subject and description are required" }, 400);
     }
+    if (body.owner) validateName(body.owner, "owner");
     const taskId = await ctrl.createTask(body);
     const task = await ctrl.tasks.get(taskId);
     return c.json(task, 201);
   });
+
 
   api.get("/tasks/:id", async (c) => {
     const ctrl = getController(state);
