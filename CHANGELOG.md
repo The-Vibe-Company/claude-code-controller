@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.2.0...claude-code-controller-v0.3.0) (2026-02-07)
+
+
+### Features
+
+* e2e permissions plans ([#9](https://github.com/The-Vibe-Company/claude-code-controller/issues/9)) ([53b38bf](https://github.com/The-Vibe-Company/claude-code-controller/commit/53b38bfd4e773454492a3fea10e8db7ffd3fd768))
+
 ## [0.2.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.1.1...claude-code-controller-v0.2.0) (2026-02-07)
 
 
