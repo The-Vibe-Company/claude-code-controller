@@ -1,22 +1,26 @@
 import { readFile, writeFile, readdir, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { tasksDir, taskPath } from "./paths.js";
+import { defaultPaths, type ClaudePaths } from "./paths.js";
 import type { TaskFile, TaskStatus, Logger } from "./types.js";
 
 export class TaskManager {
   private nextId = 1;
+  private paths: ClaudePaths;
 
   constructor(
     private teamName: string,
-    private log: Logger
-  ) {}
+    private log: Logger,
+    paths: ClaudePaths = defaultPaths
+  ) {
+    this.paths = paths;
+  }
 
   /**
    * Initialize the task directory. Call after team creation.
    * Also scans for existing tasks to set the next ID correctly.
    */
   async init(): Promise<void> {
-    const dir = tasksDir(this.teamName);
+    const dir = this.paths.tasksDir(this.teamName);
     await mkdir(dir, { recursive: true });
 
     // Scan existing tasks to find the max ID
@@ -59,7 +63,7 @@ export class TaskManager {
    * Get a task by ID.
    */
   async get(taskId: string): Promise<TaskFile> {
-    const path = taskPath(this.teamName, taskId);
+    const path = this.paths.taskPath(this.teamName, taskId);
     if (!existsSync(path)) {
       throw new Error(`Task #${taskId} not found`);
     }
@@ -116,7 +120,7 @@ export class TaskManager {
    * List all tasks.
    */
   async list(): Promise<TaskFile[]> {
-    const dir = tasksDir(this.teamName);
+    const dir = this.paths.tasksDir(this.teamName);
     if (!existsSync(dir)) return [];
 
     const files = await readdir(dir);
@@ -124,7 +128,10 @@ export class TaskManager {
 
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
-      const raw = await readFile(taskPath(this.teamName, file.replace(".json", "")), "utf-8");
+      const raw = await readFile(
+        this.paths.taskPath(this.teamName, file.replace(".json", "")),
+        "utf-8"
+      );
       tasks.push(JSON.parse(raw));
     }
 
@@ -135,7 +142,7 @@ export class TaskManager {
    * Delete a task file.
    */
   async delete(taskId: string): Promise<void> {
-    const path = taskPath(this.teamName, taskId);
+    const path = this.paths.taskPath(this.teamName, taskId);
     if (existsSync(path)) {
       await rm(path);
       this.log.debug(`Deleted task #${taskId}`);
@@ -166,7 +173,7 @@ export class TaskManager {
   }
 
   private async writeTask(task: TaskFile): Promise<void> {
-    const path = taskPath(this.teamName, task.id);
+    const path = this.paths.taskPath(this.teamName, task.id);
     await writeFile(path, JSON.stringify(task, null, 4), "utf-8");
   }
 }

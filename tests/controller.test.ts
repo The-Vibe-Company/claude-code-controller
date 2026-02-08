@@ -1,25 +1,46 @@
 import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 const tempBase = mkdtempSync(join(tmpdir(), "cc-ctrl-test-"));
 
-mock.module("../src/paths.js", () => ({
-  teamsDir: () => join(tempBase, "teams"),
-  teamDir: (name: string) => join(tempBase, "teams", name),
-  teamConfigPath: (name: string) =>
-    join(tempBase, "teams", name, "config.json"),
-  inboxesDir: (name: string) => join(tempBase, "teams", name, "inboxes"),
-  inboxPath: (name: string, agent: string) =>
-    join(tempBase, "teams", name, "inboxes", `${agent}.json`),
-  tasksBaseDir: () => join(tempBase, "tasks"),
-  tasksDir: (name: string) => join(tempBase, "tasks", name),
-  taskPath: (name: string, id: string) =>
-    join(tempBase, "tasks", name, `${id}.json`),
-  _tempBase: tempBase,
-}));
+mock.module("../src/paths.js", () => {
+  const makePaths = (base: string) => ({
+    claudeDir: base,
+    teamsDir: () => join(base, "teams"),
+    teamDir: (name: string) => join(base, "teams", name),
+    teamConfigPath: (name: string) =>
+      join(base, "teams", name, "config.json"),
+    inboxesDir: (name: string) => join(base, "teams", name, "inboxes"),
+    inboxPath: (name: string, agent: string) =>
+      join(base, "teams", name, "inboxes", `${agent}.json`),
+    tasksBaseDir: () => join(base, "tasks"),
+    tasksDir: (name: string) => join(base, "tasks", name),
+    taskPath: (name: string, id: string) =>
+      join(base, "tasks", name, `${id}.json`),
+  });
+
+  const defaultPaths = makePaths(tempBase);
+  const createPaths = (opts?: { claudeDir?: string }) =>
+    makePaths(opts?.claudeDir ?? tempBase);
+
+  return {
+    createPaths,
+    defaultPaths,
+    teamsDir: defaultPaths.teamsDir,
+    teamDir: defaultPaths.teamDir,
+    teamConfigPath: defaultPaths.teamConfigPath,
+    inboxesDir: defaultPaths.inboxesDir,
+    inboxPath: defaultPaths.inboxPath,
+    tasksBaseDir: defaultPaths.tasksBaseDir,
+    tasksDir: defaultPaths.tasksDir,
+    taskPath: defaultPaths.taskPath,
+    _tempBase: tempBase,
+  };
+});
 
 const { ClaudeCodeController } = await import("../src/controller.js");
 const { writeInbox, readInbox } = await import("../src/inbox.js");
@@ -46,6 +67,26 @@ describe("ClaudeCodeController", () => {
     expect(config.name).toBe(teamName);
     expect(config.members).toHaveLength(1);
     expect(config.members[0].name).toBe("controller");
+  });
+
+  it("supports custom claudeDir", async () => {
+    const { _tempBase } = await import("../src/paths.js");
+    const claudeDir = join(_tempBase, "alt-claude");
+
+    const team = `dir-${randomUUID().slice(0, 8)}`;
+    const ctrl2 = new ClaudeCodeController({
+      teamName: team,
+      claudeDir,
+      logLevel: "silent",
+    });
+    await ctrl2.init();
+
+    expect(
+      existsSync(join(claudeDir, "teams", team, "config.json"))
+    ).toBe(true);
+    expect(existsSync(join(claudeDir, "tasks", team))).toBe(true);
+
+    await ctrl2.shutdown();
   });
 
   it("creates tasks", async () => {

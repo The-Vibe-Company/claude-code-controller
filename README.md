@@ -171,6 +171,30 @@ const app = createApi(ctrl); // pre-initialized mode
 
 <br />
 
+### SWARM Bridge API (claude-code-service compatible)
+
+If you're using the SWARM Python bridge (`swarm.bridges.claude_code`), you can expose
+bridge-compatible endpoints (`/agents/spawn`, `/agents/:id/ask`, `/events`, `/governance/respond`, etc.)
+directly from this package:
+
+```typescript
+import { createSwarmBridgeApi } from "claude-code-controller/api";
+import { serve } from "bun"; // or any Hono-compatible runtime
+
+const app = createSwarmBridgeApi({
+  controllerOptions: {
+    teamName: "my-team",
+    cwd: "/path/to/project",
+    claudeDir: "/path/to/.claude",
+  },
+  apiKey: process.env.SWARM_BRIDGE_API_KEY,
+});
+
+serve({ port: 3100, fetch: app.fetch.bind(app) });
+```
+
+<br />
+
 ### Endpoints
 
 #### Session
@@ -230,7 +254,7 @@ const app = createApi(ctrl); // pre-initialized mode
 ```bash
 curl -X POST http://localhost:3000/session/init \
   -H "Content-Type: application/json" \
-  -d '{"teamName": "my-team", "cwd": "/path/to/project"}'
+  -d '{"teamName": "my-team", "cwd": "/path/to/project", "claudeDir": "/path/to/.claude"}'
 ```
 
 **Spawn an agent:**
@@ -293,6 +317,7 @@ import { ClaudeCodeController } from "claude-code-controller";
 const ctrl = new ClaudeCodeController({
   teamName: "my-team",        // auto-generated if omitted
   cwd: "/path/to/project",    // working directory for agents
+  claudeDir: "/path/to/.claude", // where teams/inboxes/tasks live (default: ~/.claude)
   claudeBinary: "claude",     // path to CLI binary
   env: {                      // default env vars for all agents
     ANTHROPIC_BASE_URL: "https://your-proxy.example.com",

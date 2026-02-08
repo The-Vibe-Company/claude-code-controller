@@ -1,18 +1,20 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { teamDir, teamConfigPath, inboxesDir, tasksDir } from "./paths.js";
+import { defaultPaths, type ClaudePaths } from "./paths.js";
 import type { TeamConfig, TeamMember, Logger } from "./types.js";
 
 export class TeamManager {
   readonly teamName: string;
   readonly sessionId: string;
   private log: Logger;
+  private paths: ClaudePaths;
 
-  constructor(teamName: string, logger: Logger) {
+  constructor(teamName: string, logger: Logger, paths: ClaudePaths = defaultPaths) {
     this.teamName = teamName;
     this.sessionId = randomUUID();
     this.log = logger;
+    this.paths = paths;
   }
 
   /**
@@ -23,9 +25,9 @@ export class TeamManager {
     description?: string;
     cwd?: string;
   }): Promise<TeamConfig> {
-    const dir = teamDir(this.teamName);
-    const inboxDir = inboxesDir(this.teamName);
-    const taskDir = tasksDir(this.teamName);
+    const dir = this.paths.teamDir(this.teamName);
+    const inboxDir = this.paths.inboxesDir(this.teamName);
+    const taskDir = this.paths.tasksDir(this.teamName);
 
     await mkdir(dir, { recursive: true });
     await mkdir(inboxDir, { recursive: true });
@@ -84,7 +86,7 @@ export class TeamManager {
    * Read the current team config.
    */
   async getConfig(): Promise<TeamConfig> {
-    const path = teamConfigPath(this.teamName);
+    const path = this.paths.teamConfigPath(this.teamName);
     if (!existsSync(path)) {
       throw new Error(
         `Team "${this.teamName}" does not exist (no config.json)`
@@ -98,15 +100,15 @@ export class TeamManager {
    * Check if the team already exists on disk.
    */
   exists(): boolean {
-    return existsSync(teamConfigPath(this.teamName));
+    return existsSync(this.paths.teamConfigPath(this.teamName));
   }
 
   /**
    * Destroy the team: remove all team directories and task directories.
    */
   async destroy(): Promise<void> {
-    const dir = teamDir(this.teamName);
-    const taskDir = tasksDir(this.teamName);
+    const dir = this.paths.teamDir(this.teamName);
+    const taskDir = this.paths.tasksDir(this.teamName);
 
     if (existsSync(dir)) {
       await rm(dir, { recursive: true, force: true });
@@ -118,7 +120,7 @@ export class TeamManager {
   }
 
   private async writeConfig(config: TeamConfig): Promise<void> {
-    const path = teamConfigPath(this.teamName);
+    const path = this.paths.teamConfigPath(this.teamName);
     await writeFile(path, JSON.stringify(config, null, 2), "utf-8");
   }
 }

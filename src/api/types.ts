@@ -5,6 +5,7 @@ import type { AgentType, LogLevel, TaskStatus } from "../types.js";
 export interface InitSessionBody {
   teamName?: string;
   cwd?: string;
+  claudeDir?: string;
   claudeBinary?: string;
   env?: Record<string, string>;
   logLevel?: LogLevel;

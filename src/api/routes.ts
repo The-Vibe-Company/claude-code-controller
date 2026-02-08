@@ -117,6 +117,7 @@ export function buildRoutes(state: ApiState) {
       const controller = new ClaudeCodeController({
         teamName: body.teamName,
         cwd: body.cwd,
+        claudeDir: body.claudeDir,
         claudeBinary: body.claudeBinary,
         env: body.env,
         logLevel: body.logLevel ?? "info",

@@ -1,4 +1,5 @@
 import { readUnread, parseMessage } from "./inbox.js";
+import { defaultPaths, type ClaudePaths } from "./paths.js";
 import type { InboxMessage, Logger, StructuredMessage } from "./types.js";
 
 export interface PollEvent {
@@ -17,17 +18,19 @@ export class InboxPoller {
   private timer: ReturnType<typeof setInterval> | null = null;
   private log: Logger;
   private handlers: ((events: PollEvent[]) => void)[] = [];
+  private paths: ClaudePaths;
 
   constructor(
     teamName: string,
     agentName: string,
     logger: Logger,
-    opts?: { pollInterval?: number }
+    opts?: { pollInterval?: number; paths?: ClaudePaths }
   ) {
     this.teamName = teamName;
     this.agentName = agentName;
     this.log = logger;
     this.interval = opts?.pollInterval ?? 500;
+    this.paths = opts?.paths ?? defaultPaths;
   }
 
   /**
@@ -64,7 +67,9 @@ export class InboxPoller {
    */
   async poll(): Promise<PollEvent[]> {
     try {
-      const unread = await readUnread(this.teamName, this.agentName);
+      const unread = await readUnread(this.teamName, this.agentName, {
+        paths: this.paths,
+      });
       if (unread.length === 0) return [];
 
       const events: PollEvent[] = unread.map((raw) => ({

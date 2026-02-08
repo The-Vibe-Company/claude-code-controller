@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { lock, unlock } from "proper-lockfile";
-import { inboxPath } from "./paths.js";
+import { lock } from "proper-lockfile";
+import { defaultPaths, type ClaudePaths } from "./paths.js";
 import type { InboxMessage, Logger, StructuredMessage } from "./types.js";
 
 const LOCK_OPTIONS = {
@@ -31,9 +31,11 @@ export async function writeInbox(
   teamName: string,
   agentName: string,
   message: Omit<InboxMessage, "read">,
-  logger?: Logger
+  logger?: Logger,
+  opts?: { paths?: ClaudePaths }
 ): Promise<void> {
-  const path = inboxPath(teamName, agentName);
+  const paths = opts?.paths ?? defaultPaths;
+  const path = paths.inboxPath(teamName, agentName);
   await ensureFile(path);
 
   let release: (() => Promise<void>) | undefined;
@@ -54,9 +56,11 @@ export async function writeInbox(
  */
 export async function readInbox(
   teamName: string,
-  agentName: string
+  agentName: string,
+  opts?: { paths?: ClaudePaths }
 ): Promise<InboxMessage[]> {
-  const path = inboxPath(teamName, agentName);
+  const paths = opts?.paths ?? defaultPaths;
+  const path = paths.inboxPath(teamName, agentName);
   if (!existsSync(path)) return [];
 
   const raw = await readFile(path, "utf-8");
@@ -68,9 +72,11 @@ export async function readInbox(
  */
 export async function readUnread(
   teamName: string,
-  agentName: string
+  agentName: string,
+  opts?: { paths?: ClaudePaths }
 ): Promise<InboxMessage[]> {
-  const path = inboxPath(teamName, agentName);
+  const paths = opts?.paths ?? defaultPaths;
+  const path = paths.inboxPath(teamName, agentName);
   if (!existsSync(path)) return [];
 
   let release: (() => Promise<void>) | undefined;

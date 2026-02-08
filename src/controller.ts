@@ -8,6 +8,7 @@ import { InboxPoller, type PollEvent } from "./inbox-poller.js";
 import { writeInbox, readUnread, parseMessage } from "./inbox.js";
 import { AgentHandle, type AgentController } from "./agent-handle.js";
 import { createLogger } from "./logger.js";
+import { createPaths, type ClaudePaths } from "./paths.js";
 import type {
   ControllerOptions,
   ControllerEvents,
@@ -45,6 +46,7 @@ export class ClaudeCodeController
   private cwd: string;
   private claudeBinary: string;
   private defaultEnv: Record<string, string>;
+  private paths: ClaudePaths;
   private colorIndex = 0;
   private initialized = false;
 
@@ -57,13 +59,16 @@ export class ClaudeCodeController
     this.defaultEnv = opts?.env || {};
     this.log = opts?.logger || createLogger(opts?.logLevel ?? "info");
 
-    this.team = new TeamManager(this.teamName, this.log);
-    this.tasks = new TaskManager(this.teamName, this.log);
+    this.paths = createPaths({ claudeDir: opts?.claudeDir });
+
+    this.team = new TeamManager(this.teamName, this.log, this.paths);
+    this.tasks = new TaskManager(this.teamName, this.log, this.paths);
     this.processes = new ProcessManager(this.log);
     this.poller = new InboxPoller(
       this.teamName,
       "controller",
-      this.log
+      this.log,
+      { paths: this.paths }
     );
 
     // Wire up poller events to the EventEmitter
@@ -217,7 +222,8 @@ export class ClaudeCodeController
         timestamp: new Date().toISOString(),
         summary,
       },
-      this.log
+      this.log,
+      { paths: this.paths }
     );
   }
 
@@ -266,7 +272,9 @@ export class ClaudeCodeController
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
-      const unread = await readUnread(this.teamName, "controller");
+      const unread = await readUnread(this.teamName, "controller", {
+        paths: this.paths,
+      });
       const fromAgent = unread.filter((m) => m.from === agentName);
 
       if (fromAgent.length > 0) {
@@ -317,7 +325,9 @@ export class ClaudeCodeController
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
-      const unread = await readUnread(this.teamName, "controller");
+      const unread = await readUnread(this.teamName, "controller", {
+        paths: this.paths,
+      });
       const meaningful = unread.filter((m) => {
         const parsed = parseMessage(m);
         return parsed.type !== "idle_notification";
