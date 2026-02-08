@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.3.0...claude-code-controller-v0.4.0) (2026-02-08)
+
+
+### Features
+
+* simplified claude() API, unified endpoints, and landing page README ([#12](https://github.com/The-Vibe-Company/claude-code-controller/issues/12)) ([aa2e535](https://github.com/The-Vibe-Company/claude-code-controller/commit/aa2e535fe0a83b726ff2a2c08359e55973a9136b))
+
 ## [0.3.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.2.0...claude-code-controller-v0.3.0) (2026-02-07)
 
 
