@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.4.0...claude-code-controller-v0.5.0) (2026-02-08)
+
+
+### Features
+
+* protocol conformance fixes and improved E2E tests ([#14](https://github.com/The-Vibe-Company/claude-code-controller/issues/14)) ([51b13b9](https://github.com/The-Vibe-Company/claude-code-controller/commit/51b13b9d647de6c92881b1abb61161f39152e0ef))
+
 ## [0.4.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.3.0...claude-code-controller-v0.4.0) (2026-02-08)
 
 
