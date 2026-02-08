@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.5.0...claude-code-controller-v0.5.1) (2026-02-08)
+
+
+### Bug Fixes
+
+* auto-accept workspace trust prompt and handle idle in ask() ([#16](https://github.com/The-Vibe-Company/claude-code-controller/issues/16)) ([ded31b4](https://github.com/The-Vibe-Company/claude-code-controller/commit/ded31b4cf9900f7ed8c3ff373ef16ae8f1e8a886))
+
 ## [0.5.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.4.0...claude-code-controller-v0.5.0) (2026-02-08)
 
 

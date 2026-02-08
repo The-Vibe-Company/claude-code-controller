@@ -1,6 +1,6 @@
 {
   "name": "claude-code-controller",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Programmatic API to pilot Claude Code agents via the internal teams/inbox/tasks filesystem protocol",
   "type": "module",
   "main": "./dist/index.cjs",
