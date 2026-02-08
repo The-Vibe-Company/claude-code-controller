@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.5.1...claude-code-controller-v0.6.0) (2026-02-08)
+
+
+### Features
+
+* trigger release for statusline capture ([#19](https://github.com/The-Vibe-Company/claude-code-controller/issues/19)) ([cedc9df](https://github.com/The-Vibe-Company/claude-code-controller/commit/cedc9dfb7445344bdb43a1a756f1d2e538e08c76))
+
 ## [0.5.1](https://github.com/The-Vibe-Company/claude-code-controller/compare/claude-code-controller-v0.5.0...claude-code-controller-v0.5.1) (2026-02-08)
 
 
