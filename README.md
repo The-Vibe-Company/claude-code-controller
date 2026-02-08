@@ -171,6 +171,30 @@ const app = createApi(ctrl); // pre-initialized mode
 
 <br />
 
+### SWARM Bridge API (claude-code-service compatible)
+
+If you're using the SWARM Python bridge (`swarm.bridges.claude_code`), you can expose
+bridge-compatible endpoints (`/agents/spawn`, `/agents/:id/ask`, `/events`, `/governance/respond`, etc.)
+directly from this package:
+
+```typescript
+import { createSwarmBridgeApi } from "claude-code-controller/api";
+import { serve } from "bun"; // or any Hono-compatible runtime
+
+const app = createSwarmBridgeApi({
+  controllerOptions: {
+    teamName: "my-team",
+    cwd: "/path/to/project",
+    claudeDir: "/path/to/.claude",
+  },
+  apiKey: process.env.SWARM_BRIDGE_API_KEY,
+});
+
+serve({ port: 3100, fetch: app.fetch.bind(app) });
+```
+
+<br />
+
 ### Endpoints
 
 #### Session

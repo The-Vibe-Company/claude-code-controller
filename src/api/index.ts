@@ -74,6 +74,9 @@ export function createApi(
   return app;
 }
 
+// SWARM Claude Code bridge-compatible API (see swarm/bridges/claude-code-service)
+export { createSwarmBridgeApi } from "./swarm-bridge.js";
+
 // Re-export types for consumers
 export { ActionTracker } from "./action-tracker.js";
 
