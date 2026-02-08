@@ -230,7 +230,7 @@ const app = createApi(ctrl); // pre-initialized mode
 ```bash
 curl -X POST http://localhost:3000/session/init \
   -H "Content-Type: application/json" \
-  -d '{"teamName": "my-team", "cwd": "/path/to/project"}'
+  -d '{"teamName": "my-team", "cwd": "/path/to/project", "claudeDir": "/path/to/.claude"}'
 ```
 
 **Spawn an agent:**
@@ -293,6 +293,7 @@ import { ClaudeCodeController } from "claude-code-controller";
 const ctrl = new ClaudeCodeController({
   teamName: "my-team",        // auto-generated if omitted
   cwd: "/path/to/project",    // working directory for agents
+  claudeDir: "/path/to/.claude", // where teams/inboxes/tasks live (default: ~/.claude)
   claudeBinary: "claude",     // path to CLI binary
   env: {                      // default env vars for all agents
     ANTHROPIC_BASE_URL: "https://your-proxy.example.com",

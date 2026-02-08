@@ -169,6 +169,11 @@ export interface ControllerOptions {
   teamName?: string;
   cwd?: string;
   claudeBinary?: string; // path to claude binary, default "claude"
+  /**
+   * Override where Claude Code stores teams/inboxes/tasks.
+   * Defaults to "~/.claude".
+   */
+  claudeDir?: string;
   logger?: Logger;
   /** Default environment variables for all spawned agents */
   env?: Record<string, string>;

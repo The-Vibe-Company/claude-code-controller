@@ -8,20 +8,40 @@ import { tmpdir } from "node:os";
 const tempBase = mkdtempSync(join(tmpdir(), "cc-test-"));
 
 // We need to mock the paths module to use temp directories
-mock.module("../src/paths.js", () => ({
-  teamsDir: () => join(tempBase, "teams"),
-  teamDir: (name: string) => join(tempBase, "teams", name),
-  teamConfigPath: (name: string) =>
-    join(tempBase, "teams", name, "config.json"),
-  inboxesDir: (name: string) => join(tempBase, "teams", name, "inboxes"),
-  inboxPath: (name: string, agent: string) =>
-    join(tempBase, "teams", name, "inboxes", `${agent}.json`),
-  tasksBaseDir: () => join(tempBase, "tasks"),
-  tasksDir: (name: string) => join(tempBase, "tasks", name),
-  taskPath: (name: string, id: string) =>
-    join(tempBase, "tasks", name, `${id}.json`),
-  _tempBase: tempBase,
-}));
+mock.module("../src/paths.js", () => {
+  const makePaths = (base: string) => ({
+    claudeDir: base,
+    teamsDir: () => join(base, "teams"),
+    teamDir: (name: string) => join(base, "teams", name),
+    teamConfigPath: (name: string) =>
+      join(base, "teams", name, "config.json"),
+    inboxesDir: (name: string) => join(base, "teams", name, "inboxes"),
+    inboxPath: (name: string, agent: string) =>
+      join(base, "teams", name, "inboxes", `${agent}.json`),
+    tasksBaseDir: () => join(base, "tasks"),
+    tasksDir: (name: string) => join(base, "tasks", name),
+    taskPath: (name: string, id: string) =>
+      join(base, "tasks", name, `${id}.json`),
+  });
+
+  const defaultPaths = makePaths(tempBase);
+  const createPaths = (opts?: { claudeDir?: string }) =>
+    makePaths(opts?.claudeDir ?? tempBase);
+
+  return {
+    createPaths,
+    defaultPaths,
+    teamsDir: defaultPaths.teamsDir,
+    teamDir: defaultPaths.teamDir,
+    teamConfigPath: defaultPaths.teamConfigPath,
+    inboxesDir: defaultPaths.inboxesDir,
+    inboxPath: defaultPaths.inboxPath,
+    tasksBaseDir: defaultPaths.tasksBaseDir,
+    tasksDir: defaultPaths.tasksDir,
+    taskPath: defaultPaths.taskPath,
+    _tempBase: tempBase,
+  };
+});
 
 const { TeamManager } = await import("../src/team-manager.js");
 const { silentLogger } = await import("../src/logger.js");
