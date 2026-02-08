@@ -59,6 +59,10 @@ class ValidationError extends Error {
   }
 }
 
+function isNotFoundError(err: unknown): boolean {
+  return err instanceof Error && /not found/i.test(err.message);
+}
+
 function validateAgentId(value: string, field = "agent_id"): void {
   if (!SAFE_AGENT_ID_RE.test(value)) {
     throw new ValidationError(
@@ -372,7 +376,15 @@ export function createSwarmBridgeApi(opts?: SwarmBridgeOptions): Hono {
     const taskId = c.req.param("id");
     validateTaskId(taskId);
     const ctrl = await ensureController(state);
-    const task = await ctrl.tasks.get(taskId);
+    let task: TaskFile;
+    try {
+      task = await ctrl.tasks.get(taskId);
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        return c.json({ error: "Task not found" }, 404);
+      }
+      throw err;
+    }
     return c.json(taskToResponse(task));
   });
 
