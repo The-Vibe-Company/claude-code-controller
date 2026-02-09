@@ -12,7 +12,7 @@
   <a href="https://www.npmjs.com/package/the-vibe-companion"><img src="https://img.shields.io/npm/v/the-vibe-companion.svg" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/the-vibe-companion"><img src="https://img.shields.io/npm/dm/the-vibe-companion.svg" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" /></a>
-  <a href="https://github.com/The-Vibe-Company/claude-code-controller/stargazers"><img src="https://img.shields.io/github/stars/The-Vibe-Company/claude-code-controller.svg?style=social" alt="GitHub Stars" /></a>
+  <a href="https://github.com/The-Vibe-Company/companion/stargazers"><img src="https://img.shields.io/github/stars/The-Vibe-Company/companion.svg?style=social" alt="GitHub Stars" /></a>
 </p>
 
 <br />
@@ -30,12 +30,6 @@ bunx the-vibe-companion
 ```
 
 That's it. Open [http://localhost:3456](http://localhost:3456) and start coding.
-
-You can also use the shorter alias:
-
-```bash
-bunx vibe
-```
 
 <br />
 
@@ -120,8 +114,8 @@ The complete protocol specification is documented in [`WEBSOCKET_PROTOCOL_REVERS
 ## Development
 
 ```bash
-git clone https://github.com/The-Vibe-Company/claude-code-controller.git
-cd claude-code-controller/web
+git clone https://github.com/The-Vibe-Company/companion.git
+cd companion/web
 bun install
 bun run dev          # server on :3456 + Vite on :5174
 ```

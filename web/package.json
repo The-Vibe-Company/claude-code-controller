@@ -6,8 +6,7 @@
   "license": "MIT",
   "author": "The Vibe Company",
   "bin": {
-    "the-vibe-companion": "./bin/cli.ts",
-    "vibe": "./bin/cli.ts"
+    "the-vibe-companion": "./bin/cli.ts"
   },
   "files": [
     "bin/",
