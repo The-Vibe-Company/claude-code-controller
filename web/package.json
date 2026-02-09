@@ -1,6 +1,6 @@
 {
   "name": "the-vibe-companion",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "description": "Web UI for launching and interacting with Claude Code agents",
   "license": "MIT",
