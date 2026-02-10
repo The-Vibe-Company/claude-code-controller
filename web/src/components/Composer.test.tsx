@@ -317,6 +317,70 @@ describe("Composer slash menu", () => {
   });
 });
 
+// ─── Drag and drop ───────────────────────────────────────────────────────────
+
+describe("Composer drag and drop", () => {
+  it("prevents default on dragover so the browser does not navigate", () => {
+    const { container } = render(<Composer sessionId="s1" />);
+    const card = container.querySelector("[class*='rounded-\\[14px\\]']")!;
+
+    const dragOverEvent = new Event("dragover", { bubbles: true, cancelable: true });
+    const prevented = !card.dispatchEvent(dragOverEvent);
+
+    expect(prevented).toBe(true);
+  });
+
+  it("adds an image attachment when an image file is dropped", async () => {
+    const { container } = render(<Composer sessionId="s1" />);
+    const card = container.querySelector("[class*='rounded-\\[14px\\]']")!;
+
+    const file = new File(["fake-image-data"], "photo.png", { type: "image/png" });
+
+    // Mock FileReader
+    const originalFileReader = globalThis.FileReader;
+    const mockReadResult = "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh";
+    class MockFileReader {
+      result = mockReadResult;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      readAsDataURL() {
+        setTimeout(() => this.onload?.(), 0);
+      }
+    }
+    globalThis.FileReader = MockFileReader as unknown as typeof FileReader;
+
+    fireEvent.drop(card, {
+      dataTransfer: { files: [file] },
+    });
+
+    // Wait for async file reading
+    await vi.waitFor(() => {
+      // The image thumbnail should appear
+      const img = container.querySelector("img[alt='photo.png']");
+      expect(img).toBeTruthy();
+    });
+
+    globalThis.FileReader = originalFileReader;
+  });
+
+  it("ignores non-image files on drop", async () => {
+    const { container } = render(<Composer sessionId="s1" />);
+    const card = container.querySelector("[class*='rounded-\\[14px\\]']")!;
+
+    const file = new File(["text content"], "readme.txt", { type: "text/plain" });
+
+    fireEvent.drop(card, {
+      dataTransfer: { files: [file] },
+    });
+
+    // Wait a tick to ensure any async processing completes
+    await new Promise((r) => setTimeout(r, 10));
+
+    const img = container.querySelector("img");
+    expect(img).toBeNull();
+  });
+});
+
 // ─── Disabled state ──────────────────────────────────────────────────────────
 
 describe("Composer disabled state", () => {

@@ -34,6 +34,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -221,6 +222,36 @@ export function Composer({ sessionId }: { sessionId: string }) {
     }
   }
 
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer?.files;
+    if (!files) return;
+    const newImages: ImageAttachment[] = [];
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      const { base64, mediaType } = await readFileAsBase64(file);
+      newImages.push({ name: file.name, base64, mediaType });
+    }
+    if (newImages.length > 0) {
+      setImages((prev) => [...prev, ...newImages]);
+    }
+  }
+
   function toggleMode() {
     if (!isConnected) return;
     const store = useStore.getState();
@@ -276,8 +307,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
         />
 
         {/* Unified input card */}
-        <div className={`relative bg-cc-input-bg border rounded-[14px] overflow-visible transition-colors ${
-          isPlan
+        <div
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`relative bg-cc-input-bg border rounded-[14px] overflow-visible transition-colors ${
+          isDragOver
+            ? "border-cc-primary border-dashed bg-cc-primary/5"
+            : isPlan
             ? "border-cc-primary/40"
             : "border-cc-border focus-within:border-cc-primary/30"
         }`}>
