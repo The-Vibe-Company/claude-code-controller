@@ -54,6 +54,14 @@ if (process.env.NODE_ENV === "production") {
   app.get("/*", serveStatic({ path: resolve(distDir, "index.html") }));
 }
 
+// Security check: warn if binding to non-loopback interface
+if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+  console.warn("\n⚠️  WARNING: Server is binding to a non-loopback interface!");
+  console.warn(`   Host: ${host}`);
+  console.warn("   This exposes powerful endpoints (session creation, filesystem access) without authentication.");
+  console.warn("   Only use this in trusted networks or behind proper authentication/firewall.\n");
+}
+
 const server = Bun.serve<SocketData>({
   hostname: host,
   port,
@@ -114,9 +122,17 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://${host}:${server.port}`);
-console.log(`  CLI WebSocket:     ws://${host}:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://${host}:${server.port}/ws/browser/:sessionId`);
+// Determine the display host for console output
+// When binding to 0.0.0.0 or ::, show localhost as the connectable address
+let displayHost = host;
+if (host === "0.0.0.0" || host === "::" || host === "[::]") {
+  displayHost = "localhost";
+  console.log(`Server bound to ${host}:${server.port} (all interfaces)`);
+}
+
+console.log(`Server running on http://${displayHost}:${server.port}`);
+console.log(`  CLI WebSocket:     ws://${displayHost}:${server.port}/ws/cli/:sessionId`);
+console.log(`  Browser WebSocket: ws://${displayHost}:${server.port}/ws/browser/:sessionId`);
 
 // In dev mode, log that Vite should be run separately
 if (process.env.NODE_ENV !== "production") {
