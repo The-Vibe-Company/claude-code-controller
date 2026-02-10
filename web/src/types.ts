@@ -46,4 +46,33 @@ export interface SdkSessionInfo {
   branch?: string;
   actualBranch?: string;
   name?: string;
+  projectKey?: string;
+}
+
+/** Merged session data for sidebar display */
+export interface SidebarSession {
+  id: string;
+  model?: string;
+  cwd?: string;
+  gitBranch?: string;
+  isWorktree: boolean;
+  gitAhead: number;
+  gitBehind: number;
+  linesAdded: number;
+  linesRemoved: number;
+  isConnected: boolean;
+  status: string | null;
+  sdkState?: string;
+  createdAt?: number;
+  archived?: boolean;
+  projectKey?: string;
+}
+
+/** Project group for sidebar rendering */
+export interface SidebarProject {
+  key: string;
+  name: string;
+  sessions: SidebarSession[];
+  activeSessions: number;
+  totalCost: number;
 }

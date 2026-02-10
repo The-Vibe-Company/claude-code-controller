@@ -40,6 +40,10 @@ interface AppState {
   // Session display names
   sessionNames: Map<string, string>;
 
+  // Project grouping
+  collapsedProjects: Set<string>;
+  projectNames: Map<string, string>;
+
   // UI
   darkMode: boolean;
   sidebarOpen: boolean;
@@ -86,6 +90,11 @@ interface AppState {
 
   // Session name actions
   setSessionName: (sessionId: string, name: string) => void;
+
+  // Project actions
+  toggleProjectCollapsed: (key: string) => void;
+  setProjectName: (key: string, name: string) => void;
+  setProjectNames: (names: Record<string, string>) => void;
 
   // Plan mode actions
   setPreviousPermissionMode: (sessionId: string, mode: string) => void;
@@ -141,6 +150,8 @@ export const useStore = create<AppState>((set) => ({
   sessionTasks: new Map(),
   changedFiles: new Map(),
   sessionNames: getInitialSessionNames(),
+  collapsedProjects: new Set(),
+  projectNames: new Map(),
   darkMode: getInitialDarkMode(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : false,
@@ -381,6 +392,29 @@ export const useStore = create<AppState>((set) => ({
       safeStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
       return { sessionNames };
     }),
+
+  toggleProjectCollapsed: (key) => {
+    set((s) => {
+      const next = new Set(s.collapsedProjects);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return { collapsedProjects: next };
+    });
+  },
+
+  setProjectName: (key, name) => {
+    set((s) => {
+      const next = new Map(s.projectNames);
+      next.set(key, name);
+      return { projectNames: next };
+    });
+  },
+
+  setProjectNames: (names) => {
+    set(() => ({
+      projectNames: new Map(Object.entries(names)),
+    }));
+  },
 
   setPreviousPermissionMode: (sessionId, mode) =>
     set((s) => {

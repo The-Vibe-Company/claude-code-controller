@@ -199,4 +199,14 @@ export const api = {
     put<{ ok: boolean; path: string }>("/fs/write", { path, content }),
   getFileDiff: (path: string) =>
     get<{ path: string; diff: string }>(`/fs/diff?path=${encodeURIComponent(path)}`),
+
+  // Project management
+  renameProject: (key: string, name: string) =>
+    patch<{ ok: boolean; name: string }>("/projects/rename", { key, name }),
+
+  archiveAllInProject: (key: string) =>
+    post<{ ok: boolean; archived: string[] }>("/projects/archive-all", { key }),
+
+  listProjects: () =>
+    get<Array<{ key: string; name: string | null; sessionIds: string[]; hasActive: boolean }>>("/projects"),
 };
