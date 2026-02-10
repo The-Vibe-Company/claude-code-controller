@@ -18,7 +18,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* CLI disconnected banner */}
       {connStatus === "connected" && !cliConnected && (
         <div className="px-4 py-2 bg-cc-warning/10 border-b border-cc-warning/20 text-center flex items-center justify-center gap-3">
@@ -48,7 +48,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
 
       {/* Permission banners */}
       {perms.length > 0 && (
-        <div className="border-t border-cc-border bg-cc-card">
+        <div className="shrink-0 max-h-[60vh] overflow-y-auto border-t border-cc-border bg-cc-card">
           {perms.map((p) => (
             <PermissionBanner key={p.request_id} permission={p} sessionId={sessionId} />
           ))}
