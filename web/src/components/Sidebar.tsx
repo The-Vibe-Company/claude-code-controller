@@ -34,7 +34,7 @@ export function Sidebar() {
           // Hydrate session names from server (server is source of truth for auto-generated names)
           const store = useStore.getState();
           for (const s of list) {
-            if (s.name && !store.sessionNames.has(s.sessionId)) {
+            if (s.name && (!store.sessionNames.has(s.sessionId) || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(store.sessionNames.get(s.sessionId)!))) {
               store.setSessionName(s.sessionId, s.name);
             }
           }

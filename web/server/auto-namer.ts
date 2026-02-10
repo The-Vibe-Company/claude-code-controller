@@ -45,15 +45,17 @@ export async function generateSessionTitle(
     );
 
     // Race between completion and timeout
+    let timer: ReturnType<typeof setTimeout>;
     await Promise.race([
       proc.exited,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => {
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
           proc.kill("SIGTERM");
           reject(new Error("Auto-naming timed out"));
-        }, timeout),
-      ),
+        }, timeout);
+      }),
     ]);
+    clearTimeout(timer!);
 
     const stdout = await new Response(proc.stdout).text();
 
