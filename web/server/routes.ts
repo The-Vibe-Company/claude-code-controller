@@ -90,6 +90,87 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     }
   });
 
+  api.post("/sessions/create-with-message", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      let envVars: Record<string, string> | undefined = body.env;
+      if (body.envSlug) {
+        const companionEnv = envManager.getEnv(body.envSlug);
+        if (companionEnv) {
+          console.log(`[routes] Injecting env "${companionEnv.name}" (${Object.keys(companionEnv.variables).length} vars):`, Object.keys(companionEnv.variables).join(", "));
+          envVars = { ...companionEnv.variables, ...body.env };
+        } else {
+          console.warn(`[routes] Environment "${body.envSlug}" not found, ignoring`);
+        }
+      }
+
+      let cwd = body.cwd;
+      let worktreeInfo: { isWorktree: boolean; repoRoot: string; branch: string; actualBranch: string; worktreePath: string } | undefined;
+
+      if (body.useWorktree && body.branch && cwd) {
+        const repoInfo = gitUtils.getRepoInfo(cwd);
+        if (repoInfo) {
+          const result = gitUtils.ensureWorktree(repoInfo.repoRoot, body.branch, {
+            baseBranch: repoInfo.defaultBranch,
+            createBranch: body.createBranch,
+            forceNew: true,
+          });
+          cwd = result.worktreePath;
+          worktreeInfo = {
+            isWorktree: true,
+            repoRoot: repoInfo.repoRoot,
+            branch: body.branch,
+            actualBranch: result.actualBranch,
+            worktreePath: result.worktreePath,
+          };
+        }
+      } else if (body.branch && cwd) {
+        const repoInfo = gitUtils.getRepoInfo(cwd);
+        if (repoInfo && repoInfo.currentBranch !== body.branch) {
+          gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+        }
+      }
+
+      const session = launcher.launch({
+        model: body.model,
+        permissionMode: body.permissionMode,
+        cwd,
+        claudeBinary: body.claudeBinary,
+        allowedTools: body.allowedTools,
+        env: envVars,
+        worktreeInfo,
+      });
+
+      if (worktreeInfo) {
+        worktreeTracker.addMapping({
+          sessionId: session.sessionId,
+          repoRoot: worktreeInfo.repoRoot,
+          branch: worktreeInfo.branch,
+          actualBranch: worktreeInfo.actualBranch,
+          worktreePath: worktreeInfo.worktreePath,
+          createdAt: Date.now(),
+        });
+      }
+
+      let messageQueued = false;
+      if (body.message && typeof body.message === "string") {
+        const bridgeSession = wsBridge.getOrCreateSession(session.sessionId);
+        bridgeSession.pendingMessages.push(JSON.stringify({
+          type: "user",
+          message: { role: "user", content: body.message },
+          session_id: session.sessionId,
+        }));
+        messageQueued = true;
+      }
+
+      return c.json({ ...session, messageQueued });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[routes] Failed to create session with message:", msg);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
   api.get("/sessions", (c) => {
     const sessions = launcher.listSessions();
     const names = sessionNames.getAllNames();
