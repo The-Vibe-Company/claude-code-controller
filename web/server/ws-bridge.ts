@@ -464,6 +464,23 @@ export class WsBridge {
 
   private handleControlRequest(session: Session, msg: CLIControlRequestMessage) {
     if (msg.request.subtype === "can_use_tool") {
+      // Auto-approve if in dontAsk mode
+      if (session.state.permissionMode === "dontAsk") {
+        const ndjson = JSON.stringify({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: msg.request_id,
+            response: {
+              behavior: "allow",
+              updatedInput: msg.request.input ?? {},
+            },
+          },
+        });
+        this.sendToCLI(session, ndjson);
+        return;
+      }
+
       const perm: PermissionRequest = {
         request_id: msg.request_id,
         tool_name: msg.request.tool_name,
