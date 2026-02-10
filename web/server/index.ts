@@ -14,8 +14,31 @@ import type { ServerWebSocket } from "bun";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = process.env.__VIBE_PACKAGE_ROOT || resolve(__dirname, "..");
 
+function getValidatedHost(envHost: string | undefined): string {
+  const fallbackHost = "127.0.0.1";
+
+  if (!envHost) {
+    return fallbackHost;
+  }
+
+  const trimmed = envHost.trim();
+
+  if (!trimmed) {
+    return fallbackHost;
+  }
+
+  // Disallow any whitespace inside the host value to avoid confusing Bun.serve errors.
+  if (/\s/.test(trimmed)) {
+    throw new Error(
+      `Invalid HOST environment variable "${envHost}": value must not contain whitespace`,
+    );
+  }
+
+  return trimmed;
+}
+
 const port = Number(process.env.PORT) || 3456;
-const host = process.env.HOST || "127.0.0.1";
+const host = getValidatedHost(process.env.HOST);
 const wsBridge = new WsBridge();
 const launcher = new CliLauncher(host, port);
 

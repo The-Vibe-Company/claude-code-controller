@@ -54,8 +54,14 @@ export class CliLauncher {
       }
     }
 
-    const sdkUrl = `ws://${this.host}:${this.port}/ws/cli/${sessionId}`;
+    // Use a safe host for the SDK URL; binding to 0.0.0.0/:: is common but
+    // those are not generally valid as client destination addresses.
+    let connectHost = this.host;
+    if (connectHost === "0.0.0.0" || connectHost === "::" || connectHost === "[::]") {
+      connectHost = "127.0.0.1";
+    }
 
+    const sdkUrl = `ws://${connectHost}:${this.port}/ws/cli/${sessionId}`;
     const args: string[] = [
       "--sdk-url", sdkUrl,
       "--print",
