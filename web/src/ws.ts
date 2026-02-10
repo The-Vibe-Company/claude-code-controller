@@ -1,6 +1,7 @@
 import { useStore } from "./store.js";
 import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem } from "./types.js";
 import { generateUniqueSessionName } from "./utils/names.js";
+import { playNotificationSound } from "./utils/notification-sound.js";
 
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -225,6 +226,10 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       store.setStreaming(sessionId, null);
       store.setStreamingStats(sessionId, null);
       store.setSessionStatus(sessionId, "idle");
+      // Play notification sound if enabled and tab is not focused
+      if (!document.hasFocus() && store.notificationSound) {
+        playNotificationSound();
+      }
       if (r.is_error && r.errors?.length) {
         store.appendMessage(sessionId, {
           id: nextId(),

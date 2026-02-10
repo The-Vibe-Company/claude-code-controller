@@ -43,6 +43,7 @@ interface AppState {
 
   // UI
   darkMode: boolean;
+  notificationSound: boolean;
   sidebarOpen: boolean;
   taskPanelOpen: boolean;
   homeResetKey: number;
@@ -54,6 +55,8 @@ interface AppState {
   // Actions
   setDarkMode: (v: boolean) => void;
   toggleDarkMode: () => void;
+  setNotificationSound: (v: boolean) => void;
+  toggleNotificationSound: () => void;
   setSidebarOpen: (v: boolean) => void;
   setTaskPanelOpen: (open: boolean) => void;
   newSession: () => void;
@@ -128,6 +131,13 @@ function getInitialDarkMode(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
+function getInitialNotificationSound(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem("cc-notification-sound");
+  if (stored !== null) return stored === "true";
+  return true;
+}
+
 export const useStore = create<AppState>((set) => ({
   sessions: new Map(),
   sdkSessions: [],
@@ -146,6 +156,7 @@ export const useStore = create<AppState>((set) => ({
   sessionNames: getInitialSessionNames(),
   recentlyRenamed: new Set(),
   darkMode: getInitialDarkMode(),
+  notificationSound: getInitialNotificationSound(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : false,
   homeResetKey: 0,
@@ -163,6 +174,16 @@ export const useStore = create<AppState>((set) => ({
       const next = !s.darkMode;
       localStorage.setItem("cc-dark-mode", String(next));
       return { darkMode: next };
+    }),
+  setNotificationSound: (v) => {
+    localStorage.setItem("cc-notification-sound", String(v));
+    set({ notificationSound: v });
+  },
+  toggleNotificationSound: () =>
+    set((s) => {
+      const next = !s.notificationSound;
+      localStorage.setItem("cc-notification-sound", String(next));
+      return { notificationSound: next };
     }),
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
   setTaskPanelOpen: (open) => set({ taskPanelOpen: open }),
