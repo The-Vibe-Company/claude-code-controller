@@ -10,9 +10,16 @@ import type { WorktreeTracker } from "./worktree-tracker.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import * as projectNames from "./project-names.js";
 
 export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionStore: SessionStore, worktreeTracker: WorktreeTracker) {
   const api = new Hono();
+
+  // ─── Helpers ────────────────────────────────────────────────────────
+
+  function getProjectKey(session: { cwd: string; repoRoot?: string }): string {
+    return session.repoRoot || session.cwd;
+  }
 
   // ─── SDK Sessions (--sdk-url) ─────────────────────────────────────
 
@@ -96,6 +103,7 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     const enriched = sessions.map((s) => ({
       ...s,
       name: names[s.sessionId] ?? s.name,
+      projectKey: getProjectKey(s),
     }));
     return c.json(enriched);
   });
@@ -104,7 +112,7 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     const id = c.req.param("id");
     const session = launcher.getSession(id);
     if (!session) return c.json({ error: "Session not found" }, 404);
-    return c.json(session);
+    return c.json({ ...session, projectKey: getProjectKey(session) });
   });
 
   api.patch("/sessions/:id/name", async (c) => {
@@ -166,6 +174,68 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     launcher.setArchived(id, false);
     sessionStore.setArchived(id, false);
     return c.json({ ok: true });
+  });
+
+  // ─── Project endpoints ──────────────────────────────────────────
+
+  api.get("/projects", (c) => {
+    const sessions = launcher.listSessions();
+    const pNames = projectNames.getAllNames();
+
+    // Group sessions by project key
+    const groups = new Map<string, { sessionIds: string[]; hasActive: boolean }>();
+    for (const s of sessions) {
+      const key = getProjectKey(s);
+      const group = groups.get(key) || { sessionIds: [], hasActive: false };
+      group.sessionIds.push(s.sessionId);
+      if (!s.archived) group.hasActive = true;
+      groups.set(key, group);
+    }
+
+    const projects = [...groups.entries()].map(([key, group]) => ({
+      key,
+      name: pNames[key] ?? null,
+      sessionIds: group.sessionIds,
+      hasActive: group.hasActive,
+    }));
+
+    return c.json(projects);
+  });
+
+  api.patch("/projects/rename", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { key, name } = body;
+    if (typeof key !== "string" || !key.trim()) {
+      return c.json({ error: "key is required" }, 400);
+    }
+    if (typeof name !== "string" || !name.trim()) {
+      return c.json({ error: "name is required" }, 400);
+    }
+    projectNames.setName(key.trim(), name.trim());
+    return c.json({ ok: true, name: name.trim() });
+  });
+
+  api.post("/projects/archive-all", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { key } = body;
+    if (typeof key !== "string" || !key.trim()) {
+      return c.json({ error: "key is required" }, 400);
+    }
+
+    const sessions = launcher.listSessions();
+    const toArchive = sessions.filter(
+      (s) => !s.archived && getProjectKey(s) === key.trim()
+    );
+
+    const results: string[] = [];
+    for (const s of toArchive) {
+      await launcher.kill(s.sessionId);
+      launcher.setArchived(s.sessionId, true);
+      sessionStore.setArchived(s.sessionId, true);
+      results.push(s.sessionId);
+    }
+
+    return c.json({ ok: true, archived: results });
   });
 
   // ─── Filesystem browsing ─────────────────────────────────────

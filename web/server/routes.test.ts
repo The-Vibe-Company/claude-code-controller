@@ -30,12 +30,21 @@ vi.mock("./session-names.js", () => ({
   _resetForTest: vi.fn(),
 }));
 
+vi.mock("./project-names.js", () => ({
+  getName: vi.fn(() => undefined),
+  setName: vi.fn(),
+  getAllNames: vi.fn(() => ({})),
+  removeName: vi.fn(),
+  _resetForTest: vi.fn(),
+}));
+
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
 import { createRoutes } from "./routes.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import * as projectNames from "./project-names.js";
 
 // ─── Mock factories ──────────────────────────────────────────────────────────
 
@@ -218,8 +227,8 @@ describe("GET /api/sessions", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual([
-      { sessionId: "s1", state: "running", cwd: "/a", name: "Fix auth bug" },
-      { sessionId: "s2", state: "stopped", cwd: "/b" },
+      { sessionId: "s1", state: "running", cwd: "/a", name: "Fix auth bug", projectKey: "/a" },
+      { sessionId: "s2", state: "stopped", cwd: "/b", projectKey: "/b" },
     ]);
   });
 });
@@ -233,7 +242,7 @@ describe("GET /api/sessions/:id", () => {
 
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toEqual(session);
+    expect(json).toEqual({ ...session, projectKey: "/test" });
   });
 
   it("returns 404 when session not found", async () => {
@@ -691,5 +700,267 @@ describe("GET /api/fs/diff", () => {
     const json = await res.json();
     expect(json.diff).toBe("");
     expect(json.path).toContain("file.ts");
+  });
+});
+
+// ─── Project endpoints ───────────────────────────────────────────────────────
+
+describe("project endpoints", () => {
+  describe("GET /api/projects", () => {
+    it("returns grouped sessions by project key", async () => {
+      const sessions = [
+        { sessionId: "s1", cwd: "/repo/a", repoRoot: "/repo/a", archived: false },
+        { sessionId: "s2", cwd: "/repo/a", repoRoot: "/repo/a", archived: false },
+        { sessionId: "s3", cwd: "/repo/b", repoRoot: "/repo/b", archived: true },
+        { sessionId: "s4", cwd: "/non-git", archived: false },
+      ];
+      launcher.listSessions.mockReturnValue(sessions as any);
+      vi.mocked(projectNames.getAllNames).mockReturnValue({
+        "/repo/a": "Project A",
+        "/non-git": "Non-Git Project",
+      });
+
+      const res = await app.request("/api/projects", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual([
+        {
+          key: "/repo/a",
+          name: "Project A",
+          sessionIds: ["s1", "s2"],
+          hasActive: true,
+        },
+        {
+          key: "/repo/b",
+          name: null,
+          sessionIds: ["s3"],
+          hasActive: false,
+        },
+        {
+          key: "/non-git",
+          name: "Non-Git Project",
+          sessionIds: ["s4"],
+          hasActive: true,
+        },
+      ]);
+    });
+  });
+
+  describe("PATCH /api/projects/rename", () => {
+    it("updates project name", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "/repo/path", name: "My Project" }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({ ok: true, name: "My Project" });
+      expect(projectNames.setName).toHaveBeenCalledWith("/repo/path", "My Project");
+    });
+
+    it("trims whitespace from key and name", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "  /repo/path  ", name: "  My Project  " }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({ ok: true, name: "My Project" });
+      expect(projectNames.setName).toHaveBeenCalledWith("/repo/path", "My Project");
+    });
+
+    it("returns 400 when key is missing", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Some Name" }),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json).toEqual({ error: "key is required" });
+    });
+
+    it("returns 400 when name is missing", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "/repo/path" }),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json).toEqual({ error: "name is required" });
+    });
+
+    it("returns 400 when key is empty string", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "", name: "Name" }),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json).toEqual({ error: "key is required" });
+    });
+
+    it("returns 400 when name is empty string", async () => {
+      const res = await app.request("/api/projects/rename", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "/repo/path", name: "" }),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json).toEqual({ error: "name is required" });
+    });
+  });
+
+  describe("POST /api/projects/archive-all", () => {
+    it("archives all active sessions in project", async () => {
+      const sessions = [
+        { sessionId: "s1", cwd: "/repo", repoRoot: "/repo", archived: false },
+        { sessionId: "s2", cwd: "/repo", repoRoot: "/repo", archived: false },
+        { sessionId: "s3", cwd: "/repo", repoRoot: "/repo", archived: true },
+        { sessionId: "s4", cwd: "/other", repoRoot: "/other", archived: false },
+      ];
+      launcher.listSessions.mockReturnValue(sessions as any);
+
+      const res = await app.request("/api/projects/archive-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "/repo" }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({ ok: true, archived: ["s1", "s2"] });
+      expect(launcher.kill).toHaveBeenCalledWith("s1");
+      expect(launcher.kill).toHaveBeenCalledWith("s2");
+      expect(launcher.setArchived).toHaveBeenCalledWith("s1", true);
+      expect(launcher.setArchived).toHaveBeenCalledWith("s2", true);
+      expect(sessionStore.setArchived).toHaveBeenCalledWith("s1", true);
+      expect(sessionStore.setArchived).toHaveBeenCalledWith("s2", true);
+      expect(launcher.kill).not.toHaveBeenCalledWith("s3");
+      expect(launcher.kill).not.toHaveBeenCalledWith("s4");
+    });
+
+    it("returns 400 when key is missing", async () => {
+      const res = await app.request("/api/projects/archive-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json).toEqual({ error: "key is required" });
+    });
+
+    it("returns empty array when no active sessions match", async () => {
+      launcher.listSessions.mockReturnValue([
+        { sessionId: "s1", cwd: "/other", repoRoot: "/other", archived: false },
+      ] as any);
+
+      const res = await app.request("/api/projects/archive-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "/repo" }),
+      });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({ ok: true, archived: [] });
+    });
+  });
+
+  describe("GET /api/sessions enrichment", () => {
+    it("includes projectKey in sessions list", async () => {
+      const sessions = [
+        { sessionId: "s1", cwd: "/repo", repoRoot: "/repo", name: "Session 1" },
+        { sessionId: "s2", cwd: "/non-git", name: "Session 2" },
+      ];
+      launcher.listSessions.mockReturnValue(sessions as any);
+      vi.mocked(sessionNames.getAllNames).mockReturnValue({});
+
+      const res = await app.request("/api/sessions", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual([
+        { sessionId: "s1", cwd: "/repo", repoRoot: "/repo", name: "Session 1", projectKey: "/repo" },
+        { sessionId: "s2", cwd: "/non-git", name: "Session 2", projectKey: "/non-git" },
+      ]);
+    });
+
+    it("uses repoRoot as projectKey when available", async () => {
+      const sessions = [
+        { sessionId: "s1", cwd: "/repo/subdir", repoRoot: "/repo", name: "Session" },
+      ];
+      launcher.listSessions.mockReturnValue(sessions as any);
+      vi.mocked(sessionNames.getAllNames).mockReturnValue({});
+
+      const res = await app.request("/api/sessions", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json[0].projectKey).toBe("/repo");
+    });
+
+    it("falls back to cwd when repoRoot is not set", async () => {
+      const sessions = [
+        { sessionId: "s1", cwd: "/non-git", name: "Session" },
+      ];
+      launcher.listSessions.mockReturnValue(sessions as any);
+      vi.mocked(sessionNames.getAllNames).mockReturnValue({});
+
+      const res = await app.request("/api/sessions", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json[0].projectKey).toBe("/non-git");
+    });
+  });
+
+  describe("GET /api/sessions/:id enrichment", () => {
+    it("includes projectKey in single session response", async () => {
+      const session = { sessionId: "s1", cwd: "/repo", repoRoot: "/repo", state: "running" };
+      launcher.getSession.mockReturnValue(session as any);
+
+      const res = await app.request("/api/sessions/s1", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toEqual({ ...session, projectKey: "/repo" });
+    });
+
+    it("uses repoRoot as projectKey when available", async () => {
+      const session = { sessionId: "s1", cwd: "/repo/subdir", repoRoot: "/repo", state: "running" };
+      launcher.getSession.mockReturnValue(session as any);
+
+      const res = await app.request("/api/sessions/s1", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.projectKey).toBe("/repo");
+    });
+
+    it("falls back to cwd when repoRoot is not set", async () => {
+      const session = { sessionId: "s1", cwd: "/non-git", state: "running" };
+      launcher.getSession.mockReturnValue(session as any);
+
+      const res = await app.request("/api/sessions/s1", { method: "GET" });
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.projectKey).toBe("/non-git");
+    });
   });
 });
