@@ -60,7 +60,8 @@ wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
   const model = info?.model || "claude-sonnet-4-5-20250929";
   console.log(`[server] Auto-naming session ${sessionId} with model ${model}...`);
   const title = await generateSessionTitle(firstUserMessage, model);
-  if (title) {
+  // Re-check: a manual rename may have occurred while we were generating
+  if (title && !sessionNames.getName(sessionId)) {
     console.log(`[server] Auto-named session ${sessionId}: "${title}"`);
     sessionNames.setName(sessionId, title);
     wsBridge.broadcastNameUpdate(sessionId, title);
