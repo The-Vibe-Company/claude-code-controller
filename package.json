@@ -1,6 +1,6 @@
 {
   "name": "the-vibe-companion",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "Web UI for Claude Code agents",
   "scripts": {
