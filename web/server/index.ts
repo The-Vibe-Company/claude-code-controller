@@ -126,7 +126,7 @@ console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionI
 console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
 
 if (process.env.NODE_ENV !== "production") {
-  console.log("Dev mode: frontend at http://localhost:5174");
+  console.log("Dev mode: frontend at http://localhost:2345");
 }
 
 // ── Reconnection watchdog ────────────────────────────────────────────────────
