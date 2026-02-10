@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { connectSession, disconnectSession } from "../ws.js";
 import { EnvManager } from "./EnvManager.js";
+import { SessionItem } from "./SessionItem.js";
+import { ProjectGroup } from "./ProjectGroup.js";
+import { groupSessionsByProject } from "../utils/project-grouping.js";
+import type { SidebarSession } from "../types.js";
 
 export function Sidebar() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -10,7 +14,6 @@ export function Sidebar() {
   const [showEnvManager, setShowEnvManager] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
   const sessions = useStore((s) => s.sessions);
   const sdkSessions = useStore((s) => s.sdkSessions);
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -22,6 +25,10 @@ export function Sidebar() {
   const removeSession = useStore((s) => s.removeSession);
   const sessionNames = useStore((s) => s.sessionNames);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
+  const collapsedProjects = useStore((s) => s.collapsedProjects);
+  const toggleProjectCollapsed = useStore((s) => s.toggleProjectCollapsed);
+  const projectNames = useStore((s) => s.projectNames);
+  const setProjectName = useStore((s) => s.setProjectName);
 
   // Poll for SDK sessions on mount
   useEffect(() => {
@@ -41,6 +48,19 @@ export function Sidebar() {
         }
       } catch {
         // server not ready
+      }
+      // Also fetch project names
+      try {
+        const projects = await api.listProjects();
+        if (active) {
+          const nameMap: Record<string, string> = {};
+          for (const p of projects) {
+            if (p.name) nameMap[p.key] = p.name;
+          }
+          useStore.getState().setProjectNames(nameMap);
+        }
+      } catch {
+        // non-critical, project names may just not be loaded
       }
     }
     poll();
@@ -74,14 +94,6 @@ export function Sidebar() {
       useStore.getState().setSidebarOpen(false);
     }
   }
-
-  // Focus edit input when entering edit mode
-  useEffect(() => {
-    if (editingSessionId && editInputRef.current) {
-      editInputRef.current.focus();
-      editInputRef.current.select();
-    }
-  }, [editingSessionId]);
 
   function confirmRename() {
     if (editingSessionId && editingName.trim()) {
@@ -188,171 +200,69 @@ export function Sidebar() {
       sdkState: sdkInfo?.state ?? null,
       createdAt: sdkInfo?.createdAt ?? 0,
       archived: sdkInfo?.archived ?? false,
+      projectKey: sdkInfo?.projectKey,
     };
   }).sort((a, b) => b.createdAt - a.createdAt);
 
   const activeSessions = allSessionList.filter((s) => !s.archived);
   const archivedSessions = allSessionList.filter((s) => s.archived);
 
-  function renderSessionItem(s: typeof allSessionList[number], options?: { isArchived?: boolean }) {
-    const isActive = currentSessionId === s.id;
+  // Build cost map for project grouping
+  const sessionCosts = new Map<string, number>();
+  for (const [id, state] of sessions) {
+    sessionCosts.set(id, state.total_cost_usd ?? 0);
+  }
+
+  const activeProjects = groupSessionsByProject(
+    activeSessions as SidebarSession[],
+    projectNames,
+    sessionCosts,
+  );
+
+  const archivedProjects = groupSessionsByProject(
+    archivedSessions as SidebarSession[],
+    projectNames,
+    sessionCosts,
+  );
+
+  function renderSession(s: typeof allSessionList[number], options?: { isArchived?: boolean }) {
     const name = sessionNames.get(s.id);
-    const shortId = s.id.slice(0, 8);
-    const label = name || s.model || shortId;
-    const dirName = s.cwd ? s.cwd.split("/").pop() : "";
-    const isRunning = s.status === "running";
-    const isCompacting = s.status === "compacting";
-    const isEditing = editingSessionId === s.id;
     const permCount = pendingPermissions.get(s.id)?.size ?? 0;
+    const isActive = currentSessionId === s.id;
+    const isEditing = editingSessionId === s.id;
     const archived = options?.isArchived;
 
     return (
-      <div key={s.id} className={`relative group ${archived ? "opacity-60" : ""}`}>
-        <button
-          onClick={() => handleSelectSession(s.id)}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            setEditingSessionId(s.id);
-            setEditingName(label);
-          }}
-          className={`w-full px-3 py-2.5 ${archived ? "pr-14" : "pr-8"} text-left rounded-[10px] transition-all duration-100 cursor-pointer ${
-            isActive
-              ? "bg-cc-active"
-              : "hover:bg-cc-hover"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="relative flex shrink-0">
-              {(isRunning || isCompacting) && !archived ? (
-                <svg className="w-2.5 h-2.5 animate-spin text-cc-primary" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <>
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      archived
-                        ? "bg-cc-muted opacity-40"
-                        : permCount > 0
-                        ? "bg-cc-warning"
-                        : s.sdkState === "exited"
-                        ? "bg-cc-muted opacity-40"
-                        : s.isConnected
-                        ? "bg-cc-success opacity-60"
-                        : "bg-cc-muted opacity-40"
-                    }`}
-                  />
-                  {!archived && permCount > 0 && (
-                    <span className="absolute inset-0 w-2 h-2 rounded-full bg-cc-warning/40 animate-[pulse-dot_1.5s_ease-in-out_infinite]" />
-                  )}
-                </>
-              )}
-            </span>
-            {isEditing ? (
-              <input
-                ref={editInputRef}
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    confirmRename();
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelRename();
-                  }
-                  e.stopPropagation();
-                }}
-                onBlur={confirmRename}
-                onClick={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => e.stopPropagation()}
-                className="text-[13px] font-medium flex-1 text-cc-fg bg-transparent border border-cc-border rounded-md px-1 py-0 outline-none focus:border-cc-primary/50 min-w-0"
-              />
-            ) : (
-              <span className="text-[13px] font-medium truncate flex-1 text-cc-fg">
-                {label}
-              </span>
-            )}
-          </div>
-          {(dirName || s.gitBranch) && (
-            <div className="flex items-center gap-1.5 mt-0.5 ml-4 text-[11px] text-cc-muted truncate">
-              {dirName && <span className="truncate">{dirName}</span>}
-              {dirName && s.gitBranch && <span className="text-cc-border">/</span>}
-              {s.gitBranch && (
-                <span className="flex items-center gap-1 truncate">
-                  {s.isWorktree ? (
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                      <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v5.256a2.25 2.25 0 101.5 0V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zm7.5-9.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V7A2.5 2.5 0 0110 9.5H6a1 1 0 000 2h4a2.5 2.5 0 012.5 2.5v.628a2.25 2.25 0 11-1.5 0V14a1 1 0 00-1-1H6a2.5 2.5 0 01-2.5-2.5V10a2.5 2.5 0 012.5-2.5h4a1 1 0 001-1V5.372a2.25 2.25 0 01-1.5-2.122z" />
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                      <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                    </svg>
-                  )}
-                  <span className="truncate">{s.gitBranch}</span>
-                  {s.isWorktree && (
-                    <span className="text-[9px] bg-cc-primary/10 text-cc-primary px-0.5 rounded">wt</span>
-                  )}
-                </span>
-              )}
-              {(s.gitAhead > 0 || s.gitBehind > 0) && (
-                <span className="flex items-center gap-0.5 text-[10px]">
-                  {s.gitAhead > 0 && <span className="text-green-500">{s.gitAhead}&#8593;</span>}
-                  {s.gitBehind > 0 && <span className="text-cc-warning">{s.gitBehind}&#8595;</span>}
-                </span>
-              )}
-              {(s.linesAdded > 0 || s.linesRemoved > 0) && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <span className="text-green-500">+{s.linesAdded}</span>
-                  <span className="text-red-400">-{s.linesRemoved}</span>
-                </span>
-              )}
-            </div>
-          )}
-        </button>
-        {!archived && permCount > 0 && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-cc-warning text-white text-[10px] font-bold leading-none px-1 group-hover:opacity-0 transition-opacity pointer-events-none">
-            {permCount}
-          </span>
-        )}
-        {archived ? (
-          <>
-            {/* Unarchive button */}
-            <button
-              onClick={(e) => handleUnarchiveSession(e, s.id)}
-              className="absolute right-8 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-cc-border text-cc-muted hover:text-cc-fg transition-all cursor-pointer"
-              title="Restore session"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-                <path d="M8 10V3M5 5l3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3 13h10" strokeLinecap="round" />
-              </svg>
-            </button>
-            {/* Delete button */}
-            <button
-              onClick={(e) => handleDeleteSession(e, s.id)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-cc-border text-cc-muted hover:text-red-400 transition-all cursor-pointer"
-              title="Delete permanently"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={(e) => handleArchiveSession(e, s.id)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-cc-border text-cc-muted hover:text-cc-fg transition-all cursor-pointer"
-            title="Archive session"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-              <path d="M3 3h10v2H3zM4 5v7a1 1 0 001 1h6a1 1 0 001-1V5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M6.5 8h3" strokeLinecap="round" />
-            </svg>
-          </button>
-        )}
-      </div>
+      <SessionItem
+        key={s.id}
+        session={s}
+        isActive={isActive}
+        sessionName={name}
+        isEditing={isEditing}
+        editingName={editingName}
+        permCount={permCount}
+        isArchived={archived}
+        onSelect={() => handleSelectSession(s.id)}
+        onStartRename={(currentName) => {
+          setEditingSessionId(s.id);
+          setEditingName(currentName);
+        }}
+        onCancelRename={() => cancelRename()}
+        onConfirmRename={() => confirmRename()}
+        onEditingNameChange={setEditingName}
+        onArchive={() => {
+          const fakeEvent = { stopPropagation: () => {} } as React.MouseEvent;
+          handleArchiveSession(fakeEvent, s.id);
+        }}
+        onUnarchive={archived ? () => {
+          const fakeEvent = { stopPropagation: () => {} } as React.MouseEvent;
+          handleUnarchiveSession(fakeEvent, s.id);
+        } : undefined}
+        onDelete={archived ? () => {
+          const fakeEvent = { stopPropagation: () => {} } as React.MouseEvent;
+          handleDeleteSession(fakeEvent, s.id);
+        } : undefined}
+      />
     );
   }
 
@@ -415,7 +325,51 @@ export function Sidebar() {
         ) : (
           <>
             <div className="space-y-0.5">
-              {activeSessions.map((s) => renderSessionItem(s))}
+              {activeProjects.length === 0 ? (
+                <p className="px-4 py-8 text-center text-cc-muted text-sm">
+                  No active sessions
+                </p>
+              ) : activeProjects.length === 1 ? (
+                /* Single project - render sessions directly without group header */
+                activeProjects[0].sessions.map((s) => renderSession(s as typeof allSessionList[number]))
+              ) : (
+                /* Multiple projects - render with group headers */
+                activeProjects.map((project) => {
+                  const projectPermCount = project.sessions.reduce(
+                    (sum, s) => sum + (pendingPermissions.get(s.id)?.size ?? 0),
+                    0,
+                  );
+                  return (
+                    <ProjectGroup
+                      key={project.key}
+                      project={project}
+                      isCollapsed={collapsedProjects.has(project.key)}
+                      onToggleCollapse={() => toggleProjectCollapsed(project.key)}
+                      onRename={(name) => {
+                        setProjectName(project.key, name);
+                        api.renameProject(project.key, name).catch(console.error);
+                      }}
+                      onArchiveAll={async () => {
+                        try {
+                          const result = await api.archiveAllInProject(project.key);
+                          if (result.archived.length > 0) {
+                            for (const sid of result.archived) {
+                              disconnectSession(sid);
+                            }
+                            const list = await api.listSessions();
+                            useStore.getState().setSdkSessions(list);
+                          }
+                        } catch (err) {
+                          console.error("Failed to archive all:", err);
+                        }
+                      }}
+                      pendingPermissionCount={projectPermCount}
+                    >
+                      {project.sessions.map((s) => renderSession(s as typeof allSessionList[number]))}
+                    </ProjectGroup>
+                  );
+                })
+              )}
             </div>
 
             {archivedSessions.length > 0 && (
@@ -431,7 +385,27 @@ export function Sidebar() {
                 </button>
                 {showArchived && (
                   <div className="space-y-0.5 mt-1">
-                    {archivedSessions.map((s) => renderSessionItem(s, { isArchived: true }))}
+                    {archivedProjects.length === 0 ? (
+                      <p className="px-4 py-4 text-center text-cc-muted text-xs">No archived sessions</p>
+                    ) : archivedProjects.length === 1 ? (
+                      archivedProjects[0].sessions.map((s) => renderSession(s as typeof allSessionList[number], { isArchived: true }))
+                    ) : (
+                      archivedProjects.map((project) => (
+                        <ProjectGroup
+                          key={project.key}
+                          project={project}
+                          isCollapsed={collapsedProjects.has(`archived:${project.key}`)}
+                          onToggleCollapse={() => toggleProjectCollapsed(`archived:${project.key}`)}
+                          onRename={(name) => {
+                            setProjectName(project.key, name);
+                            api.renameProject(project.key, name).catch(console.error);
+                          }}
+                          pendingPermissionCount={0}
+                        >
+                          {project.sessions.map((s) => renderSession(s as typeof allSessionList[number], { isArchived: true }))}
+                        </ProjectGroup>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
