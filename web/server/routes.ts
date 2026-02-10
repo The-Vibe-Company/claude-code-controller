@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import type { CliLauncher } from "./cli-launcher.js";
@@ -113,6 +113,43 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
 
   api.get("/fs/home", (c) => {
     return c.json({ home: homedir(), cwd: process.cwd() });
+  });
+
+  api.get("/fs/recent-projects", async (c) => {
+    try {
+      const claudeProjectsDir = join(homedir(), ".claude", "projects");
+      const entries = await readdir(claudeProjectsDir, { withFileTypes: true }).catch(() => []);
+
+      const projects: { path: string; lastUsed: number }[] = [];
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        // Convert directory name to path: -Users-me-dev-apps -> /Users/me/dev/apps
+        const dirName = entry.name;
+        const path = dirName.replace(/^-/, "/").replace(/-/g, "/");
+
+        // Get directory mtime as a proxy for last used
+        try {
+          const stats = await stat(join(claudeProjectsDir, entry.name));
+          projects.push({ path, lastUsed: stats.mtime.getTime() });
+        } catch {
+          // Skip if we can't stat
+        }
+      }
+
+      // Sort by most recent first and take top 20
+      projects.sort((a, b) => b.lastUsed - a.lastUsed);
+      const recentProjects = projects.slice(0, 20).map(p => p.path);
+
+      // Filter out duplicates and the home directory
+      const uniquePaths = Array.from(new Set(recentProjects)).filter(p => p !== homedir());
+
+      return c.json({ projects: uniquePaths });
+    } catch (e: unknown) {
+      console.error("[routes] Failed to fetch recent projects:", e);
+      return c.json({ projects: [] });
+    }
   });
 
   // ─── Environments (~/.companion/envs/) ────────────────────────────

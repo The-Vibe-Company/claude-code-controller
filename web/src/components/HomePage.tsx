@@ -80,6 +80,7 @@ export function HomePage() {
   const [browseLoading, setBrowseLoading] = useState(false);
   const [dirInput, setDirInput] = useState("");
   const [showDirInput, setShowDirInput] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<string[]>([]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -103,6 +104,7 @@ export function HomePage() {
       }
     }).catch(() => {});
     api.listEnvs().then(setEnvs).catch(() => {});
+    api.getRecentProjects().then(({ projects }) => setRecentProjects(projects)).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close dropdowns on outside click
@@ -449,6 +451,32 @@ export function HomePage() {
                 {/* Directory browser */}
                 {!showDirInput && (
                   <>
+                    {/* Recent projects */}
+                    {recentProjects.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] text-cc-muted font-medium uppercase tracking-wide">
+                          Recent Projects
+                        </div>
+                        {recentProjects.map((projectPath) => (
+                          <button
+                            key={projectPath}
+                            onClick={() => {
+                              setCwd(projectPath);
+                              addRecentDir(projectPath);
+                              setShowDirDropdown(false);
+                            }}
+                            className="w-full px-3 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer truncate font-mono-code flex items-center gap-2 text-cc-fg"
+                          >
+                            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-40 shrink-0">
+                              <path d="M1 3.5A1.5 1.5 0 012.5 2h3.379a1.5 1.5 0 011.06.44l.622.621a.5.5 0 00.353.146H13.5A1.5 1.5 0 0115 4.707V12.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z" />
+                            </svg>
+                            <span className="truncate">{projectPath.split("/").slice(-2).join("/")}</span>
+                          </button>
+                        ))}
+                        <div className="border-b border-cc-border my-1" />
+                      </>
+                    )}
+
                     {/* Go up button */}
                     {browsePath && browsePath !== "/" && (
                       <button
