@@ -15,8 +15,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = process.env.__VIBE_PACKAGE_ROOT || resolve(__dirname, "..");
 
 const port = Number(process.env.PORT) || 3456;
+const host = process.env.HOST || "127.0.0.1";
 const wsBridge = new WsBridge();
-const launcher = new CliLauncher(port);
+const launcher = new CliLauncher(host, port);
 
 const app = new Hono();
 
@@ -31,6 +32,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const server = Bun.serve<SocketData>({
+  hostname: host,
   port,
   fetch(req, server) {
     const url = new URL(req.url);
@@ -89,9 +91,9 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://localhost:${server.port}`);
-console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
+console.log(`Server running on http://${host}:${server.port}`);
+console.log(`  CLI WebSocket:     ws://${host}:${server.port}/ws/cli/:sessionId`);
+console.log(`  Browser WebSocket: ws://${host}:${server.port}/ws/browser/:sessionId`);
 
 // In dev mode, log that Vite should be run separately
 if (process.env.NODE_ENV !== "production") {
