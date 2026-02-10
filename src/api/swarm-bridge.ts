@@ -169,6 +169,10 @@ class SwarmEventBuffer {
   ): { kind: "plan" | "permission"; agentId: string } | undefined {
     return this.requestIndex.get(requestId);
   }
+
+  deleteRequest(requestId: string): void {
+    this.requestIndex.delete(requestId);
+  }
 }
 
 // ─── Controller state ────────────────────────────────────────────────────────
@@ -179,29 +183,32 @@ interface SwarmBridgeState {
   startTime: number;
   buffer: SwarmEventBuffer;
   apiKey?: string;
-  initLock: boolean;
+  initPromise: Promise<ClaudeCodeController> | null;
   controllerOptions?: ControllerOptions & { logLevel?: LogLevel };
 }
 
 async function ensureController(state: SwarmBridgeState): Promise<ClaudeCodeController> {
   if (state.controller) return state.controller;
-  if (state.initLock) {
-    throw new Error("Controller init already in progress");
-  }
-  state.initLock = true;
-  try {
-    const ctrl = new ClaudeCodeController({
-      ...(state.controllerOptions ?? {}),
-      logLevel: state.controllerOptions?.logLevel ?? "info",
-    });
-    await ctrl.init();
-    state.controller = ctrl;
-    state.owned = true;
-    state.buffer.attach(ctrl);
-    return ctrl;
-  } finally {
-    state.initLock = false;
-  }
+  if (state.initPromise) return state.initPromise;
+
+  state.initPromise = (async () => {
+    try {
+      const ctrl = new ClaudeCodeController({
+        ...(state.controllerOptions ?? {}),
+        logLevel: state.controllerOptions?.logLevel ?? "info",
+      });
+      await ctrl.init();
+      state.controller = ctrl;
+      state.owned = true;
+      state.buffer.attach(ctrl);
+      return ctrl;
+    } catch (err) {
+      state.initPromise = null;
+      throw err;
+    }
+  })();
+
+  return state.initPromise;
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────
@@ -215,7 +222,7 @@ export function createSwarmBridgeApi(opts?: SwarmBridgeOptions): Hono {
     startTime: Date.now(),
     buffer,
     apiKey: opts?.apiKey,
-    initLock: false,
+    initPromise: null,
     controllerOptions: opts?.controllerOptions,
   };
 
@@ -249,11 +256,20 @@ export function createSwarmBridgeApi(opts?: SwarmBridgeOptions): Hono {
   // Health
   routes.get("/health", async (c) => {
     const ctrl = state.controller;
-    const agents_active = ctrl
-      ? (await ctrl.team.getConfig()).members.filter(
+    let agents_active = 0;
+
+    if (ctrl) {
+      try {
+        const config = await ctrl.team.getConfig();
+        agents_active = config.members.filter(
           (m) => m.name !== "controller" && ctrl.isAgentRunning(m.name)
-        ).length
-      : 0;
+        ).length;
+      } catch {
+        // If we cannot read team config (e.g. uninitialized controller),
+        // treat as zero active agents but still report health as OK.
+        agents_active = 0;
+      }
+    }
 
     return c.json({
       status: "ok",
@@ -375,17 +391,30 @@ export function createSwarmBridgeApi(opts?: SwarmBridgeOptions): Hono {
   routes.get("/tasks/:id/wait", async (c) => {
     const taskId = c.req.param("id");
     validateTaskId(taskId);
+    const timeoutRaw = c.req.query("timeout");
+    const timeoutMs = timeoutRaw ? Number.parseInt(timeoutRaw, 10) * 1000 : undefined;
+
     const ctrl = await ensureController(state);
-    let task: TaskFile;
     try {
-      task = await ctrl.tasks.get(taskId);
+      const task = await ctrl.tasks.waitFor(taskId, "completed", {
+        timeout: Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+      });
+      return c.json(taskToResponse(task));
     } catch (err) {
       if (isNotFoundError(err)) {
         return c.json({ error: "Task not found" }, 404);
       }
+      if (err instanceof Error && /timeout/i.test(err.message)) {
+        // Return current state on timeout rather than 500
+        try {
+          const task = await ctrl.tasks.get(taskId);
+          return c.json(taskToResponse(task), 408);
+        } catch {
+          return c.json({ error: "Timeout waiting for task completion" }, 408);
+        }
+      }
       throw err;
     }
-    return c.json(taskToResponse(task));
   });
 
   // Events
@@ -435,6 +464,7 @@ export function createSwarmBridgeApi(opts?: SwarmBridgeOptions): Hono {
       );
     }
 
+    state.buffer.deleteRequest(body.request_id);
     return c.json({ ok: true });
   });
 
