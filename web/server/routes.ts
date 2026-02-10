@@ -47,6 +47,13 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge) {
     return c.json({ ok: true });
   });
 
+  api.post("/sessions/:id/relaunch", async (c) => {
+    const id = c.req.param("id");
+    const ok = await launcher.relaunch(id);
+    if (!ok) return c.json({ error: "Session not found" }, 404);
+    return c.json({ ok: true });
+  });
+
   api.delete("/sessions/:id", async (c) => {
     const id = c.req.param("id");
     await launcher.kill(id);

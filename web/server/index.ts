@@ -25,6 +25,11 @@ wsBridge.setStore(sessionStore);
 launcher.setStore(sessionStore);
 launcher.restoreFromDisk();
 wsBridge.restoreFromDisk();
+
+// When the CLI reports its internal session_id, store it for --resume on relaunch
+wsBridge.onCLISessionIdReceived((sessionId, cliSessionId) => {
+  launcher.setCLISessionId(sessionId, cliSessionId);
+});
 console.log(`[server] Session persistence: ${sessionStore.directory}`);
 
 const app = new Hono();
@@ -104,4 +109,21 @@ console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sess
 
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
+}
+
+// ── Reconnection watchdog ────────────────────────────────────────────────────
+// After a server restart, restored CLI processes may not reconnect their
+// WebSocket. Give them a grace period, then kill + relaunch any that are
+// still in "starting" state (alive but no WS connection).
+const RECONNECT_GRACE_MS = 10_000;
+const starting = launcher.getStartingSessions();
+if (starting.length > 0) {
+  console.log(`[server] Waiting ${RECONNECT_GRACE_MS / 1000}s for ${starting.length} CLI process(es) to reconnect...`);
+  setTimeout(async () => {
+    const stale = launcher.getStartingSessions();
+    for (const info of stale) {
+      console.log(`[server] CLI for session ${info.sessionId} did not reconnect, relaunching...`);
+      await launcher.relaunch(info.sessionId);
+    }
+  }, RECONNECT_GRACE_MS);
 }

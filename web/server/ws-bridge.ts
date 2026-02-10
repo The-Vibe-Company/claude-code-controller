@@ -72,6 +72,12 @@ function makeDefaultState(sessionId: string): SessionState {
 export class WsBridge {
   private sessions = new Map<string, Session>();
   private store: SessionStore | null = null;
+  private onCLISessionId: ((sessionId: string, cliSessionId: string) => void) | null = null;
+
+  /** Register a callback for when we learn the CLI's internal session ID. */
+  onCLISessionIdReceived(cb: (sessionId: string, cliSessionId: string) => void): void {
+    this.onCLISessionId = cb;
+  }
 
   /** Attach a persistent store. Call restoreFromDisk() after. */
   setStore(store: SessionStore): void {
@@ -339,6 +345,12 @@ export class WsBridge {
       // Keep the launcher-assigned session_id as the canonical ID.
       // The CLI may report its own internal session_id which differs
       // from the launcher UUID, causing duplicate entries in the sidebar.
+
+      // Store the CLI's internal session_id so we can --resume on relaunch
+      if (init.session_id && this.onCLISessionId) {
+        this.onCLISessionId(session.id, init.session_id);
+      }
+
       session.state.model = init.model;
       session.state.cwd = init.cwd;
       session.state.tools = init.tools;

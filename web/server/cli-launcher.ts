@@ -12,6 +12,8 @@ export interface SdkSessionInfo {
   permissionMode?: string;
   cwd: string;
   createdAt: number;
+  /** The CLI's internal session ID (from system.init), used for --resume */
+  cliSessionId?: string;
 }
 
 export interface LaunchOptions {
@@ -66,7 +68,7 @@ export class CliLauncher {
       if (info.pid && info.state !== "exited") {
         try {
           process.kill(info.pid, 0); // signal 0 = just check if alive
-          info.state = "connected"; // assume connected, CLI will reconnect via WS
+          info.state = "starting"; // WS not yet re-established, wait for CLI to reconnect
           this.sessions.set(info.sessionId, info);
           recovered++;
         } catch {
@@ -94,6 +96,63 @@ export class CliLauncher {
     const sessionId = randomUUID();
     const cwd = options.cwd || process.cwd();
 
+    const info: SdkSessionInfo = {
+      sessionId,
+      state: "starting",
+      model: options.model,
+      permissionMode: options.permissionMode,
+      cwd,
+      createdAt: Date.now(),
+    };
+
+    this.sessions.set(sessionId, info);
+    this.spawnCLI(sessionId, info, options);
+    return info;
+  }
+
+  /**
+   * Relaunch a CLI process for an existing session.
+   * Kills the old process if still alive, then spawns a fresh CLI
+   * that connects back to the same session in the WsBridge.
+   */
+  async relaunch(sessionId: string): Promise<boolean> {
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+
+    // Kill old process if still alive
+    const oldProc = this.processes.get(sessionId);
+    if (oldProc) {
+      try {
+        oldProc.kill("SIGTERM");
+        await Promise.race([
+          oldProc.exited,
+          new Promise((r) => setTimeout(r, 2000)),
+        ]);
+      } catch {}
+      this.processes.delete(sessionId);
+    } else if (info.pid) {
+      // Process from a previous server instance — kill by PID
+      try { process.kill(info.pid, "SIGTERM"); } catch {}
+    }
+
+    info.state = "starting";
+    this.spawnCLI(sessionId, info, {
+      model: info.model,
+      permissionMode: info.permissionMode,
+      cwd: info.cwd,
+      resumeSessionId: info.cliSessionId,
+    });
+    return true;
+  }
+
+  /**
+   * Get all sessions in "starting" state (awaiting CLI WebSocket connection).
+   */
+  getStartingSessions(): SdkSessionInfo[] {
+    return Array.from(this.sessions.values()).filter((s) => s.state === "starting");
+  }
+
+  private spawnCLI(sessionId: string, info: SdkSessionInfo, options: LaunchOptions & { resumeSessionId?: string }): void {
     let binary = options.claudeBinary || "claude";
     if (!binary.startsWith("/")) {
       try {
@@ -125,19 +184,13 @@ export class CliLauncher {
       }
     }
 
-    // -p "" is required for headless mode, but ignored when --sdk-url is used
-    args.push("-p", "");
-
-    const info: SdkSessionInfo = {
-      sessionId,
-      state: "starting",
-      model: options.model,
-      permissionMode: options.permissionMode,
-      cwd,
-      createdAt: Date.now(),
-    };
-
-    this.sessions.set(sessionId, info);
+    // When relaunching, use --resume to restore the CLI's conversation context.
+    // Otherwise use -p "" for headless mode on fresh sessions.
+    if (options.resumeSessionId) {
+      args.push("--resume", options.resumeSessionId);
+    } else {
+      args.push("-p", "");
+    }
 
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
@@ -148,7 +201,7 @@ export class CliLauncher {
     console.log(`[cli-launcher] Spawning session ${sessionId}: ${binary} ${args.join(" ")}`);
 
     const proc = Bun.spawn([binary, ...args], {
-      cwd,
+      cwd: info.cwd,
       env,
       stdout: "pipe",
       stderr: "pipe",
@@ -173,7 +226,6 @@ export class CliLauncher {
     });
 
     this.persistState();
-    return info;
   }
 
   /**
@@ -184,6 +236,18 @@ export class CliLauncher {
     if (session && (session.state === "starting" || session.state === "connected")) {
       session.state = "connected";
       console.log(`[cli-launcher] Session ${sessionId} connected via WebSocket`);
+      this.persistState();
+    }
+  }
+
+  /**
+   * Store the CLI's internal session ID (from system.init message).
+   * This is needed for --resume on relaunch.
+   */
+  setCLISessionId(sessionId: string, cliSessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.cliSessionId = cliSessionId;
       this.persistState();
     }
   }
