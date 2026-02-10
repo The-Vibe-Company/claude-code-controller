@@ -36,7 +36,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-cc-muted uppercase tracking-wider">Cost</span>
             <span className="text-[13px] font-medium text-cc-fg tabular-nums">
-              ${session.total_cost_usd.toFixed(4)}
+              ${session.total_cost_usd.toFixed(2)}
             </span>
           </div>
 

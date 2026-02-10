@@ -36,18 +36,34 @@ wsBridge.onCLISessionIdReceived((sessionId, cliSessionId) => {
 });
 
 // Auto-relaunch CLI when a browser connects to a session with no CLI
-const relaunchingSet = new Set<string>();
+const relaunchCooldowns = new Map<string, { count: number; timer: ReturnType<typeof setTimeout> | null }>();
+
+const BASE_RELAUNCH_DELAY = 5_000;  // 5s base
+const MAX_RELAUNCH_DELAY = 60_000;  // 60s max
+
 wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
-  if (relaunchingSet.has(sessionId)) return;
+  const cooldown = relaunchCooldowns.get(sessionId);
+  if (cooldown?.timer) return; // Already waiting
+
   const info = launcher.getSession(sessionId);
   if (info?.archived) return;
   if (info && info.state !== "starting") {
-    relaunchingSet.add(sessionId);
-    console.log(`[server] Auto-relaunching CLI for session ${sessionId}`);
+    const count = cooldown?.count ?? 0;
+    const delay = Math.min(BASE_RELAUNCH_DELAY * Math.pow(2, count), MAX_RELAUNCH_DELAY);
+
+    relaunchCooldowns.set(sessionId, { count: count + 1, timer: setTimeout(() => {
+      const cd = relaunchCooldowns.get(sessionId);
+      if (cd) cd.timer = null;
+    }, delay) });
+
+    console.log(`[server] Auto-relaunching CLI for session ${sessionId} (attempt ${count + 1}, next cooldown ${delay / 1000}s)`);
     try {
       await launcher.relaunch(sessionId);
-    } finally {
-      setTimeout(() => relaunchingSet.delete(sessionId), 5000);
+      // Reset backoff on successful relaunch
+      const cd = relaunchCooldowns.get(sessionId);
+      if (cd) cd.count = 0;
+    } catch (err) {
+      console.error(`[server] Relaunch failed for ${sessionId}:`, err);
     }
   }
 });
@@ -118,6 +134,8 @@ const server = Bun.serve<SocketData>({
       if (data.kind === "cli") {
         wsBridge.handleCLIOpen(ws, data.sessionId);
         launcher.markConnected(data.sessionId);
+        // Reset relaunch backoff on successful CLI connection
+        relaunchCooldowns.delete(data.sessionId);
       } else if (data.kind === "browser") {
         wsBridge.handleBrowserOpen(ws, data.sessionId);
       }

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SessionState, PermissionRequest, ChatMessage, SdkSessionInfo, TaskItem } from "./types.js";
+import { safeStorage } from "./utils/safe-storage";
 
 interface AppState {
   // Sessions
@@ -106,7 +107,7 @@ interface AppState {
 function getInitialSessionNames(): Map<string, string> {
   if (typeof window === "undefined") return new Map();
   try {
-    return new Map(JSON.parse(localStorage.getItem("cc-session-names") || "[]"));
+    return new Map(JSON.parse(safeStorage.getItem("cc-session-names") || "[]"));
   } catch {
     return new Map();
   }
@@ -114,12 +115,12 @@ function getInitialSessionNames(): Map<string, string> {
 
 function getInitialSessionId(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("cc-current-session") || null;
+  return safeStorage.getItem("cc-current-session") || null;
 }
 
 function getInitialDarkMode(): boolean {
   if (typeof window === "undefined") return false;
-  const stored = localStorage.getItem("cc-dark-mode");
+  const stored = safeStorage.getItem("cc-dark-mode");
   if (stored !== null) return stored === "true";
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -150,27 +151,27 @@ export const useStore = create<AppState>((set) => ({
   editorLoading: new Map(),
 
   setDarkMode: (v) => {
-    localStorage.setItem("cc-dark-mode", String(v));
+    safeStorage.setItem("cc-dark-mode", String(v));
     set({ darkMode: v });
   },
   toggleDarkMode: () =>
     set((s) => {
       const next = !s.darkMode;
-      localStorage.setItem("cc-dark-mode", String(next));
+      safeStorage.setItem("cc-dark-mode", String(next));
       return { darkMode: next };
     }),
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
   setTaskPanelOpen: (open) => set({ taskPanelOpen: open }),
   newSession: () => {
-    localStorage.removeItem("cc-current-session");
+    safeStorage.removeItem("cc-current-session");
     set((s) => ({ currentSessionId: null, homeResetKey: s.homeResetKey + 1 }));
   },
 
   setCurrentSession: (id) => {
     if (id) {
-      localStorage.setItem("cc-current-session", id);
+      safeStorage.setItem("cc-current-session", id);
     } else {
-      localStorage.removeItem("cc-current-session");
+      safeStorage.removeItem("cc-current-session");
     }
     set({ currentSessionId: id });
   },
@@ -226,9 +227,9 @@ export const useStore = create<AppState>((set) => ({
       editorUrl.delete(sessionId);
       const editorLoading = new Map(s.editorLoading);
       editorLoading.delete(sessionId);
-      localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
+      safeStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
       if (s.currentSessionId === sessionId) {
-        localStorage.removeItem("cc-current-session");
+        safeStorage.removeItem("cc-current-session");
       }
       return {
         sessions,
@@ -377,7 +378,7 @@ export const useStore = create<AppState>((set) => ({
     set((s) => {
       const sessionNames = new Map(s.sessionNames);
       sessionNames.set(sessionId, name);
-      localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
+      safeStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
       return { sessionNames };
     }),
 

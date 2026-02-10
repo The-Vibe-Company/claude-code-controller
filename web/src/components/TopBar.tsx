@@ -11,9 +11,15 @@ export function TopBar() {
   const setTaskPanelOpen = useStore((s) => s.setTaskPanelOpen);
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
+  const sessionNames = useStore((s) => s.sessionNames);
+  const sessions = useStore((s) => s.sessions);
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
+  const session = currentSessionId ? sessions.get(currentSessionId) : null;
+  const displayName = currentSessionId
+    ? sessionNames.get(currentSessionId) || session?.model || currentSessionId.slice(0, 8) || ""
+    : "";
 
   return (
     <header className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-cc-card border-b border-cc-border">
@@ -27,6 +33,13 @@ export function TopBar() {
             <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
           </svg>
         </button>
+
+        {/* Session name */}
+        {currentSessionId && (
+          <span className="text-sm font-medium text-cc-fg truncate max-w-[200px]" title={displayName}>
+            {displayName}
+          </span>
+        )}
 
         {/* Connection status */}
         {currentSessionId && (

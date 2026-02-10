@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useStore } from "./store.js";
-import { connectSession } from "./ws.js";
+import { connectSession, disconnectSession } from "./ws.js";
+import { api } from "./api.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ChatView } from "./components/ChatView.js";
 import { TopBar } from "./components/TopBar.js";
@@ -35,6 +36,117 @@ export default function App() {
     if (restoredId) {
       connectSession(restoredId);
     }
+  }, []);
+
+  // Helper functions for keyboard shortcuts
+  function archiveCurrentSession() {
+    const { currentSessionId } = useStore.getState();
+    if (!currentSessionId) return;
+    disconnectSession(currentSessionId);
+    api.archiveSession(currentSessionId);
+    useStore.getState().newSession();
+  }
+
+  function navigateSession(direction: number) {
+    const state = useStore.getState();
+    const { currentSessionId } = state;
+    // Get non-archived sessions sorted by creation time
+    const sessions = state.sdkSessions
+      .filter(s => !s.archived)
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+    if (sessions.length === 0) return;
+
+    const currentIndex = sessions.findIndex(s => s.sessionId === currentSessionId);
+    const nextIndex = currentIndex === -1
+      ? 0
+      : (currentIndex + direction + sessions.length) % sessions.length;
+
+    const nextSession = sessions[nextIndex];
+    if (nextSession && nextSession.sessionId !== currentSessionId) {
+      if (currentSessionId) disconnectSession(currentSessionId);
+      state.setCurrentSession(nextSession.sessionId);
+      connectSession(nextSession.sessionId);
+    }
+  }
+
+  // Keyboard shortcuts and mouse navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+
+      // Ctrl/Cmd+T — New session (skip when typing in inputs)
+      if (mod && e.key === "t" && !e.shiftKey && !e.altKey) {
+        if (isInputFocused) return;
+        e.preventDefault();
+        useStore.getState().newSession();
+        return;
+      }
+
+      // Alt+X — Archive current session
+      if (e.altKey && e.key === "x" && !mod && !e.shiftKey) {
+        e.preventDefault();
+        archiveCurrentSession();
+        return;
+      }
+
+      // Ctrl+Delete — Archive current session
+      if (mod && e.key === "Delete" && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        archiveCurrentSession();
+        return;
+      }
+
+      // Alt+Ctrl/Cmd+PageUp — Previous session
+      if (e.altKey && mod && e.key === "PageUp") {
+        e.preventDefault();
+        navigateSession(-1);
+        return;
+      }
+
+      // Alt+Ctrl/Cmd+PageDown — Next session
+      if (e.altKey && mod && e.key === "PageDown") {
+        e.preventDefault();
+        navigateSession(1);
+        return;
+      }
+    };
+
+    // Mouse back/forward buttons for session navigation
+    const handleMouseDown = (e: MouseEvent) => {
+      if (e.button === 3) { // Back button
+        e.preventDefault();
+        navigateSession(-1);
+      } else if (e.button === 4) { // Forward button
+        e.preventDefault();
+        navigateSession(1);
+      }
+    };
+
+    // Middle-click to archive
+    const handleAuxClick = (e: MouseEvent) => {
+      if (e.button === 1) { // Middle click
+        // Only in sidebar area
+        const sidebar = (e.target as HTMLElement).closest('[data-sidebar]');
+        if (sidebar) {
+          e.preventDefault();
+          archiveCurrentSession();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("auxclick", handleAuxClick);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("auxclick", handleAuxClick);
+    };
   }, []);
 
   if (hash === "#/playground") {

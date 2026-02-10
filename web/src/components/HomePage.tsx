@@ -7,6 +7,7 @@ import { generateUniqueSessionName } from "../utils/names.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { safeStorage } from "../utils/safe-storage";
 
 interface ImageAttachment {
   name: string;
@@ -51,7 +52,7 @@ export function HomePage() {
 
   // Environment state
   const [envs, setEnvs] = useState<CompanionEnv[]>([]);
-  const [selectedEnv, setSelectedEnv] = useState(() => localStorage.getItem("cc-selected-env") || "");
+  const [selectedEnv, setSelectedEnv] = useState(() => safeStorage.getItem("cc-selected-env") || "");
   const [showEnvDropdown, setShowEnvDropdown] = useState(false);
   const [showEnvManager, setShowEnvManager] = useState(false);
 
@@ -597,7 +598,7 @@ export function HomePage() {
                 <button
                   onClick={() => {
                     setSelectedEnv("");
-                    localStorage.setItem("cc-selected-env", "");
+                    safeStorage.setItem("cc-selected-env", "");
                     setShowEnvDropdown(false);
                   }}
                   className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer ${
@@ -611,7 +612,7 @@ export function HomePage() {
                     key={env.slug}
                     onClick={() => {
                       setSelectedEnv(env.slug);
-                      localStorage.setItem("cc-selected-env", env.slug);
+                      safeStorage.setItem("cc-selected-env", env.slug);
                       setShowEnvDropdown(false);
                     }}
                     className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-1 ${

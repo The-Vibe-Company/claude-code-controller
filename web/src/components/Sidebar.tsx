@@ -223,28 +223,30 @@ export function Sidebar() {
         >
           <div className="flex items-center gap-2">
             <span className="relative flex shrink-0">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  archived
-                    ? "bg-cc-muted opacity-40"
-                    : permCount > 0
-                    ? "bg-cc-warning"
-                    : s.sdkState === "exited"
-                    ? "bg-cc-muted opacity-40"
-                    : s.isConnected
-                    ? isRunning
-                      ? "bg-cc-success"
-                      : isCompacting
-                      ? "bg-cc-warning"
-                      : "bg-cc-success opacity-60"
-                    : "bg-cc-muted opacity-40"
-                }`}
-              />
-              {!archived && permCount > 0 && (
-                <span className="absolute inset-0 w-2 h-2 rounded-full bg-cc-warning/40 animate-[pulse-dot_1.5s_ease-in-out_infinite]" />
-              )}
-              {!archived && permCount === 0 && isRunning && s.isConnected && (
-                <span className="absolute inset-0 w-2 h-2 rounded-full bg-cc-success/40 animate-[pulse-dot_1.5s_ease-in-out_infinite]" />
+              {(isRunning || isCompacting) && !archived ? (
+                <svg className="w-2.5 h-2.5 animate-spin text-cc-primary" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      archived
+                        ? "bg-cc-muted opacity-40"
+                        : permCount > 0
+                        ? "bg-cc-warning"
+                        : s.sdkState === "exited"
+                        ? "bg-cc-muted opacity-40"
+                        : s.isConnected
+                        ? "bg-cc-success opacity-60"
+                        : "bg-cc-muted opacity-40"
+                    }`}
+                  />
+                  {!archived && permCount > 0 && (
+                    <span className="absolute inset-0 w-2 h-2 rounded-full bg-cc-warning/40 animate-[pulse-dot_1.5s_ease-in-out_infinite]" />
+                  )}
+                </>
               )}
             </span>
             {isEditing ? (
@@ -273,28 +275,27 @@ export function Sidebar() {
               </span>
             )}
           </div>
-          {dirName && (
-            <p className="text-[11px] text-cc-muted truncate mt-0.5 ml-4">
-              {dirName}
-            </p>
-          )}
-          {s.gitBranch && (
-            <div className="flex items-center gap-1.5 mt-0.5 ml-4 text-[11px] text-cc-muted">
-              <span className="flex items-center gap-1 truncate">
-                {s.isWorktree ? (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                    <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v5.256a2.25 2.25 0 101.5 0V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zm7.5-9.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V7A2.5 2.5 0 0110 9.5H6a1 1 0 000 2h4a2.5 2.5 0 012.5 2.5v.628a2.25 2.25 0 11-1.5 0V14a1 1 0 00-1-1H6a2.5 2.5 0 01-2.5-2.5V10a2.5 2.5 0 012.5-2.5h4a1 1 0 001-1V5.372a2.25 2.25 0 01-1.5-2.122z" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                    <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                  </svg>
-                )}
-                <span className="truncate">{s.gitBranch}</span>
-                {s.isWorktree && (
-                  <span className="text-[9px] bg-cc-primary/10 text-cc-primary px-0.5 rounded">wt</span>
-                )}
-              </span>
+          {(dirName || s.gitBranch) && (
+            <div className="flex items-center gap-1.5 mt-0.5 ml-4 text-[11px] text-cc-muted truncate">
+              {dirName && <span className="truncate">{dirName}</span>}
+              {dirName && s.gitBranch && <span className="text-cc-border">/</span>}
+              {s.gitBranch && (
+                <span className="flex items-center gap-1 truncate">
+                  {s.isWorktree ? (
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
+                      <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v5.256a2.25 2.25 0 101.5 0V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zm7.5-9.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V7A2.5 2.5 0 0110 9.5H6a1 1 0 000 2h4a2.5 2.5 0 012.5 2.5v.628a2.25 2.25 0 11-1.5 0V14a1 1 0 00-1-1H6a2.5 2.5 0 01-2.5-2.5V10a2.5 2.5 0 012.5-2.5h4a1 1 0 001-1V5.372a2.25 2.25 0 01-1.5-2.122z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
+                      <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
+                    </svg>
+                  )}
+                  <span className="truncate">{s.gitBranch}</span>
+                  {s.isWorktree && (
+                    <span className="text-[9px] bg-cc-primary/10 text-cc-primary px-0.5 rounded">wt</span>
+                  )}
+                </span>
+              )}
               {(s.gitAhead > 0 || s.gitBehind > 0) && (
                 <span className="flex items-center gap-0.5 text-[10px]">
                   {s.gitAhead > 0 && <span className="text-green-500">{s.gitAhead}&#8593;</span>}
@@ -356,7 +357,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-[260px] h-full flex flex-col bg-cc-sidebar border-r border-cc-border">
+    <aside data-sidebar className="w-[260px] h-full flex flex-col bg-cc-sidebar border-r border-cc-border">
       {/* Header */}
       <div className="p-4 pb-3">
         <div className="flex items-center gap-2 mb-4">

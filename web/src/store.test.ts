@@ -21,6 +21,7 @@ vi.hoisted(() => {
 
 import { useStore } from "./store.js";
 import type { SessionState, PermissionRequest, ChatMessage, TaskItem, SdkSessionInfo } from "./types.js";
+import { safeStorage } from "./utils/safe-storage";
 
 function makeSession(id: string): SessionState {
   return {
@@ -81,7 +82,7 @@ function makeTask(overrides: Partial<TaskItem> = {}): TaskItem {
 
 beforeEach(() => {
   useStore.getState().reset();
-  localStorage.clear();
+  safeStorage.clear();
 });
 
 // ─── Session management ─────────────────────────────────────────────────────
@@ -196,14 +197,14 @@ describe("Session management", () => {
   it("setCurrentSession: persists to localStorage", () => {
     useStore.getState().setCurrentSession("s1");
     expect(useStore.getState().currentSessionId).toBe("s1");
-    expect(localStorage.getItem("cc-current-session")).toBe("s1");
+    expect(safeStorage.getItem("cc-current-session")).toBe("s1");
   });
 
   it("setCurrentSession(null): removes from localStorage", () => {
     useStore.getState().setCurrentSession("s1");
     useStore.getState().setCurrentSession(null);
     expect(useStore.getState().currentSessionId).toBeNull();
-    expect(localStorage.getItem("cc-current-session")).toBeNull();
+    expect(safeStorage.getItem("cc-current-session")).toBeNull();
   });
 });
 
@@ -392,7 +393,7 @@ describe("Session names", () => {
 
     expect(useStore.getState().sessionNames.get("s1")).toBe("My Session");
 
-    const stored = JSON.parse(localStorage.getItem("cc-session-names") || "[]");
+    const stored = JSON.parse(safeStorage.getItem("cc-session-names") || "[]");
     expect(stored).toEqual([["s1", "My Session"]]);
   });
 
@@ -402,7 +403,7 @@ describe("Session names", () => {
 
     expect(useStore.getState().sessionNames.get("s1")).toBe("Second");
 
-    const stored = JSON.parse(localStorage.getItem("cc-session-names") || "[]");
+    const stored = JSON.parse(safeStorage.getItem("cc-session-names") || "[]");
     const map = new Map(stored);
     expect(map.get("s1")).toBe("Second");
   });
@@ -416,11 +417,11 @@ describe("UI state", () => {
     useStore.getState().toggleDarkMode();
 
     expect(useStore.getState().darkMode).toBe(!initial);
-    expect(localStorage.getItem("cc-dark-mode")).toBe(String(!initial));
+    expect(safeStorage.getItem("cc-dark-mode")).toBe(String(!initial));
 
     useStore.getState().toggleDarkMode();
     expect(useStore.getState().darkMode).toBe(initial);
-    expect(localStorage.getItem("cc-dark-mode")).toBe(String(initial));
+    expect(safeStorage.getItem("cc-dark-mode")).toBe(String(initial));
   });
 
   it("newSession: clears currentSessionId and increments homeResetKey", () => {
@@ -431,7 +432,7 @@ describe("UI state", () => {
 
     expect(useStore.getState().currentSessionId).toBeNull();
     expect(useStore.getState().homeResetKey).toBe(keyBefore + 1);
-    expect(localStorage.getItem("cc-current-session")).toBeNull();
+    expect(safeStorage.getItem("cc-current-session")).toBeNull();
   });
 });
 

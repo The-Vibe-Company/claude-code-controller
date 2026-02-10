@@ -4,6 +4,7 @@ import { generateUniqueSessionName } from "./utils/names.js";
 
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const reconnectAttempts = new Map<string, number>();
 const taskCounters = new Map<string, number>();
 /** Track processed tool_use IDs to prevent duplicate task creation */
 const processedToolUseIds = new Map<string, Set<string>>();
@@ -379,12 +380,13 @@ export function connectSession(sessionId: string) {
 
   ws.onopen = () => {
     useStore.getState().setConnectionStatus(sessionId, "connected");
-    // Clear any reconnect timer
+    // Clear any reconnect timer and reset backoff counter
     const timer = reconnectTimers.get(sessionId);
     if (timer) {
       clearTimeout(timer);
       reconnectTimers.delete(sessionId);
     }
+    reconnectAttempts.delete(sessionId);
   };
 
   ws.onmessage = (event) => handleMessage(sessionId, event);
@@ -400,16 +402,23 @@ export function connectSession(sessionId: string) {
   };
 }
 
+const BASE_RECONNECT_DELAY = 2_000;  // 2s base
+const MAX_RECONNECT_DELAY = 30_000;  // 30s max
+
 function scheduleReconnect(sessionId: string) {
   if (reconnectTimers.has(sessionId)) return;
-  // Only reconnect if the session is still the current one
+  const attempts = reconnectAttempts.get(sessionId) ?? 0;
+  const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(2, attempts), MAX_RECONNECT_DELAY);
+  reconnectAttempts.set(sessionId, attempts + 1);
+
+  console.log(`[ws] Reconnecting ${sessionId.slice(0, 8)} in ${delay / 1000}s (attempt ${attempts + 1})`);
   const timer = setTimeout(() => {
     reconnectTimers.delete(sessionId);
     const store = useStore.getState();
     if (store.currentSessionId === sessionId || store.sessions.has(sessionId)) {
       connectSession(sessionId);
     }
-  }, 2000);
+  }, delay);
   reconnectTimers.set(sessionId, timer);
 }
 
@@ -419,6 +428,7 @@ export function disconnectSession(sessionId: string) {
     clearTimeout(timer);
     reconnectTimers.delete(sessionId);
   }
+  reconnectAttempts.delete(sessionId);
   const ws = sockets.get(sessionId);
   if (ws) {
     ws.close();

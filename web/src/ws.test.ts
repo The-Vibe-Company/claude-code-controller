@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { SessionState, PermissionRequest, ContentBlock } from "./types.js";
+import { safeStorage } from "./utils/safe-storage";
 
 // Mock the names utility before any imports
 vi.mock("./utils/names.js", () => ({
@@ -53,7 +54,7 @@ beforeEach(async () => {
   const storeModule = await import("./store.js");
   useStore = storeModule.useStore;
   useStore.getState().reset();
-  localStorage.clear();
+  safeStorage.clear();
 
   wsModule = await import("./ws.js");
 });
