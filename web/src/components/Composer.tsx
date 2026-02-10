@@ -223,15 +223,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
   function toggleMode() {
     if (!isConnected) return;
     const store = useStore.getState();
-    if (!isPlan) {
-      store.setPreviousPermissionMode(sessionId, currentMode);
-      sendToSession(sessionId, { type: "set_permission_mode", mode: "plan" });
-      store.updateSession(sessionId, { permissionMode: "plan" });
-    } else {
-      const restoreMode = previousMode || "acceptEdits";
-      sendToSession(sessionId, { type: "set_permission_mode", mode: restoreMode });
-      store.updateSession(sessionId, { permissionMode: restoreMode });
-    }
+
+    // Cycle through: bypassPermissions -> plan -> dontAsk -> bypassPermissions
+    const modeOrder = ["bypassPermissions", "plan", "dontAsk"];
+    const currentIndex = modeOrder.indexOf(currentMode);
+    const nextIndex = (currentIndex + 1) % modeOrder.length;
+    const nextMode = modeOrder[nextIndex];
+
+    sendToSession(sessionId, { type: "set_permission_mode", mode: nextMode });
+    store.updateSession(sessionId, { permissionMode: nextMode });
   }
 
   const sessionStatus = useStore((s) => s.sessionStatus);
@@ -359,6 +359,8 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   ? "opacity-30 cursor-not-allowed text-cc-muted"
                   : isPlan
                   ? "text-cc-primary hover:bg-cc-primary/10"
+                  : currentMode === "dontAsk"
+                  ? "text-cc-error hover:bg-cc-error/10"
                   : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
               }`}
               title="Toggle mode (Shift+Tab)"
@@ -368,13 +370,20 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
                   <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
                 </svg>
+              ) : currentMode === "dontAsk" ? (
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-cc-error">
+                  <path d="M8 1l1.5 4.5h4.5l-3.5 2.5 1.5 4.5L8 10l-3.5 2.5 1.5-4.5-3.5-2.5h4.5L8 1z" />
+                  <path d="M7.5 5.5h1v3h-1zM8 11a.5.5 0 100-1 .5.5 0 000 1z" fill="currentColor" />
+                </svg>
               ) : (
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
               )}
-              <span>{isPlan ? "plan mode" : "accept edits"}</span>
+              <span>
+                {isPlan ? "plan" : currentMode === "dontAsk" ? "dangerous ⚠️" : "agent"}
+              </span>
             </button>
 
             {/* Right: image + send/stop */}

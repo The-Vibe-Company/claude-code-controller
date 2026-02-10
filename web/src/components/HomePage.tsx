@@ -34,6 +34,7 @@ const MODELS = [
 const MODES = [
   { value: "bypassPermissions", label: "Agent" },
   { value: "plan", label: "Plan" },
+  { value: "dontAsk", label: "Dangerous ⚠️" },
 ];
 
 const RECENT_DIRS_KEY = "cc-recent-dirs";
@@ -187,7 +188,10 @@ export function HomePage() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
-      setMode(mode === "plan" ? "bypassPermissions" : "plan");
+      const modeOrder = ["bypassPermissions", "plan", "dontAsk"];
+      const currentIndex = modeOrder.indexOf(mode);
+      const nextIndex = (currentIndex + 1) % modeOrder.length;
+      setMode(modeOrder[nextIndex]);
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
