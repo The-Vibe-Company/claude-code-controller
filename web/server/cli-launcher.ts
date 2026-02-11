@@ -42,6 +42,8 @@ export interface LaunchOptions {
   allowedTools?: string[];
   env?: Record<string, string>;
   backendType?: BackendType;
+  /** Codex sandbox mode. */
+  codexSandbox?: "workspace-write" | "danger-full-access";
   /** Pre-resolved worktree info from the session creation flow */
   worktreeInfo?: {
     isWorktree: boolean;
@@ -349,6 +351,7 @@ export class CliLauncher {
       cwd: info.cwd,
       approvalMode: options.permissionMode,
       threadId: info.cliSessionId,
+      sandbox: options.codexSandbox,
     });
 
     // Handle init errors — mark session as exited so UI shows failure

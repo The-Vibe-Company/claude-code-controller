@@ -48,6 +48,9 @@ export function HomePage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
+  const [codexInternetAccess, setCodexInternetAccess] = useState(() =>
+    localStorage.getItem("cc-codex-internet-access") === "1",
+  );
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -258,6 +261,7 @@ export function HomePage() {
         createBranch: branchName && isNewBranch ? true : undefined,
         useWorktree: useWorktree || undefined,
         backend,
+        codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
       });
       const sessionId = result.sessionId;
 
@@ -457,6 +461,28 @@ export function HomePage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Codex internet access toggle */}
+          {backend === "codex" && (
+            <button
+              onClick={() => {
+                const next = !codexInternetAccess;
+                setCodexInternetAccess(next);
+                localStorage.setItem("cc-codex-internet-access", next ? "1" : "0");
+              }}
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                codexInternetAccess
+                  ? "bg-cc-primary/15 text-cc-primary font-medium"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              title="Allow Codex internet/network access for this session"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-70">
+                <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 1.5c.8 0 1.55.22 2.2.61-.39.54-.72 1.21-.95 1.98H6.75c-.23-.77-.56-1.44-.95-1.98A4.47 4.47 0 018 3.5zm-3.2 1.3c.3.4.57.86.78 1.37H3.83c.24-.53.57-1.01.97-1.37zm-.97 2.87h2.15c.07.44.12.9.12 1.38 0 .48-.05.94-.12 1.38H3.83A4.56 4.56 0 013.5 9c0-.47.12-.92.33-1.33zm2.03 4.08c.39-.54.72-1.21.95-1.98h2.38c.23.77.56 1.44.95 1.98A4.47 4.47 0 018 12.5c-.8 0-1.55-.22-2.2-.61zm4.34-1.37c.07-.44.12-.9.12-1.38 0-.48-.05-.94-.12-1.38h2.15c.21.41.33.86.33 1.33 0 .47-.12.92-.33 1.33H10.2zm1.37-3.58h-1.75c-.21-.51-.48-.97-.78-1.37.4.36.73.84.97 1.37z" />
+              </svg>
+              <span>Internet</span>
+            </button>
           )}
 
           {/* Folder selector */}

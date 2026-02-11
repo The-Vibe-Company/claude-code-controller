@@ -182,6 +182,11 @@ export class WsBridge {
     return Array.from(this.sessions.values()).map((s) => s.state);
   }
 
+  getCodexRateLimits(sessionId: string) {
+    const session = this.sessions.get(sessionId);
+    return session?.codexAdapter?.getRateLimits() ?? null;
+  }
+
   isCliConnected(sessionId: string): boolean {
     const session = this.sessions.get(sessionId);
     if (!session) return false;

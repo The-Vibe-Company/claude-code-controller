@@ -42,13 +42,13 @@ The UI permission modes map to Codex approval policies via `mapApprovalPolicy()`
 | UI Permission Mode | Codex `approvalPolicy` | Behavior |
 |---|---|---|
 | `bypassPermissions` | `"never"` | Auto-approve all tool calls |
-| `acceptEdits` | `"unless-trusted"` | Prompt for untrusted operations |
-| `plan` | `"unless-trusted"` | Prompt for untrusted operations |
-| `default` | `"unless-trusted"` | Prompt for untrusted operations |
+| `acceptEdits` | `"untrusted"` | Prompt for untrusted operations |
+| `plan` | `"untrusted"` | Prompt for untrusted operations |
+| `default` | `"untrusted"` | Prompt for untrusted operations |
 
 Valid Codex enum values (kebab-case only):
 - **sandbox**: `"read-only"`, `"workspace-write"`, `"danger-full-access"`
-- **approvalPolicy**: `"never"`, `"unless-trusted"`, `"on-failure"`, `"on-request"`
+- **approvalPolicy**: `"never"`, `"untrusted"`, `"on-failure"`, `"on-request"`
 
 ## Message Translation: Codex → Browser
 

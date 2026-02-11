@@ -11,8 +11,14 @@ import type { WorktreeTracker } from "./worktree-tracker.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import { getUsageLimits } from "./usage-limits.js";
 
-export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionStore: SessionStore, worktreeTracker: WorktreeTracker) {
+export function createRoutes(
+  launcher: CliLauncher,
+  wsBridge: WsBridge,
+  sessionStore: SessionStore,
+  worktreeTracker: WorktreeTracker,
+) {
   const api = new Hono();
 
   // ─── SDK Sessions (--sdk-url) ─────────────────────────────────────
@@ -30,25 +36,42 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
       if (body.envSlug) {
         const companionEnv = envManager.getEnv(body.envSlug);
         if (companionEnv) {
-          console.log(`[routes] Injecting env "${companionEnv.name}" (${Object.keys(companionEnv.variables).length} vars):`, Object.keys(companionEnv.variables).join(", "));
+          console.log(
+            `[routes] Injecting env "${companionEnv.name}" (${Object.keys(companionEnv.variables).length} vars):`,
+            Object.keys(companionEnv.variables).join(", "),
+          );
           envVars = { ...companionEnv.variables, ...body.env };
         } else {
-          console.warn(`[routes] Environment "${body.envSlug}" not found, ignoring`);
+          console.warn(
+            `[routes] Environment "${body.envSlug}" not found, ignoring`,
+          );
         }
       }
 
       let cwd = body.cwd;
-      let worktreeInfo: { isWorktree: boolean; repoRoot: string; branch: string; actualBranch: string; worktreePath: string } | undefined;
+      let worktreeInfo:
+        | {
+            isWorktree: boolean;
+            repoRoot: string;
+            branch: string;
+            actualBranch: string;
+            worktreePath: string;
+          }
+        | undefined;
 
       // If worktree is requested, set up a worktree for the selected branch
       if (body.useWorktree && body.branch && cwd) {
         const repoInfo = gitUtils.getRepoInfo(cwd);
         if (repoInfo) {
-          const result = gitUtils.ensureWorktree(repoInfo.repoRoot, body.branch, {
-            baseBranch: repoInfo.defaultBranch,
-            createBranch: body.createBranch,
-            forceNew: true,
-          });
+          const result = gitUtils.ensureWorktree(
+            repoInfo.repoRoot,
+            body.branch,
+            {
+              baseBranch: repoInfo.defaultBranch,
+              createBranch: body.createBranch,
+              forceNew: true,
+            },
+          );
           cwd = result.worktreePath;
           worktreeInfo = {
             isWorktree: true,
@@ -72,6 +95,9 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
         cwd,
         claudeBinary: body.claudeBinary,
         codexBinary: body.codexBinary,
+        codexSandbox: backend === "codex" && body.codexInternetAccess === true
+          ? "danger-full-access"
+          : "workspace-write",
         allowedTools: body.allowedTools,
         env: envVars,
         backendType: backend,
@@ -130,7 +156,8 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
   api.post("/sessions/:id/kill", async (c) => {
     const id = c.req.param("id");
     const killed = await launcher.kill(id);
-    if (!killed) return c.json({ error: "Session not found or already exited" }, 404);
+    if (!killed)
+      return c.json({ error: "Session not found or already exited" }, 404);
 
     return c.json({ ok: true });
   });
@@ -146,7 +173,6 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     const id = c.req.param("id");
     await launcher.kill(id);
 
-
     // Clean up worktree if no other sessions use it (force: delete is destructive)
     const worktreeResult = cleanupWorktree(id, true);
 
@@ -159,7 +185,6 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => ({}));
     await launcher.kill(id);
-
 
     // Clean up worktree if no other sessions use it
     const worktreeResult = cleanupWorktree(id, body.force);
@@ -255,7 +280,15 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
       dirs.sort((a, b) => a.name.localeCompare(b.name));
       return c.json({ path: basePath, dirs, home: homedir() });
     } catch {
-      return c.json({ error: "Cannot read directory", path: basePath, dirs: [], home: homedir() }, 400);
+      return c.json(
+        {
+          error: "Cannot read directory",
+          path: basePath,
+          dirs: [],
+          home: homedir(),
+        },
+        400,
+      );
     }
   });
 
@@ -284,11 +317,17 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
         const entries = await readdir(dir, { withFileTypes: true });
         const nodes: TreeNode[] = [];
         for (const entry of entries) {
-          if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+          if (entry.name.startsWith(".") || entry.name === "node_modules")
+            continue;
           const fullPath = join(dir, entry.name);
           if (entry.isDirectory()) {
             const children = await buildTree(fullPath, depth + 1);
-            nodes.push({ name: entry.name, path: fullPath, type: "directory", children });
+            nodes.push({
+              name: entry.name,
+              path: fullPath,
+              type: "directory",
+              children,
+            });
           } else if (entry.isFile()) {
             nodes.push({ name: entry.name, path: fullPath, type: "file" });
           }
@@ -320,7 +359,10 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
       const content = await readFile(absPath, "utf-8");
       return c.json({ path: absPath, content });
     } catch (e: unknown) {
-      return c.json({ error: e instanceof Error ? e.message : "Cannot read file" }, 404);
+      return c.json(
+        { error: e instanceof Error ? e.message : "Cannot read file" },
+        404,
+      );
     }
   });
 
@@ -336,7 +378,10 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
       await writeFile(absPath, content, "utf-8");
       return c.json({ ok: true, path: absPath });
     } catch (e: unknown) {
-      return c.json({ error: e instanceof Error ? e.message : "Cannot write file" }, 500);
+      return c.json(
+        { error: e instanceof Error ? e.message : "Cannot write file" },
+        500,
+      );
     }
   });
 
@@ -387,7 +432,10 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     const slug = c.req.param("slug");
     const body = await c.req.json().catch(() => ({}));
     try {
-      const env = envManager.updateEnv(slug, { name: body.name, variables: body.variables });
+      const env = envManager.updateEnv(slug, {
+        name: body.name,
+        variables: body.variables,
+      });
       if (!env) return c.json({ error: "Environment not found" }, 404);
       return c.json(env);
     } catch (e: unknown) {
@@ -434,9 +482,13 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
   api.post("/git/worktree", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { repoRoot, branch, baseBranch, createBranch } = body;
-    if (!repoRoot || !branch) return c.json({ error: "repoRoot and branch required" }, 400);
+    if (!repoRoot || !branch)
+      return c.json({ error: "repoRoot and branch required" }, 400);
     try {
-      const result = gitUtils.ensureWorktree(repoRoot, branch, { baseBranch, createBranch });
+      const result = gitUtils.ensureWorktree(repoRoot, branch, {
+        baseBranch,
+        createBranch,
+      });
       return c.json(result);
     } catch (e: unknown) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
@@ -446,7 +498,8 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
   api.delete("/git/worktree", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { repoRoot, worktreePath, force } = body;
-    if (!repoRoot || !worktreePath) return c.json({ error: "repoRoot and worktreePath required" }, 400);
+    if (!repoRoot || !worktreePath)
+      return c.json({ error: "repoRoot and worktreePath required" }, 400);
     const result = gitUtils.removeWorktree(repoRoot, worktreePath, { force });
     return c.json(result);
   });
@@ -464,22 +517,66 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     if (!cwd) return c.json({ error: "cwd required" }, 400);
     const result = gitUtils.gitPull(cwd);
     // Return refreshed ahead/behind counts
-    let git_ahead = 0, git_behind = 0;
+    let git_ahead = 0,
+      git_behind = 0;
     try {
-      const counts = execSync("git rev-list --left-right --count @{upstream}...HEAD", {
-        cwd, encoding: "utf-8", timeout: 3000,
-      }).trim();
+      const counts = execSync(
+        "git rev-list --left-right --count @{upstream}...HEAD",
+        {
+          cwd,
+          encoding: "utf-8",
+          timeout: 3000,
+        },
+      ).trim();
       const [behind, ahead] = counts.split(/\s+/).map(Number);
       git_ahead = ahead || 0;
       git_behind = behind || 0;
-    } catch { /* no upstream */ }
+    } catch {
+      /* no upstream */
+    }
     return c.json({ ...result, git_ahead, git_behind });
   });
 
+  // ─── Usage Limits ─────────────────────────────────────────────────────
+
+  api.get("/usage-limits", async (c) => {
+    const limits = await getUsageLimits();
+    return c.json(limits);
+  });
+
+  api.get("/sessions/:id/usage-limits", async (c) => {
+    const sessionId = c.req.param("id");
+    const session = wsBridge.getSession(sessionId);
+    const empty = { five_hour: null, seven_day: null, extra_usage: null };
+
+    if (session?.backendType === "codex") {
+      const rl = wsBridge.getCodexRateLimits(sessionId);
+      if (!rl) return c.json(empty);
+      const mapLimit = (l: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null) => {
+        if (!l) return null;
+        return {
+          utilization: l.usedPercent,
+          resets_at: l.resetsAt ? new Date(l.resetsAt * 1000).toISOString() : null,
+        };
+      };
+      return c.json({
+        five_hour: mapLimit(rl.primary),
+        seven_day: mapLimit(rl.secondary),
+        extra_usage: null,
+      });
+    }
+
+    // Claude sessions: use existing logic
+    const limits = await getUsageLimits();
+    return c.json(limits);
+  });
 
   // ─── Helper ─────────────────────────────────────────────────────────
 
-  function cleanupWorktree(sessionId: string, force?: boolean): { cleaned?: boolean; dirty?: boolean; path?: string } | undefined {
+  function cleanupWorktree(
+    sessionId: string,
+    force?: boolean,
+  ): { cleaned?: boolean; dirty?: boolean; path?: string } | undefined {
     const mapping = worktreeTracker.getBySession(sessionId);
     if (!mapping) return undefined;
 
@@ -492,20 +589,29 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     // Auto-remove if clean, or force-remove if requested
     const dirty = gitUtils.isWorktreeDirty(mapping.worktreePath);
     if (dirty && !force) {
-      console.log(`[routes] Worktree ${mapping.worktreePath} is dirty, not auto-removing`);
+      console.log(
+        `[routes] Worktree ${mapping.worktreePath} is dirty, not auto-removing`,
+      );
       // Keep the mapping so the worktree remains trackable
       return { cleaned: false, dirty: true, path: mapping.worktreePath };
     }
 
     // Delete the companion-managed branch if it differs from the conceptual branch
-    const branchToDelete = mapping.actualBranch && mapping.actualBranch !== mapping.branch
-      ? mapping.actualBranch
-      : undefined;
-    const result = gitUtils.removeWorktree(mapping.repoRoot, mapping.worktreePath, { force: dirty, branchToDelete });
+    const branchToDelete =
+      mapping.actualBranch && mapping.actualBranch !== mapping.branch
+        ? mapping.actualBranch
+        : undefined;
+    const result = gitUtils.removeWorktree(
+      mapping.repoRoot,
+      mapping.worktreePath,
+      { force: dirty, branchToDelete },
+    );
     if (result.removed) {
       // Only remove the mapping after successful cleanup
       worktreeTracker.removeBySession(sessionId);
-      console.log(`[routes] ${dirty ? "Force-removed dirty" : "Auto-removed clean"} worktree ${mapping.worktreePath}`);
+      console.log(
+        `[routes] ${dirty ? "Force-removed dirty" : "Auto-removed clean"} worktree ${mapping.worktreePath}`,
+      );
     }
     return { cleaned: result.removed, path: mapping.worktreePath };
   }

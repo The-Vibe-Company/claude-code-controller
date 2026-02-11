@@ -106,7 +106,7 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
                 }
               }}
               placeholder="/path/to/project"
-              className="flex-1 px-2 py-1 text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg font-mono-code placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
+              className="flex-1 px-2 py-1 text-base sm:text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg font-mono-code placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
               autoFocus
             />
           ) : (

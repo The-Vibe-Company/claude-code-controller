@@ -35,6 +35,24 @@ describe("createSession", () => {
     expect(JSON.parse(opts.body)).toEqual({ model: "opus", cwd: "/home" });
     expect(result).toEqual(responseData);
   });
+
+  it("passes codexInternetAccess when provided", async () => {
+    const responseData = { sessionId: "s2", state: "starting", cwd: "/repo" };
+    mockFetch.mockResolvedValueOnce(mockResponse(responseData));
+
+    await api.createSession({
+      backend: "codex",
+      cwd: "/repo",
+      codexInternetAccess: true,
+    });
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(JSON.parse(opts.body)).toEqual({
+      backend: "codex",
+      cwd: "/repo",
+      codexInternetAccess: true,
+    });
+  });
 });
 
 // ===========================================================================
@@ -222,5 +240,25 @@ describe("getFileDiff", () => {
     const [url] = mockFetch.mock.calls[0];
     expect(url).toBe(`/api/fs/diff?path=${encodeURIComponent("/repo/file.ts")}`);
     expect(result).toEqual(diffData);
+  });
+});
+
+// ===========================================================================
+// getSessionUsageLimits
+// ===========================================================================
+describe("getSessionUsageLimits", () => {
+  it("sends GET to /api/sessions/:id/usage-limits", async () => {
+    const limitsData = {
+      five_hour: { utilization: 25, resets_at: "2026-01-01T12:00:00Z" },
+      seven_day: null,
+      extra_usage: null,
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(limitsData));
+
+    const result = await api.getSessionUsageLimits("sess-123");
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/sessions/sess-123/usage-limits");
+    expect(result).toEqual(limitsData);
   });
 });

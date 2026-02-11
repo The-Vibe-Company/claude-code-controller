@@ -453,14 +453,17 @@ describe("CodexAdapter", () => {
     stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
     await new Promise((r) => setTimeout(r, 20));
     stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    // Respond to account/rateLimits/read (id: 3, fired after init)
+    stdout.push(JSON.stringify({ id: 3, result: { rateLimits: { primary: null, secondary: null } } }) + "\n");
     await new Promise((r) => setTimeout(r, 50));
 
     // Send a user message first to establish a turn
     adapter.sendBrowserMessage({ type: "user_message", content: "Do something" });
     await new Promise((r) => setTimeout(r, 50));
 
-    // Simulate turn/start response (provides a turn ID)
-    stdout.push(JSON.stringify({ id: 3, result: { turn: { id: "turn_1" } } }) + "\n");
+    // Simulate turn/start response (provides a turn ID — id bumped to 4 due to rateLimits/read)
+    stdout.push(JSON.stringify({ id: 4, result: { turn: { id: "turn_1" } } }) + "\n");
     await new Promise((r) => setTimeout(r, 50));
 
     stdin.chunks = [];
@@ -651,7 +654,7 @@ describe("CodexAdapter", () => {
   // The Codex CLI uses camelCase for JSON-RPC field names (approvalPolicy, sandbox)
   // but kebab-case for enum VALUES. These tests ensure we never regress to camelCase values.
   // Valid sandbox values: "read-only", "workspace-write", "danger-full-access"
-  // Valid approvalPolicy values: "never", "unless-trusted", "on-failure", "on-request"
+  // Valid approvalPolicy values: "never", "untrusted", "on-failure", "on-request"
 
   it("sends kebab-case sandbox value, never camelCase", async () => {
     new CodexAdapter(proc as never, "test-session", { model: "gpt-5.3-codex", cwd: "/tmp" });
@@ -670,10 +673,10 @@ describe("CodexAdapter", () => {
 
   it.each([
     { approvalMode: "bypassPermissions", expected: "never" },
-    { approvalMode: "plan", expected: "unless-trusted" },
-    { approvalMode: "acceptEdits", expected: "unless-trusted" },
-    { approvalMode: "default", expected: "unless-trusted" },
-    { approvalMode: undefined, expected: "unless-trusted" },
+    { approvalMode: "plan", expected: "untrusted" },
+    { approvalMode: "acceptEdits", expected: "untrusted" },
+    { approvalMode: "default", expected: "untrusted" },
+    { approvalMode: undefined, expected: "untrusted" },
   ])("maps approvalMode=$approvalMode to kebab-case approvalPolicy=$expected", async ({ approvalMode, expected }) => {
     const mock = createMockProcess();
 
@@ -1286,5 +1289,444 @@ describe("CodexAdapter", () => {
     const allWritten = mock.stdin.chunks.join("");
     expect(allWritten).toContain('"method":"thread/start"');
     expect(allWritten).not.toContain('"method":"thread/resume"');
+  });
+
+  it("responds to item/tool/call with DynamicToolCallResponse (success: false)", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Simulate item/tool/call request from Codex
+    stdout.push(JSON.stringify({
+      method: "item/tool/call",
+      id: 600,
+      params: {
+        callId: "call_abc123",
+        tool: "my_custom_tool",
+        arguments: { query: "test input" },
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Should respond with a valid DynamicToolCallResponse, not { decision: "accept" }
+    const allWritten = stdin.chunks.join("");
+    const responseLines = allWritten.split("\n").filter((l) => l.includes('"id":600'));
+    expect(responseLines.length).toBeGreaterThanOrEqual(1);
+    const responseLine = responseLines[0];
+    expect(responseLine).toContain('"success":false');
+    expect(responseLine).toContain('"contentItems"');
+    expect(responseLine).not.toContain('"decision"');
+  });
+
+  it("emits tool_use and error tool_result to browser for item/tool/call", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "item/tool/call",
+      id: 601,
+      params: {
+        callId: "call_def456",
+        tool: "code_interpreter",
+        arguments: { code: "print('hello')" },
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Should emit a tool_use for the dynamic tool
+    const toolUseMsg = messages.find((m) => {
+      if (m.type !== "assistant") return false;
+      const content = (m as { message: { content: Array<{ type: string; name?: string }> } }).message.content;
+      return content.some((b) => b.type === "tool_use" && b.name === "dynamic:code_interpreter");
+    });
+    expect(toolUseMsg).toBeDefined();
+
+    // Should emit a tool_result with is_error=true
+    const toolResultMsg = messages.find((m) => {
+      if (m.type !== "assistant") return false;
+      const content = (m as { message: { content: Array<{ type: string; is_error?: boolean }> } }).message.content;
+      return content.some((b) => b.type === "tool_result" && b.is_error === true);
+    });
+    expect(toolResultMsg).toBeDefined();
+  });
+
+  it("emits tool_result for successful command with no output", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Command completed with no stdout/stderr and exit code 0
+    stdout.push(JSON.stringify({
+      method: "item/completed",
+      params: {
+        item: {
+          type: "commandExecution",
+          id: "cmd_silent",
+          command: "mkdir -p /tmp/newdir",
+          status: "completed",
+          exitCode: 0,
+        },
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Should emit a tool_result (not skip it)
+    const toolResultMsg = messages.find((m) => {
+      if (m.type !== "assistant") return false;
+      const content = (m as { message: { content: Array<{ type: string; tool_use_id?: string; content?: string }> } }).message.content;
+      return content.some((b) => b.type === "tool_result" && b.tool_use_id === "cmd_silent");
+    });
+    expect(toolResultMsg).toBeDefined();
+
+    const resultContent = (toolResultMsg as { message: { content: Array<{ type: string; content?: string }> } })
+      .message.content.find((b) => b.type === "tool_result");
+    expect(resultContent?.content).toBe("Command completed successfully.");
+  });
+
+  it("fetches rate limits after initialization via account/rateLimits/read", async () => {
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // id:1 = initialize, id:2 = thread/start
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+
+    // id:3 = account/rateLimits/read response
+    stdout.push(JSON.stringify({
+      id: 3,
+      result: {
+        rateLimits: {
+          primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
+          secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+        },
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const rl = adapter.getRateLimits();
+    expect(rl).toBeDefined();
+    expect(rl!.primary).toEqual({ usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 });
+    expect(rl!.secondary).toEqual({ usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 });
+  });
+
+  it("updates rate limits on account/rateLimits/updated notification", async () => {
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send account/rateLimits/updated notification (no id = notification)
+    stdout.push(JSON.stringify({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: {
+          primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: 1730947200 },
+          secondary: null,
+        },
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const rl = adapter.getRateLimits();
+    expect(rl).toBeDefined();
+    expect(rl!.primary).toEqual({ usedPercent: 50, windowDurationMins: 300, resetsAt: 1730947200 });
+    expect(rl!.secondary).toBeNull();
+  });
+
+  // ── requestUserInput tests ──────────────────────────────────────────────
+
+  it("forwards item/tool/requestUserInput as AskUserQuestion permission_request", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "item/tool/requestUserInput",
+      id: 700,
+      params: {
+        threadId: "thr_123",
+        turnId: "turn_1",
+        itemId: "item_1",
+        questions: [
+          {
+            id: "q1",
+            header: "Approach",
+            question: "Which approach should I use?",
+            isOther: true,
+            isSecret: false,
+            options: [
+              { label: "Option A", description: "First approach" },
+              { label: "Option B", description: "Second approach" },
+            ],
+          },
+        ],
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReqs = messages.filter((m) => m.type === "permission_request");
+    expect(permReqs.length).toBe(1);
+
+    const perm = permReqs[0] as unknown as {
+      request: { tool_name: string; input: { questions: Array<{ header: string; question: string; options: unknown[] }> } };
+    };
+    expect(perm.request.tool_name).toBe("AskUserQuestion");
+    expect(perm.request.input.questions.length).toBe(1);
+    expect(perm.request.input.questions[0].header).toBe("Approach");
+    expect(perm.request.input.questions[0].options.length).toBe(2);
+  });
+
+  it("converts browser answers to Codex ToolRequestUserInputResponse format", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send requestUserInput
+    stdout.push(JSON.stringify({
+      method: "item/tool/requestUserInput",
+      id: 701,
+      params: {
+        threadId: "thr_123",
+        turnId: "turn_1",
+        itemId: "item_1",
+        questions: [
+          { id: "q_alpha", header: "Q1", question: "Pick one", isOther: false, isSecret: false, options: [{ label: "Yes", description: "" }] },
+          { id: "q_beta", header: "Q2", question: "Pick another", isOther: false, isSecret: false, options: [{ label: "No", description: "" }] },
+        ],
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Get the request_id from the emitted permission_request
+    const permReq = messages.find((m) => m.type === "permission_request") as unknown as {
+      request: { request_id: string };
+    };
+    expect(permReq).toBeDefined();
+
+    // Send answer back via permission_response
+    adapter.sendBrowserMessage({
+      type: "permission_response",
+      request_id: permReq.request.request_id,
+      behavior: "allow",
+      updated_input: { answers: { "0": "Yes", "1": "No" } },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Check what was sent to Codex (should be ToolRequestUserInputResponse format)
+    const allWritten = stdin.chunks.join("");
+    const responseLine = allWritten.split("\n").find((l) => l.includes('"id":701'));
+    expect(responseLine).toBeDefined();
+
+    const response = JSON.parse(responseLine!);
+    expect(response.result.answers).toBeDefined();
+    expect(response.result.answers.q_alpha).toEqual({ answers: ["Yes"] });
+    expect(response.result.answers.q_beta).toEqual({ answers: ["No"] });
+  });
+
+  // ── applyPatchApproval tests ──────────────────────────────────────────
+
+  it("forwards applyPatchApproval as Edit permission_request", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "applyPatchApproval",
+      id: 800,
+      params: {
+        conversationId: "thr_123",
+        callId: "call_patch_1",
+        fileChanges: {
+          "src/index.ts": { kind: "modify" },
+          "src/utils.ts": { kind: "create" },
+        },
+        reason: "Refactoring imports",
+        grantRoot: null,
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReqs = messages.filter((m) => m.type === "permission_request");
+    expect(permReqs.length).toBe(1);
+
+    const perm = permReqs[0] as unknown as {
+      request: { tool_name: string; input: { file_paths: string[] }; description: string };
+    };
+    expect(perm.request.tool_name).toBe("Edit");
+    expect(perm.request.input.file_paths).toContain("src/index.ts");
+    expect(perm.request.input.file_paths).toContain("src/utils.ts");
+    expect(perm.request.description).toBe("Refactoring imports");
+  });
+
+  it("responds to applyPatchApproval with ReviewDecision format", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "applyPatchApproval",
+      id: 801,
+      params: {
+        conversationId: "thr_123",
+        callId: "call_patch_2",
+        fileChanges: { "file.ts": {} },
+        reason: null,
+        grantRoot: null,
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReq = messages.find((m) => m.type === "permission_request") as unknown as {
+      request: { request_id: string };
+    };
+
+    // Allow the patch
+    adapter.sendBrowserMessage({
+      type: "permission_response",
+      request_id: permReq.request.request_id,
+      behavior: "allow",
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = stdin.chunks.join("");
+    const responseLine = allWritten.split("\n").find((l) => l.includes('"id":801'));
+    expect(responseLine).toBeDefined();
+    // Should use "approved" (ReviewDecision), NOT "accept"
+    expect(responseLine).toContain('"approved"');
+    expect(responseLine).not.toContain('"accept"');
+  });
+
+  // ── execCommandApproval tests ──────────────────────────────────────────
+
+  it("forwards execCommandApproval as Bash permission_request", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "execCommandApproval",
+      id: 900,
+      params: {
+        conversationId: "thr_123",
+        callId: "call_exec_1",
+        command: ["npm", "install"],
+        cwd: "/workspace",
+        reason: "Installing dependencies",
+        parsedCmd: [],
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReqs = messages.filter((m) => m.type === "permission_request");
+    expect(permReqs.length).toBe(1);
+
+    const perm = permReqs[0] as unknown as {
+      request: { tool_name: string; input: { command: string; cwd: string }; description: string };
+    };
+    expect(perm.request.tool_name).toBe("Bash");
+    expect(perm.request.input.command).toBe("npm install");
+    expect(perm.request.input.cwd).toBe("/workspace");
+    expect(perm.request.description).toBe("Installing dependencies");
+  });
+
+  it("responds to execCommandApproval with ReviewDecision format (denied)", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "execCommandApproval",
+      id: 901,
+      params: {
+        conversationId: "thr_123",
+        callId: "call_exec_2",
+        command: ["rm", "-rf", "/"],
+        cwd: "/",
+        reason: null,
+        parsedCmd: [],
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReq = messages.find((m) => m.type === "permission_request") as unknown as {
+      request: { request_id: string };
+    };
+
+    // Deny the command
+    adapter.sendBrowserMessage({
+      type: "permission_response",
+      request_id: permReq.request.request_id,
+      behavior: "deny",
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = stdin.chunks.join("");
+    const responseLine = allWritten.split("\n").find((l) => l.includes('"id":901'));
+    expect(responseLine).toBeDefined();
+    // Should use "denied" (ReviewDecision), NOT "decline"
+    expect(responseLine).toContain('"denied"');
+    expect(responseLine).not.toContain('"decline"');
   });
 });

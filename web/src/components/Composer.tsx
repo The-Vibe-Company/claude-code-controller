@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useStore } from "../store.js";
 import { sendToSession } from "../ws.js";
 import { api } from "../api.js";
+import { CLAUDE_MODES, CODEX_MODES } from "../utils/backends.js";
+import type { ModeOption } from "../utils/backends.js";
 
 let idCounter = 0;
 
@@ -44,6 +46,9 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const isConnected = cliConnected.get(sessionId) ?? false;
   const currentMode = sessionData?.permissionMode || "acceptEdits";
   const isPlan = currentMode === "plan";
+  const isCodex = sessionData?.backend_type === "codex";
+  const modes: ModeOption[] = isCodex ? CODEX_MODES : CLAUDE_MODES;
+  const modeLabel = modes.find((m) => m.value === currentMode)?.label?.toLowerCase() || currentMode;
 
   // Build command list from session data
   const allCommands = useMemo<CommandItem[]>(() => {
@@ -222,7 +227,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
   }
 
   function toggleMode() {
-    if (!isConnected) return;
+    if (!isConnected || isCodex) return;
     const store = useStore.getState();
     if (!isPlan) {
       store.setPreviousPermissionMode(sessionId, currentMode);
@@ -381,15 +386,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
             {/* Left: mode indicator */}
             <button
               onClick={toggleMode}
-              disabled={!isConnected}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all cursor-pointer select-none ${
-                !isConnected
+              disabled={!isConnected || isCodex}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all select-none ${
+                !isConnected || isCodex
                   ? "opacity-30 cursor-not-allowed text-cc-muted"
                   : isPlan
-                  ? "text-cc-primary hover:bg-cc-primary/10"
-                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+                  ? "text-cc-primary hover:bg-cc-primary/10 cursor-pointer"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
               }`}
-              title="Toggle mode (Shift+Tab)"
+              title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
             >
               {isPlan ? (
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
@@ -402,7 +407,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
               )}
-              <span>{isPlan ? "plan mode" : "accept edits"}</span>
+              <span>{modeLabel}</span>
             </button>
 
             {/* Right: image + send/stop */}

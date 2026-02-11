@@ -39,6 +39,11 @@ vi.mock("./session-names.js", () => ({
   _resetForTest: vi.fn(),
 }));
 
+const mockGetUsageLimits = vi.hoisted(() => vi.fn());
+vi.mock("./usage-limits.js", () => ({
+  getUsageLimits: mockGetUsageLimits,
+}));
+
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -69,6 +74,8 @@ function createMockLauncher() {
 function createMockBridge() {
   return {
     closeSession: vi.fn(),
+    getSession: vi.fn(() => null),
+    getCodexRateLimits: vi.fn(() => null),
   } as any;
 }
 
@@ -843,5 +850,94 @@ describe("POST /api/sessions/create with backend", () => {
     expect(launcher.launch).toHaveBeenCalledWith(
       expect.objectContaining({ backendType: "claude" }),
     );
+  });
+});
+
+// ─── Per-session usage limits ─────────────────────────────────────────────────
+
+describe("GET /api/sessions/:id/usage-limits", () => {
+  it("returns Claude usage limits for a claude session", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "claude" });
+    mockGetUsageLimits.mockResolvedValue({
+      five_hour: { utilization: 42, resets_at: "2025-01-01T12:00:00Z" },
+      seven_day: { utilization: 15, resets_at: null },
+      extra_usage: null,
+    });
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      five_hour: { utilization: 42, resets_at: "2025-01-01T12:00:00Z" },
+      seven_day: { utilization: 15, resets_at: null },
+      extra_usage: null,
+    });
+    expect(mockGetUsageLimits).toHaveBeenCalled();
+  });
+
+  it("returns mapped Codex rate limits for a codex session", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "codex" });
+    bridge.getCodexRateLimits.mockReturnValue({
+      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+    });
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.five_hour).toEqual({
+      utilization: 25,
+      resets_at: new Date(1730947200 * 1000).toISOString(),
+    });
+    expect(json.seven_day).toEqual({
+      utilization: 10,
+      resets_at: new Date(1731552000 * 1000).toISOString(),
+    });
+    expect(json.extra_usage).toBeNull();
+    expect(mockGetUsageLimits).not.toHaveBeenCalled();
+  });
+
+  it("returns empty limits when codex session has no rate limits yet", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "codex" });
+    bridge.getCodexRateLimits.mockReturnValue(null);
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
+  });
+
+  it("handles codex rate limits with null secondary", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "codex" });
+    bridge.getCodexRateLimits.mockReturnValue({
+      primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: 0 },
+      secondary: null,
+    });
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.five_hour).toEqual({ utilization: 50, resets_at: null });
+    expect(json.seven_day).toBeNull();
+  });
+
+  it("falls back to Claude limits when session is not found", async () => {
+    bridge.getSession.mockReturnValue(null);
+    mockGetUsageLimits.mockResolvedValue({
+      five_hour: null,
+      seven_day: null,
+      extra_usage: null,
+    });
+
+    const res = await app.request("/api/sessions/unknown/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
+    expect(mockGetUsageLimits).toHaveBeenCalled();
   });
 });
