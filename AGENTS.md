@@ -24,7 +24,7 @@ Browser React (:5174) ←WebSocket /ws/browser/:id→ Hono (:3456) ←WebSocket 
                                           Codex app-server (stdio JSON-RPC 2.0)
 ```
 
-Server discriminates by URL path: `/ws/cli/:id` upgrades to CLI backend socket (NDJSON), `/ws/browser/:id` upgrades to typed JSON frontend socket. `WsBridge` maintains per-session `SessionContext` with `messageHistory`, `pendingPermissions`, `state`, `codexAdapter`. Backend selection (`claude-code` vs `codex`) determined at session creation, drives `CliLauncher.launch()` branch (spawns `claude --sdk-url` or `codex app-server` with `CodexAdapter` stdio translator). All downstream routing backend-agnostic.
+Server discriminates by URL path: `/ws/cli/:id` upgrades to CLI backend socket (NDJSON), `/ws/browser/:id` upgrades to typed JSON frontend socket. `WsBridge` maintains per-session `Session` with `messageHistory`, `pendingPermissions`, `state`, `codexAdapter`. Backend selection (`claude-code` vs `codex`) determined at session creation, drives `CliLauncher.launch()` branch (spawns `claude --sdk-url` or `codex app-server` with `CodexAdapter` stdio translator). All downstream routing backend-agnostic.
 
 ### Message Flow
 
@@ -36,9 +36,11 @@ Codex flow: `item/started` → `stream_event`, `item/agentMessage/delta` → `as
 
 ### Project Root
 
+- [CLAUDE.local.md](./CLAUDE.local.md) — Project-specific guidance to Claude Code AI assistant documenting architecture (five-hop data flow with ports 3456/5174, WebSocket endpoints `/ws/cli/:id` and `/ws/browser/:id`), development commands (`bun run dev`, `make dev`, typecheck, build+start), testing policy (Vitest with colocated tests, husky pre-commit hook, forbidden test removal without approval), codebase map (backend: `index.ts`, `ws-bridge.ts`, `cli-launcher.ts`, `session-store.ts`, `session-types.ts`, `routes.ts`, `env-manager.ts`; frontend: `store.ts`, `ws.ts`, `types.ts`, `api.ts`, `App.tsx`, `components/`; CLI: `bin/cli.ts`), protocol specification (NDJSON message types `system`, `assistant`, `result`, `stream_event`, `control_request`), session persistence (`$TMPDIR/vibe-sessions/` with PID detection and `--resume`), browser testing constraint (`agent-browser` only), pull request requirements (Commitizen, screenshots, explanation, human review disclosure).
+
 - [Makefile](./Makefile) — Defines `make dev` (delegates to `cd web && bun run dev`), declares `.PHONY` targets `build`, `start`.
 
-- [package.json](./package.json) — Root monorepo config with `name: "the-vibe-companion"`, `version: "0.17.1"`, `private: true`, scripts delegating to `web/` subdirectory (`dev`, `build`, `start`), `prepare` script running `husky` for git hooks, devDependencies `husky@9.1.7`.
+- [package.json](./package.json) — Root monorepo config with `name: "the-vibe-companion"`, `version: "0.18.0"`, `private: true`, scripts delegating to `web/` subdirectory (`dev`, `build`, `start`), `prepare` script running `husky` for git hooks, devDependencies `husky@9.1.7`, production dependency `the-vibe-companion@^0.2.2` (self-reference for dual library/application publishing).
 
 - [README.md](./README.md) — User-facing quickstart documenting `bunx the-vibe-companion` command, architecture ASCII diagram with WebSocket endpoints (`/ws/cli/:session`, `/ws/browser/:session`), six core features (multi-session, streaming, tool visibility, subagent nesting, permission modes, `--resume` recovery), environment profiles in `~/.companion/envs/`, tech stack (Bun, Hono, React 19, Zustand, Tailwind v4), dev commands (`bun run dev` for backend+Vite HMR on 5174, `bun run build && bun run start` for production), MIT license, GitHub repo link `The-Vibe-Company/companion`.
 
@@ -48,7 +50,7 @@ Codex flow: `item/started` → `stream_event`, `item/agentMessage/delta` → `as
 
 - [scripts/](./scripts/) — Shell utilities for dev environment lifecycle: `dev-start.sh` orchestrates backend (port 3456) and Vite (port 5174) with PID tracking (`.dev-backend.pid`, `.dev-vite.pid`), HTTP health polling (`curl --max-time 3`, 60s max wait, 1s interval), accepts `--start`/`--stop`/`--status` commands, invoked by `make dev`.
 
-- [web/](./web/) — Full-stack application root with Bun+Hono backend (`server/` subdirectory: `ws-bridge.ts` message router, `cli-launcher.ts` subprocess manager, `codex-adapter.ts` JSON-RPC translator, `session-store.ts` file persistence, `git-utils.ts`/`worktree-tracker.ts` isolation, `env-manager.ts` environment profiles, `auto-namer.ts` LLM titling, `routes.ts` REST API), React 19 frontend (`src/` subdirectory: `App.tsx` root layout with hash routing, `store.ts` Zustand session state, `ws.ts` WebSocket client with NDJSON parsing, `api.ts` REST client, `components/` with ChatView, MessageFeed, Composer, Sidebar, TaskPanel, ToolBlock, EditorPanel, Playground, EnvManager), CLI entry point (`bin/cli.ts` setting `__VIBE_PACKAGE_ROOT`), config files (`package.json` bin entry, `vite.config.ts` proxy to 3456, `vitest.config.ts` environmentMatchGlobs), protocol mapping spec (`CODEX_MAPPING.md` for Codex JSON-RPC 2.0 translation).
+- [web/](./web/) — Full-stack application root with Bun+Hono backend (`server/` subdirectory: `index.ts` bootstrap with port 3456, dual WebSocket upgrade, 10s reconnection grace period, auto-naming callback; `ws-bridge.ts` message router with `Session` maintaining `messageHistory`/`pendingPermissions`/`state`/`cliSocket`/`codexAdapter`/`browserSockets`, `resolveGitInfo()` for git metadata; `cli-launcher.ts` subprocess manager spawning Claude Code with `--sdk-url` or Codex `app-server`, relaunching with `--resume`, injecting worktree guardrails; `codex-adapter.ts` JSON-RPC translator with `JsonRpcTransport` writer lock, `item/started` routing, `pendingApprovals`/`pendingUserInputQuestionIds`, rate limits caching; `session-store.ts` file persistence with 150ms debounce for streams, `PersistedSession` JSON; `routes.ts` REST API with session CRUD, filesystem ops, git operations with `isWorktreeInUse()` safety checks, environment profiles, backend discovery, usage limits; `git-utils.ts`/`worktree-tracker.ts` worktree isolation at `~/.companion/worktrees/{repoName}/{sanitizedBranch}` with `-wt-{random4digit}` suffixes, persistent mappings, `ensureWorktree()`; `env-manager.ts` CRUD for profiles at `~/.companion/envs/{slug}.json` with `slugify()` normalization; `usage-limits.ts` OAuth token refresh, macOS Keychain/Windows JSON credentials, 60s cache; `auto-namer.ts` spawning one-shot `claude`/`codex exec` processes with 15s timeout, 500-char prompt, quote stripping; `session-types.ts` protocol interfaces; `session-names.ts` lazy-loaded mapping at `~/.companion/session-names.json`), React 19 frontend (`src/` subdirectory: `App.tsx` root layout with hash routing via `useHash` + `useSyncExternalStore`, three-column grid with Sidebar/ChatView/HomePage/EditorPanel/TaskPanel, responsive overlays, auto-connects restored sessions, syncs dark mode; `store.ts` Zustand with 50+ actions including `appendMessage`, `setStreaming`, `setStreamingStats`, `addTask`, `updateTask`, `addPermission`, `removePermission`, `setSessionName`, `markRecentlyRenamed`, `clearRecentlyRenamed`, `removeSession`, `toggleProjectCollapse`, `setPreviousPermissionMode`, localStorage persistence for `cc-session-names`/`cc-current-session`/`cc-dark-mode`/`cc-notification-sound`/`cc-collapsed-projects`; `ws.ts` WebSocket client with NDJSON parsing, `extractTasksFromBlocks` handling TodoWrite/TaskCreate/TaskUpdate, `extractChangedFilesFromBlocks`, `processedToolUseIds` deduplication, `taskCounters` auto-numbering, 2000ms reconnect delay, `playNotificationSound()` on result; `api.ts` REST client with `CreateSessionOpts` including `backend`/`model`/`permissionMode`/`cwd`/`envSlug`/`branch`/`useWorktree`; `types.ts` re-exports server types plus client-only `ChatMessage`/`TaskItem`/`SdkSessionInfo`; `components/` with ChatView, MessageFeed, MessageBubble, Composer, Sidebar, ProjectGroup, SessionItem, TopBar, TaskPanel, PermissionBanner, ToolBlock, HomePage, EditorPanel, Playground, FolderPicker, EnvManager with message grouping, slash command autocomplete, Git worktree confirmation, permission displays, usage limits countdown, 800ms auto-save debounce, CodeMirror with `warmTheme`; `utils/` with backends.ts providing `getModelsForBackend`/`getModesForBackend`/`getDefaultModel`/`getDefaultMode`/`toModelOptions`/`pickIcon`, names.ts with `generateSessionName` from 40 adjectives × 40 nouns, project-grouping.ts with `extractProjectKey` worktree normalization, notification-sound.ts with Web Audio E5→G5 synthesis, recent-dirs.ts with LRU cache of 5 entries), CLI entry point (`bin/cli.ts` setting `__VIBE_PACKAGE_ROOT`), config files (`package.json` bin entry, `vite.config.ts` proxy to 3456, `vitest.config.ts` environmentMatchGlobs), protocol mapping spec (`CODEX_MAPPING.md` for Codex JSON-RPC 2.0 translation), dev orchestrator (`dev.ts` parallel subprocess spawner with prefix multiplexing).
 
 ## Data Flow
 
@@ -56,7 +58,7 @@ Codex flow: `item/started` → `stream_event`, `item/agentMessage/delta` → `as
 2. Server starts Hono on 3456, serves `web/dist/` in production or proxies Vite in dev
 3. Browser loads React app, renders `HomePage` with session list from `GET /api/sessions`
 4. User creates session with backend selection → `POST /api/sessions/create` → `CliLauncher.launch()` spawns subprocess
-5. CLI connects to `/ws/cli/:id` → `WsBridge.handleCLIConnect()` upgrades socket, stores in `SessionContext.cliSocket`
+5. CLI connects to `/ws/cli/:id` → `WsBridge.handleCLIConnect()` upgrades socket, stores in `Session.cliSocket`
 6. Browser connects to `/ws/browser/:id` → `WsBridge.handleBrowserConnect()` stores in `browserSockets` Set
 7. User sends prompt → `ws.ts` sends `{type: "user", message}` → `WsBridge` relays to CLI socket (Claude) or `codexAdapter.sendMessage()` (Codex)
 8. CLI streams responses → `WsBridge.handleCLIMessage()` parses NDJSON → broadcasts to all `browserSockets`
@@ -70,37 +72,46 @@ Codex flow: `item/started` → `stream_event`, `item/agentMessage/delta` → `as
 
 ## Git Worktree Isolation
 
-`git-utils.ts` `ensureWorktree(repoRoot, branch)` creates unique paths at `~/.companion/worktrees/{repoName}/{sanitizedBranch}`, generates `-wt-{random4digit}` suffixes for concurrent sessions on same branch. `WorktreeTracker` persists session-to-worktree mappings at `~/.companion/worktrees.json`. `CliLauncher.launch()` injects markdown guardrails into `.claude/CLAUDE.md` when `worktreeInfo` provided, forbidding `git checkout/switch`, enforcing commits to current branch. Routes expose `POST /api/git/worktree`, `DELETE /api/git/worktree` with safety checks via `isWorktreeInUse()` preventing deletion of shared worktrees.
+`git-utils.ts` `ensureWorktree(repoRoot, branch)` creates unique paths at `~/.companion/worktrees/{repoName}/{sanitizedBranch}`, generates `-wt-{random4digit}` suffixes for concurrent sessions on same branch via `generateUniqueWorktreeBranch()`. `WorktreeTracker` persists session-to-worktree mappings at `~/.companion/worktrees.json` with `WorktreeMapping` interface (sessionId, repoRoot, branch, actualBranch, worktreePath, createdAt). `CliLauncher.launch()` injects markdown guardrails into `.claude/CLAUDE.md` via `injectWorktreeGuardrails()` when `worktreePath !== repoRoot` and directory exists, with markers `<!-- WORKTREE_GUARDRAILS_START -->`/`<!-- WORKTREE_GUARDRAILS_END -->`, forbidding `git checkout/switch`, enforcing commits to current branch. Routes expose `POST /api/git/worktree`, `DELETE /api/git/worktree` with safety checks via `isWorktreeInUse()` preventing deletion of shared worktrees. Cleanup deletes companion-managed branches via `branchToDelete` parameter.
 
 ## Environment Profiles
 
-`EnvManager` stores named variable sets at `~/.companion/envs/{slug}.json` with interface `{name, slug, variables: Record<string,string>, createdAt, updatedAt}`. Slug generation via `slugify()`: lowercase, replace whitespace with hyphens, strip non-alphanumeric. REST API: `GET /envs`, `POST /envs`, `PUT /envs/:slug`, `DELETE /envs/:slug`. `HomePage` renders `EnvManager` modal with key-value editor consuming `api.listEnvs()`, `api.createEnv()`.
+`EnvManager` stores named variable sets at `~/.companion/envs/{slug}.json` with interface `CompanionEnv` (name, slug, variables: Record<string,string>, createdAt, updatedAt). Slug generation via `slugify()`: lowercase, `.replace(/\s+/g, "-")`, `.replace(/[^a-z0-9-]/g, "")`, `.replace(/-+/g, "-")`, `.replace(/^-|-$/g, "")`. REST API: `GET /envs`, `POST /envs`, `PUT /envs/:slug` (handles slug changes by deleting old file, preserves `createdAt`), `DELETE /envs/:slug`. `HomePage` renders `EnvManager` modal with key-value editor consuming `api.listEnvs()`, `api.createEnv()`. Session creation resolves `envSlug` via `envManager.getEnv()`, merges variables into `env`.
 
 ## Task Extraction
 
-`ws.ts` parses `assistant` messages for `tool_use` blocks named `TodoWrite`, `TaskCreate`, `TaskUpdate`. `extractTasksFromBlocks()` logic: `TodoWrite` replaces entire list (renumbered from 1), `TaskCreate` increments counter, `TaskUpdate` applies partial update (status, owner, activeForm, blockedBy). Deduplicates via `processedToolUseIds` Map. `TaskPanel` subscribes to `sessionTasks.get(sessionId)`, renders `TaskRow` with status icons (spinner/checkmark/circle).
+`ws.ts` parses all `assistant` and `permission_request` messages for `tool_use` blocks named `TodoWrite`, `TaskCreate`, `TaskUpdate` via `extractTasksFromBlocks()`. Logic: `TodoWrite` expects `input.todos: Array<{content, status, activeForm}>`, calls `setTasks` with renumbered IDs starting from 1; `TaskCreate` increments `taskCounters[sessionId]`, builds `TaskItem` with `id=String(count)`, `subject=input.subject`, `description=input.description`, `activeForm=input.activeForm`, `status="pending"`, calls `addTask`; `TaskUpdate` extracts `taskId` from `input`, builds partial update with `status`, `owner`, `activeForm`, `blockedBy` (from `addBlockedBy`), calls `updateTask`. Deduplicates via `processedToolUseIds.get(sessionId)` Set. `TaskPanel` subscribes to `sessionTasks.get(sessionId)`, renders `TaskRow` with status icons (spinner for `in_progress`, checkmark for `completed`, circle for `pending`), filters by owner/status, displays `blockedBy` dependencies.
 
 ## Auto-Naming Pipeline
 
-On session creation, `WsBridge` registers callback invoking `auto-namer.ts` after first completed turn. `generateSessionTitle()` extracts first 500 chars of user message, spawns one-shot CLI: `claude -p PROMPT --model MODEL --output-format json` (parses `result` field) for Claude backend, `codex exec -q PROMPT --model MODEL --json` (parses JSONL for last `agentMessage` item) for Codex backend. Strips quotes via `/^["']|["']$/g`, validates length < 100, persists via `SessionNames.setName()`, broadcasts update to browsers. 15s timeout, logged warnings on failure.
+On session creation, `WsBridge` registers callback invoking `auto-namer.ts` after first completed turn. `generateSessionTitle()` extracts first 500 chars of user message, spawns one-shot CLI process: `claude -p PROMPT --model MODEL --output-format json` for Claude backend (via `generateTitleViaClaude()`, parses `parsed.result` from JSON), `codex exec -q PROMPT --model MODEL --json` for Codex backend (via `generateTitleViaCodex()`, parses JSONL in reverse for last `item.type === "agentMessage"` with `item.completed`, extracts `item.text`). Binary resolution via `resolveClaudeBinary()`, `resolveCodexBinary()` with module-level memoization. Prompt template: `"Generate a concise 3-5 word session title for this user request. Output ONLY the title, nothing else.\n\nRequest: ${first500chars}"`. Strips quotes via `/^["']|["']$/g`, validates length < 100, persists via `SessionNames.setName()`, broadcasts update to browsers via `wsBridge.broadcastNameUpdate()`. 15s timeout, logged warnings on failure.
 
 ## Behavioral Contracts
 
 ### NDJSON Protocol
 
-CLI processes write newline-delimited JSON to WebSocket. `WsBridge.handleCLIMessage()` splits `data` on `\n`, parses each line via `JSON.parse()`. Codex adapter uses identical newline-delimited JSON-RPC over stdin/stdout via `JsonRpcTransport.send()` (appends `\n`), `.onData()` (splits on `\n`). Browser WebSockets receive typed JSON messages without delimiters.
+CLI processes write newline-delimited JSON to WebSocket. `WsBridge.handleCLIMessage()` splits `data` on `\n`, filters empty lines, parses each line via `JSON.parse()`. Codex adapter uses identical newline-delimited JSON-RPC over stdin/stdout via `JsonRpcTransport.send()` (appends `\n`), `.onData()` (splits on `\n`), `processBuffer()` (parses complete lines). Browser WebSockets receive typed JSON messages without delimiters.
 
 ### Git Command Patterns
 
-All git operations in `git-utils.ts` use `execSync` with `timeout: 10_000` ms:
+All git operations in `git-utils.ts` use `execSync` with `timeout: 10_000` ms except routes (3000–5000ms range):
 - `git rev-parse --abbrev-ref HEAD` → current branch
-- `git rev-parse --show-toplevel` → repo root
+- `git rev-parse --show-toplevel` → repo root (non-worktree)
 - `git rev-parse --git-dir` → worktree detection (checks `/worktrees/` substring)
-- `git worktree list --porcelain` → parses lines prefixed `worktree `, `HEAD `, `branch `
+- `git rev-parse --git-common-dir` → shared `.git` dir (worktree only, used by `resolveGitInfo`)
+- `git rev-list --left-right --count origin/{branch}...{branch}` → `{behind} {ahead}` (parsed via split on whitespace)
+- `git for-each-ref refs/heads/ --format '%(refname:short)|%(worktreepath)'` — local branches
+- `git for-each-ref refs/remotes/origin/ --format '%(refname:short)|%(worktreepath)'` — remote branches
+- `git worktree list --porcelain` → parses lines prefixed `worktree `, `HEAD `, `branch `, `bare`
 - `git worktree add -b {branch} "{path}" {base}` → create worktree
-- `git rev-list --left-right --count origin/{branch}...{branch}` → ahead/behind counts
+- `git worktree remove "{worktreePath}"` (optionally with `--force`)
+- `git worktree prune` → cleanup stale metadata
+- `git branch -D {branchToDelete}` → delete branch
+- `git status --porcelain` → dirty check (`isWorktreeDirty()`)
+- `git fetch --prune`, `git pull`
+- `git diff HEAD -- "${absPath}"` → file diff
 
-Worktree paths sanitized via `sanitizeBranchName()`: replace `/` with `_`, collapse multiple underscores.
+Worktree paths sanitized via `sanitizeBranch()`: replace `/` with `--`, collapse multiple hyphens.
 
 ### Auto-Naming Prompt Template
 
@@ -113,11 +124,13 @@ Request: ${first500chars}
 Claude backend: `claude -p PROMPT --model MODEL --output-format json`, extracts `parsed.result`.  
 Codex backend: `codex exec -q PROMPT --model MODEL --json`, parses JSONL for last `item.type === "agentMessage"` with `item.completed`, extracts `item.text`.
 
+Both strip quotes via `/^["']|["']$/g`, validate length < 100 characters, 15s timeout.
+
 ### Permission Request Flow
 
 Claude Code: CLI sends `control_request` (subtype `can_use_tool`) → WsBridge stores in `pendingPermissions` Map → broadcasts `permission_request` to browsers → user responds → WsBridge sends `control_response` (behavior `"allow"` or `"deny"`).
 
-Codex: adapter receives `item/commandExecution/requestApproval` or `item/fileChange/requestApproval` JSON-RPC request → stores request ID → synthesizes `permission_request` → user responds → sends JSON-RPC response `{decision: "accept" | "decline"}`.
+Codex: adapter receives `item/commandExecution/requestApproval` or `item/fileChange/requestApproval` JSON-RPC request → stores request ID in `pendingApprovals` → synthesizes `permission_request` → user responds → sends JSON-RPC response `{decision: "accept" | "decline"}`. `item/tool/requestUserInput` → `AskUserQuestion` format with `pendingUserInputQuestionIds` mapping request_id to ordered Codex question IDs → browser response → `ToolRequestUserInputResponse: { answers: { [questionId]: { answers: [string] } } }`.
 
 ### WebSocket Reconnection
 
@@ -125,9 +138,24 @@ Browser: `ws.ts` registers `onclose` handler calling `scheduleReconnect(sessionI
 
 CLI: On disconnect, WsBridge stores pending messages in `pendingMessages[]`, waits 10s grace period. If CLI reconnects (server restart case), replays queue. If timeout expires, `CliLauncher.relaunchSession()` kills stale PID, spawns with `--resume <cliSessionId>`.
 
+### LocalStorage Persistence
+
+`store.ts` subscribes to Zustand state changes, writes to localStorage:
+- `cc-session-names` → JSON array of `[sessionId, name]` tuples
+- `cc-current-session` → active session ID string
+- `cc-dark-mode` → `"true"` or `"false"`
+- `cc-notification-sound` → `"true"` or `"false"`
+- `cc-collapsed-projects` → JSON array of collapsed project key strings
+
+`utils/recent-dirs.ts` persists LRU cache to `cc-recent-dirs` (max 5 entries).
+
 ### Context Usage Calculation
 
 Extracted from `result` messages: `Math.round(((inputTokens + outputTokens) / contextWindow) * 100)` clamped to `[0, 100]`. Reads `msg.modelUsage[model].inputTokens`, `msg.modelUsage[model].outputTokens`, `msg.modelUsage[model].modelContextWindow`.
+
+### Worktree Guardrails Injection
+
+Markers: `<!-- WORKTREE_GUARDRAILS_START -->` and `<!-- WORKTREE_GUARDRAILS_END -->`. Only injects when `worktreePath !== repoRoot` and `existsSync(worktreePath)`. Content includes branch label (with `parentBranch` if provided), main repo path, rules forbidding `git checkout/switch`, enforcing commits to current branch only, suggesting `git show other-branch:path`. Written to `.claude/CLAUDE.md` in worktree, replacing existing section or appending.
 
 ## Development Commands
 
@@ -148,8 +176,8 @@ cd web && bun run test
 cd web && bun run test:watch
 ```
 
-**Testing Requirements:** All new backend (`web/server/`) and frontend (`web/src/`) code must include tests. Vitest tests live alongside source files. Husky pre-commit hook runs typecheck and tests automatically. Existing tests must never be removed without explicit user approval.
+**Testing Requirements:** All new backend (`web/server/`) and frontend (`web/src/`) code must include tests when possible. Vitest tests live alongside source files. Husky pre-commit hook runs typecheck and tests automatically. Existing tests must never be removed without explicit user approval.
 
 ## File Relationships
 
-`Makefile` delegates to `web/package.json` scripts. `web/dev.ts` spawns `web/server/index.ts` and Vite in parallel. `web/bin/cli.ts` imports `web/server/index.ts` for production execution. `web/server/index.ts` wires together `WsBridge`, `CliLauncher`, `SessionStore`, `WorktreeTracker`, registers routes from `routes.ts`, serves `web/dist/` when `NODE_ENV=production`. `web/server/ws-bridge.ts` delegates subprocess lifecycle to `cli-launcher.ts`, message translation to `codex-adapter.ts`, persistence to `session-store.ts`. `web/src/App.tsx` imports `ws.ts` for WebSocket management, `api.ts` for REST calls, `store.ts` for state subscriptions. All components in `web/src/components/` consume `store.ts` via `useStore` selectors, call `api.ts` functions, send messages via `sendToSession` from `ws.ts`. `web/src/types.ts` re-exports `web/server/session-types.ts` for shared protocol definitions across client and server.
+`Makefile` delegates to `web/package.json` scripts. `web/dev.ts` spawns `web/server/index.ts` and Vite in parallel, orchestrates shutdown. `web/bin/cli.ts` imports `web/server/index.ts` for production execution. `web/server/index.ts` wires together `WsBridge`, `CliLauncher`, `SessionStore`, `WorktreeTracker`, registers routes from `routes.ts`, serves `web/dist/` when `NODE_ENV=production`. `web/server/ws-bridge.ts` delegates subprocess lifecycle to `cli-launcher.ts`, message translation to `codex-adapter.ts`, persistence to `session-store.ts`, git metadata to `git-utils.ts` (`resolveGitInfo`). `web/src/App.tsx` imports `ws.ts` for WebSocket management, `api.ts` for REST calls, `store.ts` for state subscriptions. All components in `web/src/components/` consume `store.ts` via `useStore` selectors, call `api.ts` functions, send messages via `sendToSession` from `ws.ts`. `web/src/types.ts` re-exports `web/server/session-types.ts` for shared protocol definitions across client and server. `web/src/utils/backends.ts` consumed by `TopBar`/`HomePage` for model/mode dropdowns, `utils/names.ts` by `Sidebar`/`HomePage` for session naming, `utils/project-grouping.ts` by `Sidebar` for session organization, `utils/notification-sound.ts` by `ws.ts` for audio notifications, `utils/recent-dirs.ts` by `FolderPicker` for directory history.

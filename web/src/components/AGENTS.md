@@ -10,13 +10,13 @@ UI component library for the Vibe Companion React application, providing chat, s
 
 - [ChatView.tsx](./ChatView.tsx) — Renders session interface with `MessageFeed`, `Composer`, `PermissionBanner` array, and WebSocket/CLI connection status banners. Reads `pendingPermissions`, `connectionStatus`, `cliConnected` from Zustand store, calls `api.relaunchSession` on CLI disconnect.
 
-- [Composer.tsx](./Composer.tsx) — Message input area with image attachment, slash command autocomplete (`/^\S*$/` regex), mode toggling (`Shift+Tab`), and Git status display. Sends `user_message` via `sendToSession`, optimistic UI update via `appendMessage`. Polls `filteredCommands` from `sessionData?.slash_commands` and `skills`, uses `ModeOption[]` from `CLAUDE_MODES` or `CODEX_MODES`.
+- [Composer.tsx](./Composer.tsx) — Message input area with image attachment, slash command autocomplete (`/^\/(\S*)$/` regex), mode toggling (`Shift+Tab`), and Git status display. Sends `user_message` via `sendToSession`, optimistic UI update via `appendMessage`. Polls `filteredCommands` from `sessionData?.slash_commands` and `skills`, uses `ModeOption[]` from `CLAUDE_MODES` or `CODEX_MODES`. Opens menu when `text` matches `/^\S*$/` and `allCommands.length > 0`.
 
 - [MessageFeed.tsx](./MessageFeed.tsx) — Chronological feed with `groupMessages` algorithm nesting subagent conversations under parent Task tool_use blocks. Virtualizes with `FEED_PAGE_SIZE` (100), auto-scrolls when `isNearBottom`, renders streaming indicator with elapsed time and token count. Delegates to `ToolMessageGroup`, `SubagentContainer`, `MessageBubble`.
 
 - [MessageBubble.tsx](./MessageBubble.tsx) — Routes `ChatMessage` to system divider, user bubble, or `AssistantMessage` with `groupContentBlocks` merging consecutive `tool_use` blocks. Renders `MarkdownContent` with `remarkGfm`, `ThinkingBlock` with char count, `ToolBlock`, and `tool_result` with error styling.
 
-- [PermissionBanner.tsx](./PermissionBanner.tsx) — Renders `PermissionRequest` with tool-specific displays (`BashDisplay`, `EditDisplay`, `WriteDisplay`, `ReadDisplay`, `GlobDisplay`, `GrepDisplay`, `ExitPlanModeDisplay`, `GenericDisplay`). Handles `AskUserQuestion` multi-option forms with `selections`, `customText`, `showCustom` state. Sends `permission_response` via `sendToSession`, calls `removePermission` on dismiss.
+- [PermissionBanner.tsx](./PermissionBanner.tsx) — Renders `PermissionRequest` with tool-specific displays (`BashDisplay`, `EditDisplay`, `WriteToolDetail`, `ReadDisplay`, `GlobDisplay`, `GrepDisplay`, `ExitPlanModeDisplay`, `GenericDisplay`). Handles `AskUserQuestion` multi-option forms with `selections`, `customText`, `showCustom` state. Sends `permission_response` via `sendToSession`, calls `removePermission` on dismiss.
 
 - [ToolBlock.tsx](./ToolBlock.tsx) — Collapsible tool call cards with `getToolIcon`, `getToolLabel`, `getPreview`. Specialized detail views: `EditToolDetail` (red/green diff blocks), `WriteToolDetail` (truncated at 500 chars). Recognizes Codex `web_search` and `mcp_tool_call` types, parses `mcp:server:tool` pattern.
 
@@ -24,7 +24,11 @@ UI component library for the Vibe Companion React application, providing chat, s
 
 - [TopBar.tsx](./TopBar.tsx) — Header with sidebar/task-panel toggles, connection status dot, "Reconnect" button calling `api.relaunchSession`, Chat/Editor tab switcher, "Compacting..." status when `sessionStatus === "compacting"`, "Thinking" with `animate-[pulse-dot]` when `sessionStatus === "running"`.
 
-- [Sidebar.tsx](./Sidebar.tsx) — Session list with archive/restore, rename on double-click, environment manager modal, dark mode toggle, notification sound toggle. Merges `sessions` Map with `sdkSessions` array, polls `api.listSessions()` every 5000ms, hydrates server-provided names replacing auto-generated `/^[A-Z][a-z]+ [A-Z][a-z]+$/` pattern, renders worktree tag, Git stats, permission badge.
+- [Sidebar.tsx](./Sidebar.tsx) — Session list organized via `groupSessionsByProject`, renders `ProjectGroup` components with archive/restore, rename on double-click, environment manager modal, dark mode toggle, notification sound toggle. Merges `sessions` Map with `sdkSessions` array, polls `api.listSessions()` every 5000ms, hydrates server-provided names replacing auto-generated `/^[A-Z][a-z]+ [A-Z][a-z]+$/` pattern. Shows worktree confirmation modal when archiving sessions with `isWorktree` flag.
+
+- [ProjectGroup.tsx](./ProjectGroup.tsx) — Collapsible project group header with status badges showing `runningCount` (green `text-cc-success`) and `permCount` (orange `text-cc-warning`), chevron rotation on expand/collapse. Iterates `group.sessions.map()` to render `SessionItem` components with forwarded edit/action callbacks.
+
+- [SessionItem.tsx](./SessionItem.tsx) — Session row with status dot (color via `statusDotClass` logic: warning for permissions, success for running, muted for exited/archived), backend pill (blue for Codex, teal for Claude), Git branch with worktree indicator, Git stats (ahead/behind with ↑↓, lines added/removed with +/-), permission badge, archive/restore/delete buttons. Supports inline rename via double-click, Enter/Escape handling.
 
 - [TaskPanel.tsx](./TaskPanel.tsx) — Right sidebar with `UsageLimitsSection` polling `api.getSessionUsageLimits` every 60000ms, renders `five_hour`, `seven_day`, `extra_usage` progress bars color-coded via `barColor(pct)`. Displays `TaskRow` list with spinner icon for `in_progress`, checkmark for `completed`, circle for `pending`, shows `blockedBy` dependencies. Hidden when `isCodex === true`.
 
@@ -52,7 +56,7 @@ UI component library for the Vibe Companion React application, providing chat, s
 
 **Type Imports**: TypeScript types imported from `../types.js` (client-side): `ChatMessage`, `ContentBlock`, `TaskItem`, `SessionState`, `SdkSessionInfo`, `PermissionRequest`, `BackendType`. Server types from `../../server/session-types.js`: `PermissionRequest`, `PermissionUpdate`, `SessionState`.
 
-**Utility Functions**: Components call helpers from `../utils/`: `getRecentDirs()`, `addRecentDir()` from `recent-dirs.js`; `generateUniqueSessionName()` from `names.js`; `getModelsForBackend`, `getModesForBackend`, `getDefaultModel`, `getDefaultMode`, `toModelOptions`, `CLAUDE_MODES`, `CODEX_MODES` from `backends.js`.
+**Utility Functions**: Components call helpers from `../utils/`: `getRecentDirs()`, `addRecentDir()` from `recent-dirs.js`; `generateUniqueSessionName()` from `names.js`; `getModelsForBackend`, `getModesForBackend`, `getDefaultModel`, `getDefaultMode`, `toModelOptions`, `CLAUDE_MODES`, `CODEX_MODES` from `backends.js`; `groupSessionsByProject` from `project-grouping.js`.
 
 ## Behavioral Contracts
 
@@ -91,6 +95,22 @@ UI component library for the Vibe Companion React application, providing chat, s
 - "Create new branch" button shown if filter non-empty and no exact match: `!branches.some((b) => b.name.toLowerCase() === filter)`
 - Archive confirmation for worktrees: sets `confirmArchiveId`, renders "Archiving will **delete the worktree** and any uncommitted changes." banner, calls `doArchive(sessionId, true)` with `force: true`
 
+### Session Status Display
+
+`statusDotClass` logic chain:
+- `archived` → `bg-cc-muted/40`
+- `permCount > 0` → `bg-cc-warning`
+- `s.sdkState === "exited"` → `bg-cc-muted/40`
+- `isRunning` → `bg-cc-success`
+- `isCompacting` → `bg-cc-warning`
+- default → `bg-cc-success/60`
+
+Pulse animation (`animate-[pulse-dot_1.5s_ease-in-out_infinite]`) shown when `!archived && (permCount > 0 || (isRunning && s.isConnected))`, color determined by permission state (`bg-cc-warning/40` for permissions, `bg-cc-success/40` for running).
+
+### Project Grouping
+
+`groupSessionsByProject` imported from `../utils/project-grouping.js` returns `ProjectGroup[]` with `key`, `label`, `sessions`, `runningCount`, `permCount`. `Sidebar` renders `ProjectGroup` component for each group, passing `isCollapsed={collapsedProjects.has(group.key)}` and `onToggleCollapse={toggleProjectCollapse}`. `ProjectGroup` shows status badges when `summaryParts.length > 0`.
+
 ### Usage Limits Display
 
 - `POLL_INTERVAL = 60_000` — fetch via `api.getSessionUsageLimits` every 60 seconds
@@ -125,7 +145,7 @@ UI component library for the Vibe Companion React application, providing chat, s
 
 **State Flows**: `ws.ts` parses NDJSON from CLI WebSocket → dispatches to `store.ts` actions → components read via `useStore` → components send messages back via `sendToSession` in `ws.ts` → server relays to CLI process.
 
-**Component Hierarchy**: `App.tsx` renders `TopBar`, `Sidebar`, session-specific `ChatView` or `EditorPanel`, and `TaskPanel`. `ChatView` composes `MessageFeed`, `Composer`, `PermissionBanner[]`. `MessageFeed` recursively renders `ToolMessageGroup`, `SubagentContainer`, `MessageBubble`. `MessageBubble` renders `MarkdownContent`, `ThinkingBlock`, `ToolBlock`. `HomePage` renders `FolderPicker`, `EnvManager` modals.
+**Component Hierarchy**: `App.tsx` renders `TopBar`, `Sidebar`, session-specific `ChatView` or `EditorPanel`, and `TaskPanel`. `ChatView` composes `MessageFeed`, `Composer`, `PermissionBanner[]`. `MessageFeed` recursively renders `ToolMessageGroup`, `SubagentContainer`, `MessageBubble`. `MessageBubble` renders `MarkdownContent`, `ThinkingBlock`, `ToolBlock`. `HomePage` renders `FolderPicker`, `EnvManager` modals. `Sidebar` renders `ProjectGroup` which renders `SessionItem`.
 
 **Backend Abstraction**: `backends.ts` provides `getModelsForBackend`, `getModesForBackend`, `getDefaultModel`, `getDefaultMode`, `toModelOptions`, `CLAUDE_MODES`, `CODEX_MODES`. Components call `switchBackend(newBackend)` → resets `dynamicModels`, calls `api.getBackendModels(backend)`, sets model/mode via defaults. `TopBar` and `Sidebar` render backend-specific logos: `/logo-codex.svg` vs `/logo.svg`.
 

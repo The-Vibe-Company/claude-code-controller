@@ -2,23 +2,25 @@
 
 # web/src/utils
 
-Browser-side utility functions for backend/model configuration, session naming, audio notifications, and directory history persistence.
+Browser-side utility functions for backend/model configuration, session naming, project grouping, audio notifications, and directory history persistence.
 
 ## Contents
 
 ### Configuration
 
-- **[backends.ts](./backends.ts)** — Maps backend types to model/mode options; exports static configurations for Claude (`CLAUDE_MODELS`, `CLAUDE_MODES`) and Codex (`CODEX_MODELS`, `CODEX_MODES`); provides `getModelsForBackend`, `getModesForBackend`, `getDefaultModel`, `getDefaultMode` for dynamic selection; implements `pickIcon(slug, index)` for visual model indicators via substring matching and modulo fallback; exports `toModelOptions(BackendModelInfo[]): ModelOption[]` for runtime model list conversion.
+- **[backends.ts](./backends.ts)** — Maps backend types to model/mode options; exports static configurations `CLAUDE_MODELS` (Opus/Sonnet/Haiku), `CLAUDE_MODES` (Agent/Plan), `CODEX_MODELS` (GPT-5.3/5.2/5.1 variants), `CODEX_MODES` (Auto/Accept Edits/Suggest); provides `getModelsForBackend`, `getModesForBackend`, `getDefaultModel`, `getDefaultMode` for dynamic selection; implements `pickIcon(slug, index)` for visual model indicators via `MODEL_ICONS` substring matching (`"codex"` → ✳, `"max"` → ■, `"mini"` → ⚡) and modulo fallback to `[◆, ●, ◕, ✦]`; exports `toModelOptions(BackendModelInfo[]): ModelOption[]` for runtime model list conversion.
 
 ### Session Management
 
-- **[names.ts](./names.ts)** — Generates random two-word session names via `generateSessionName()` (40 adjectives × 40 nouns = 1600 combinations); provides `generateUniqueSessionName(existingNames)` with 100-iteration collision retry using `Math.random()` selection.
+- **[names.ts](./names.ts)** — Generates random two-word session names via `generateSessionName()` (40 adjectives × 40 nouns = 1600 combinations using `Math.random()` index selection); provides `generateUniqueSessionName(existingNames)` with 100-iteration collision retry.
+
+- **[project-grouping.ts](./project-grouping.ts)** — Organizes sessions by project directory with worktree normalization; exports `extractProjectKey(cwd, repoRoot?)` (uses `repoRoot` when provided to collapse `~/.companion/worktrees/` paths, strips trailing slashes), `extractProjectLabel(projectKey)` (extracts last path component), `groupSessionsByProject(SessionItem[]): ProjectGroup[]` (builds `Map` keyed by `extractProjectKey`, accumulates `runningCount`/`permCount`/`mostRecentActivity`, sorts groups alphabetically by `label`, sessions within groups by running status descending then `createdAt` descending).
 
 ### Browser Utilities
 
-- **[notification-sound.ts](./notification-sound.ts)** — Synthesizes two-tone notification chime (E5 @ 659.25 Hz → G5 @ 783.99 Hz) via Web Audio API singleton `AudioContext`; exports `playNotificationSound()` with silent exception handling for unsupported browsers.
+- **[notification-sound.ts](./notification-sound.ts)** — Synthesizes two-tone notification chime (E5 @ 659.25 Hz → G5 @ 783.99 Hz) via Web Audio API singleton `AudioContext`; exports `playNotificationSound()` with silent exception handling; first tone gain ramps 0.3 → 0.001 over 300ms, second tone starts at 150ms offset with gain 0.001 → 0.3 → 0.001 over 500ms total, both use `type = "sine"`.
 
-- **[recent-dirs.ts](./recent-dirs.ts)** — Manages LRU cache of 5 directory paths in `localStorage` under key `"cc-recent-dirs"`; exports `getRecentDirs(): string[]` (JSON parse with fallback to `[]`) and `addRecentDir(dir)` (dedupe + prepend + `slice(0, 5)` persistence).
+- **[recent-dirs.ts](./recent-dirs.ts)** — Manages LRU cache of 5 directory paths in `localStorage` under key `"cc-recent-dirs"`; exports `getRecentDirs(): string[]` (JSON parse with fallback to `[]`) and `addRecentDir(dir)` (dedupe via filter + prepend + `slice(0, 5)` persistence).
 
 ## Behavioral Contracts
 
@@ -33,14 +35,20 @@ First tone: E5 (659.25 Hz), gain 0.3 → 0.001 over 300ms
 Second tone: G5 (783.99 Hz), starts at 150ms offset, gain ramps 0.001 → 0.3 → 0.001 over 500ms total  
 Both use `OscillatorNode` type `"sine"`
 
-### Cache Limits (recent-dirs.ts)
+### Cache Limits
 
-Maximum entries: 5 (enforced by `slice(0, 5)`)  
+Maximum entries: 5 (enforced by `slice(0, 5)` in recent-dirs.ts)  
 Unique name retries: 100 iterations before fallback (names.ts)
+
+### Project Grouping (project-grouping.ts)
+
+`extractProjectKey` uses `repoRoot` when provided (collapses worktrees to parent repository), otherwise uses `cwd`; strips trailing slashes; returns `"/"` for empty paths.  
+`groupSessionsByProject` sorts groups alphabetically by `label`; sessions within groups sorted by running status (running=1, others=0) descending, then `createdAt` descending.
 
 ## File Relationships
 
 - `backends.ts` imports `BackendType` from `../types.js` and `BackendModelInfo` from `../api.js` for type constraints on model selection functions.
+- `project-grouping.ts` imports `SdkSessionInfo` from `../types.js` for `SessionItem` extension; consumed by `Sidebar.tsx` to render collapsible project groups with `runningCount`/`permCount` badges.
 - `names.ts` is standalone with no imports; consumed by session creation flows in `HomePage.tsx` and `Sidebar.tsx`.
 - `notification-sound.ts` is standalone; invoked when new messages arrive in `ws.ts` message handler.
 - `recent-dirs.ts` is standalone; consumed by `FolderPicker.tsx` for directory history display.
