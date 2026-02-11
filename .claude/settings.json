@@ -1,5 +1,16 @@
 {
     "env": {
       "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    },
+    "permissions": {
+      "allow": [
+        "Bash(npx agents-reverse-engineer@latest init*)",
+        "Bash(npx agents-reverse-engineer@latest discover*)",
+        "Bash(npx agents-reverse-engineer@latest generate*)",
+        "Bash(npx agents-reverse-engineer@latest update*)",
+        "Bash(npx agents-reverse-engineer@latest clean*)",
+        "Bash(rm -f .agents-reverse-engineer/progress.log*)",
+        "Bash(sleep *)"
+      ]
     }
   }

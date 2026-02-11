@@ -10,3 +10,6 @@ web/dist/
 .env
 .dev-*.pid
 .dev-*.log
+
+# agents-reverse-engineer
+*.sum
