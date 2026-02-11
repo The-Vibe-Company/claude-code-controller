@@ -1,5 +1,6 @@
 process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
 
+import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -88,9 +89,11 @@ if (process.env.NODE_ENV === "production") {
   app.get("/*", serveStatic({ path: resolve(distDir, "index.html") }));
 }
 
-const server = Bun.serve<SocketData>({
-  port,
-  async fetch(req, server) {
+let server: ReturnType<typeof Bun.serve<SocketData>>;
+try {
+  server = Bun.serve<SocketData>({
+    port,
+    async fetch(req, server) {
     const url = new URL(req.url);
 
     // ── CLI WebSocket — Claude Code CLI connects here via --sdk-url ────
@@ -146,6 +149,23 @@ const server = Bun.serve<SocketData>({
     },
   },
 });
+} catch (err: unknown) {
+  if (err instanceof Error && "code" in err && err.code === "EADDRINUSE") {
+    console.error(`\x1b[31mError: Port ${port} is already in use.\x1b[0m`);
+    try {
+      const pids = execSync(`lsof -ti:${port}`, { encoding: "utf-8" }).trim();
+      if (pids) {
+        console.error(`\x1b[33mProcess(es) using port ${port}: ${pids.split("\n").join(", ")}\x1b[0m`);
+        console.error(`Kill them with: \x1b[1mkill ${pids.split("\n").join(" ")}\x1b[0m`);
+      }
+    } catch {
+      // lsof not available or no results — skip
+    }
+    console.error(`Or start on a different port: \x1b[1mPORT=${port + 1} the-vibe-companion\x1b[0m`);
+    process.exit(1);
+  }
+  throw err;
+}
 
 console.log(`Server running on http://localhost:${server.port}`);
 console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
