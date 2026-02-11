@@ -60,11 +60,16 @@ export class CliLauncher {
   private sessions = new Map<string, SdkSessionInfo>();
   private processes = new Map<string, Subprocess>();
   private port: number;
+  private hostname: string;
   private store: SessionStore | null = null;
   private onCodexAdapter: ((sessionId: string, adapter: CodexAdapter) => void) | null = null;
 
-  constructor(port: number) {
+  constructor(port: number, hostname?: string) {
     this.port = port;
+    // For the CLI's --sdk-url: if the server binds to 0.0.0.0 or localhost,
+    // use 127.0.0.1 (guaranteed loopback). Otherwise use the specific host.
+    const host = hostname || "localhost";
+    this.hostname = (host === "0.0.0.0" || host === "localhost") ? "127.0.0.1" : host;
   }
 
   /** Register a callback for when a CodexAdapter is created (WsBridge needs to attach it). */
@@ -218,7 +223,7 @@ export class CliLauncher {
       }
     }
 
-    const sdkUrl = `ws://localhost:${this.port}/ws/cli/${sessionId}`;
+    const sdkUrl = `ws://${this.hostname}:${this.port}/ws/cli/${sessionId}`;
 
     const args: string[] = [
       "--sdk-url", sdkUrl,
