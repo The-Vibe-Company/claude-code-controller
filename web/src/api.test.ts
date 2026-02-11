@@ -50,7 +50,7 @@ describe("listSessions", () => {
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/sessions");
-    expect(opts).toBeUndefined();
+    expect(opts).toEqual({ credentials: "include" });
     expect(result).toEqual(sessions);
   });
 });
