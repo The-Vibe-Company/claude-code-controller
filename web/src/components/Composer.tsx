@@ -34,9 +34,13 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionData = useStore((s) => s.sessions.get(sessionId));
   const previousMode = useStore((s) => s.previousPermissionMode.get(sessionId) || "acceptEdits");
@@ -105,6 +109,77 @@ export function Composer({ sessionId }: { sessionId: string }) {
     setSlashMenuOpen(false);
     textareaRef.current?.focus();
   }, []);
+
+  // Cleanup recording on unmount or session switch
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+    };
+  }, [sessionId]);
+
+  const isStartingRecordingRef = useRef(false);
+
+  async function startRecording() {
+    if (isStartingRecordingRef.current) return;
+    isStartingRecordingRef.current = true;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setIsRecording(false);
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        if (blob.size < 1024) return;
+
+        setIsTranscribing(true);
+        try {
+          const { text: transcript } = await api.transcribeAudio(blob);
+          if (transcript) {
+            setText((prev) => (prev ? prev + " " + transcript : transcript));
+            textareaRef.current?.focus();
+          }
+        } catch (err) {
+          console.error("[stt] Transcription failed:", err);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+    } catch (err) {
+      console.error("[stt] Microphone access denied:", err);
+    } finally {
+      isStartingRecordingRef.current = false;
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    mediaRecorderRef.current = null;
+  }
+
+  function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }
 
   function handleSend() {
     const msg = text.trim();
@@ -405,7 +480,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               <span>{isPlan ? "plan mode" : "accept edits"}</span>
             </button>
 
-            {/* Right: image + send/stop */}
+            {/* Right: image + mic + send/stop */}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => fileInputRef.current?.click()}
@@ -422,6 +497,33 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
                   <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
+              </button>
+
+              <button
+                onClick={toggleRecording}
+                disabled={!isConnected || isTranscribing}
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                  isTranscribing
+                    ? "text-cc-muted opacity-50 cursor-wait"
+                    : isRecording
+                    ? "bg-cc-error/10 text-cc-error hover:bg-cc-error/20 cursor-pointer"
+                    : isConnected
+                    ? "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+                    : "text-cc-muted opacity-30 cursor-not-allowed"
+                }`}
+                title={isTranscribing ? "Transcribing..." : isRecording ? "Stop recording" : "Voice input"}
+              >
+                {isTranscribing ? (
+                  <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4 animate-spin">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="7" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={`w-4 h-4 ${isRecording ? "animate-pulse" : ""}`}>
+                    <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
+                    <path d="M3 7.5a5 5 0 0010 0" strokeLinecap="round" />
+                    <path d="M8 12.5v2" strokeLinecap="round" />
+                  </svg>
+                )}
               </button>
 
               {isRunning ? (

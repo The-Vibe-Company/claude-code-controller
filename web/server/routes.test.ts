@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 // Mock env-manager and git-utils modules before any imports
 vi.mock("./env-manager.js", () => ({
@@ -843,5 +843,126 @@ describe("POST /api/sessions/create with backend", () => {
     expect(launcher.launch).toHaveBeenCalledWith(
       expect.objectContaining({ backendType: "claude" }),
     );
+  });
+});
+
+// ─── Speech-to-Text ─────────────────────────────────────────────────────────
+
+describe("POST /api/stt/transcribe", () => {
+  const originalEnv = process.env.ELEVENLABS_API_KEY;
+
+  beforeEach(() => {
+    delete process.env.ELEVENLABS_API_KEY;
+  });
+
+  afterAll(() => {
+    if (originalEnv !== undefined) {
+      process.env.ELEVENLABS_API_KEY = originalEnv;
+    } else {
+      delete process.env.ELEVENLABS_API_KEY;
+    }
+  });
+
+  it("returns 400 when ELEVENLABS_API_KEY is not set", async () => {
+    const form = new FormData();
+    form.append("audio", new Blob(["fake-audio"], { type: "audio/webm" }), "recording.webm");
+
+    const res = await app.request("/api/stt/transcribe", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("ELEVENLABS_API_KEY not configured");
+  });
+
+  it("returns 400 when no audio file is provided", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+
+    const form = new FormData();
+
+    const res = await app.request("/api/stt/transcribe", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("audio file is required");
+  });
+
+  it("proxies audio to ElevenLabs and returns transcript", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+
+    const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ text: "Hello world" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const form = new FormData();
+    form.append("audio", new Blob(["fake-audio-data"], { type: "audio/webm" }), "recording.webm");
+
+    const res = await app.request("/api/stt/transcribe", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.text).toBe("Hello world");
+
+    // Verify the ElevenLabs API was called correctly
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.elevenlabs.io/v1/speech-to-text",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "xi-api-key": "test-key" },
+      }),
+    );
+
+    mockFetch.mockRestore();
+  });
+
+  it("returns error when ElevenLabs API fails", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+
+    const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("Unauthorized", { status: 401 }),
+    );
+
+    const form = new FormData();
+    form.append("audio", new Blob(["audio"], { type: "audio/webm" }), "recording.webm");
+
+    const res = await app.request("/api/stt/transcribe", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(res.status).toBe(401);
+    const json = await res.json();
+    expect(json.error).toBe("Transcription failed");
+
+    mockFetch.mockRestore();
+  });
+
+  it("returns 413 when audio file exceeds 25MB", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+
+    // Create a blob that reports > 25MB
+    const largeBlob = new Blob([new ArrayBuffer(26 * 1024 * 1024)], { type: "audio/webm" });
+    const form = new FormData();
+    form.append("audio", largeBlob, "large-recording.webm");
+
+    const res = await app.request("/api/stt/transcribe", {
+      method: "POST",
+      body: form,
+    });
+
+    expect(res.status).toBe(413);
+    const json = await res.json();
+    expect(json.error).toContain("too large");
   });
 });

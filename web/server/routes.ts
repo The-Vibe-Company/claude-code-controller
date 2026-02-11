@@ -482,6 +482,61 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
   });
 
 
+  // ─── Speech-to-Text (ElevenLabs proxy) ─────────────────────────────
+
+  api.post("/stt/transcribe", async (c) => {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      return c.json({ error: "ELEVENLABS_API_KEY not configured" }, 400);
+    }
+
+    const body = await c.req.parseBody();
+    const audioFile = body.audio;
+    if (!audioFile || !(audioFile instanceof File)) {
+      return c.json({ error: "audio file is required" }, 400);
+    }
+
+    if (audioFile.size > 25 * 1024 * 1024) {
+      return c.json({ error: "Audio file too large (max 25MB)" }, 413);
+    }
+
+    const languageCode = typeof body.language_code === "string" ? body.language_code : undefined;
+
+    try {
+      const form = new FormData();
+      form.append("file", audioFile, audioFile.name || "audio.webm");
+      form.append("model_id", "scribe_v2");
+      if (languageCode) form.append("language_code", languageCode);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+      const res = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+        method: "POST",
+        headers: { "xi-api-key": apiKey },
+        body: form,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => res.statusText);
+        console.error("[stt] ElevenLabs API error:", res.status, errBody);
+        return c.json({ error: "Transcription failed", details: errBody }, res.status as 400);
+      }
+
+      const result = await res.json() as { text?: string; transcription?: string };
+      return c.json({ text: result.text || result.transcription || "" });
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") {
+        return c.json({ error: "Transcription request timed out" }, 504);
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[stt] Transcription error:", msg);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
   // ─── Helper ─────────────────────────────────────────────────────────
 
   function cleanupWorktree(sessionId: string, force?: boolean): { cleaned?: boolean; dirty?: boolean; path?: string } | undefined {

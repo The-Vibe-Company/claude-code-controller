@@ -226,4 +226,33 @@ export const api = {
   // Auth
   authStatus: () =>
     get<{ enabled: boolean; authenticated: boolean }>("/auth/status"),
+
+  // Speech-to-Text
+  transcribeAudio: async (audio: Blob, languageCode?: string): Promise<{ text: string }> => {
+    const form = new FormData();
+    form.append("audio", audio, "recording.webm");
+    if (languageCode) form.append("language_code", languageCode);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35_000);
+    try {
+      const res = await fetch(`${BASE}/stt/transcribe`, {
+        method: "POST",
+        body: form,
+        credentials: "include",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText);
+      }
+      return res.json();
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (e instanceof Error && e.name === "AbortError") {
+        throw new Error("Transcription timed out. Please try again.");
+      }
+      throw e;
+    }
+  },
 };

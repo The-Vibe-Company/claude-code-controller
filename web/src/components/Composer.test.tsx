@@ -344,3 +344,27 @@ describe("Composer disabled state", () => {
     expect(textarea.placeholder).toContain("Waiting for CLI connection");
   });
 });
+
+// ─── Voice input button ─────────────────────────────────────────────────────
+
+describe("Composer voice input button", () => {
+  it("renders the voice input button", () => {
+    render(<Composer sessionId="s1" />);
+    const micBtn = screen.getByTitle("Voice input");
+    expect(micBtn).toBeTruthy();
+  });
+
+  it("voice button is disabled when CLI is not connected", () => {
+    setupMockStore({ isConnected: false });
+    render(<Composer sessionId="s1" />);
+    const micBtn = screen.getByTitle("Voice input");
+    expect(micBtn.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("voice button is enabled when CLI is connected", () => {
+    setupMockStore({ isConnected: true });
+    render(<Composer sessionId="s1" />);
+    const micBtn = screen.getByTitle("Voice input");
+    expect(micBtn.hasAttribute("disabled")).toBe(false);
+  });
+});
