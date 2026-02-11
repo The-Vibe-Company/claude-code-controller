@@ -12,7 +12,6 @@ import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
 import { getUsageLimits } from "./usage-limits.js";
-import { discoverAllCommandsAndSkills } from "./skill-descriptions.js";
 
 export function createRoutes(
   launcher: CliLauncher,
@@ -273,21 +272,6 @@ export function createRoutes(
 
     // Claude models are hardcoded on the frontend
     return c.json({ error: "Use frontend defaults for this backend" }, 404);
-  });
-
-  // ─── Command descriptions ─────────────────────────────────────
-
-  api.get("/command-descriptions", (c) => {
-    // Gather unique project roots from active sessions for project-scoped commands
-    const projectRoots = [...new Set(
-      launcher.listSessions().map((s) => s.cwd).filter(Boolean),
-    )];
-    const commands = discoverAllCommandsAndSkills(projectRoots);
-    const descriptions: Record<string, string> = {};
-    for (const cmd of commands) {
-      if (cmd.description) descriptions[cmd.name] = cmd.description;
-    }
-    return c.json(descriptions);
   });
 
   // ─── Filesystem browsing ─────────────────────────────────────

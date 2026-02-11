@@ -20,6 +20,7 @@ import type {
 } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import type { CodexAdapter } from "./codex-adapter.js";
+import { readCommandDescriptions, readSkillDescriptions } from "./skill-descriptions.js";
 
 // ─── WebSocket data tags ──────────────────────────────────────────────────────
 
@@ -569,8 +570,15 @@ export class WsBridge {
       session.state.claude_code_version = msg.claude_code_version;
       session.state.mcp_servers = msg.mcp_servers;
       session.state.agents = msg.agents ?? [];
-      session.state.slash_commands = msg.slash_commands ?? [];
-      session.state.skills = msg.skills ?? [];
+
+      // Enrich slash_commands and skills with descriptions from disk
+      const cmdNames = msg.slash_commands ?? [];
+      const skillNames = msg.skills ?? [];
+      const projectRoots = msg.cwd ? [msg.cwd] : [];
+      const cmdDescs = readCommandDescriptions(cmdNames, projectRoots);
+      const skillDescs = readSkillDescriptions(skillNames, projectRoots);
+      session.state.slash_commands = cmdNames.map((name) => ({ name, description: cmdDescs[name] }));
+      session.state.skills = skillNames.map((name) => ({ name, description: skillDescs[name] }));
 
       // Resolve git info from session cwd
       resolveGitInfo(session.state);

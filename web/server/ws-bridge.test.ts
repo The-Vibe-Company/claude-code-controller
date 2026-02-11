@@ -3,6 +3,10 @@ import { vi } from "vitest";
 const mockExecSync = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
 vi.mock("node:crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("./skill-descriptions.js", () => ({
+  readCommandDescriptions: () => ({}),
+  readSkillDescriptions: () => ({}),
+}));
 
 import { WsBridge, type SocketData } from "./ws-bridge.js";
 import { SessionStore } from "./session-store.js";
@@ -293,8 +297,8 @@ describe("CLI handlers", () => {
     expect(state.claude_code_version).toBe("2.0");
     expect(state.mcp_servers).toEqual([{ name: "test-mcp", status: "connected" }]);
     expect(state.agents).toEqual(["agent1"]);
-    expect(state.slash_commands).toEqual(["/commit"]);
-    expect(state.skills).toEqual(["pdf"]);
+    expect(state.slash_commands).toEqual([{ name: "/commit", description: undefined }]);
+    expect(state.skills).toEqual([{ name: "pdf", description: undefined }]);
   });
 
   it("handleCLIMessage: system.init resolves git info via execSync", () => {

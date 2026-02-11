@@ -44,11 +44,6 @@ vi.mock("./usage-limits.js", () => ({
   getUsageLimits: mockGetUsageLimits,
 }));
 
-const mockDiscoverAllCommandsAndSkills = vi.hoisted(() => vi.fn((): { name: string; type: string; description?: string }[] => []));
-vi.mock("./skill-descriptions.js", () => ({
-  discoverAllCommandsAndSkills: mockDiscoverAllCommandsAndSkills,
-}));
-
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -993,40 +988,5 @@ describe("GET /api/sessions/:id/usage-limits", () => {
     const json = await res.json();
     expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
     expect(mockGetUsageLimits).toHaveBeenCalled();
-  });
-});
-
-// ─── Command descriptions ────────────────────────────────────────────────────
-
-describe("GET /api/command-descriptions", () => {
-  it("returns descriptions from discovered commands and skills", async () => {
-    mockDiscoverAllCommandsAndSkills.mockReturnValue([
-      { name: "commit", type: "command", description: "Stage and commit changes" },
-      { name: "test", type: "command", description: "Run tests" },
-      { name: "cook", type: "skill", description: "Smart feature implementation" },
-      { name: "no-desc", type: "skill" },
-    ]);
-
-    const res = await app.request("/api/command-descriptions", { method: "GET" });
-
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({
-      commit: "Stage and commit changes",
-      test: "Run tests",
-      cook: "Smart feature implementation",
-    });
-    // "no-desc" should be excluded (no description)
-    expect(json).not.toHaveProperty("no-desc");
-  });
-
-  it("returns empty object when no commands found", async () => {
-    mockDiscoverAllCommandsAndSkills.mockReturnValue([]);
-
-    const res = await app.request("/api/command-descriptions", { method: "GET" });
-
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expect(json).toEqual({});
   });
 });

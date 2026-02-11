@@ -23,38 +23,51 @@ function readDescriptionFromFile(filePath: string): string | null {
   return null;
 }
 
-// Read skill descriptions from ~/.claude/skills/{name}/SKILL.md
-export function readSkillDescriptions(skillNames: string[]): Record<string, string> {
+// Read skill descriptions from {claudeDir}/skills/{name}/SKILL.md
+export function readSkillDescriptions(skillNames: string[], projectRoots?: string[]): Record<string, string> {
   const descriptions: Record<string, string> = {};
-  const skillsDir = join(homedir(), ".claude", "skills");
-
-  if (!existsSync(skillsDir)) return descriptions;
+  const dirs = [join(homedir(), ".claude", "skills")];
+  if (projectRoots) {
+    for (const root of projectRoots) {
+      dirs.push(join(root, ".claude", "skills"));
+    }
+  }
 
   for (const name of skillNames) {
-    const desc = readDescriptionFromFile(join(skillsDir, name, "SKILL.md"));
-    if (desc) descriptions[name] = desc;
+    for (const skillsDir of dirs) {
+      if (!existsSync(skillsDir)) continue;
+      const desc = readDescriptionFromFile(join(skillsDir, name, "SKILL.md"));
+      if (desc) { descriptions[name] = desc; break; }
+    }
   }
 
   return descriptions;
 }
 
-// Read command descriptions from ~/.claude/commands/{name}.md or ~/.claude/commands/{dir}/{sub}.md
-export function readCommandDescriptions(commandNames: string[]): Record<string, string> {
+// Read command descriptions from {claudeDir}/commands/{name}.md or {claudeDir}/commands/{dir}/{sub}.md
+export function readCommandDescriptions(commandNames: string[], projectRoots?: string[]): Record<string, string> {
   const descriptions: Record<string, string> = {};
-  const commandsDir = join(homedir(), ".claude", "commands");
-
-  if (!existsSync(commandsDir)) return descriptions;
+  const dirs = [join(homedir(), ".claude", "commands")];
+  if (projectRoots) {
+    for (const root of projectRoots) {
+      dirs.push(join(root, ".claude", "commands"));
+    }
+  }
 
   for (const name of commandNames) {
     const colonIdx = name.indexOf(":");
     let desc: string | null = null;
-    if (colonIdx !== -1) {
-      const dir = name.slice(0, colonIdx);
-      const sub = name.slice(colonIdx + 1);
-      desc = readDescriptionFromFile(join(commandsDir, dir, `${sub}.md`));
-    }
-    if (!desc) {
-      desc = readDescriptionFromFile(join(commandsDir, `${name}.md`));
+    for (const commandsDir of dirs) {
+      if (!existsSync(commandsDir)) continue;
+      if (colonIdx !== -1) {
+        const dir = name.slice(0, colonIdx);
+        const sub = name.slice(colonIdx + 1);
+        desc = readDescriptionFromFile(join(commandsDir, dir, `${sub}.md`));
+      }
+      if (!desc) {
+        desc = readDescriptionFromFile(join(commandsDir, `${name}.md`));
+      }
+      if (desc) break;
     }
     if (desc) descriptions[name] = desc;
   }

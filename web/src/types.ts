@@ -1,5 +1,6 @@
 import type {
   SessionState,
+  SlashCommandItem,
   PermissionRequest,
   ContentBlock,
   BrowserIncomingMessage,
@@ -7,7 +8,7 @@ import type {
   BackendType,
 } from "../server/session-types.js";
 
-export type { SessionState, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage, BackendType };
+export type { SessionState, SlashCommandItem, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage, BackendType };
 
 export interface ChatMessage {
   id: string;
