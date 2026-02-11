@@ -265,6 +265,9 @@ export const api = {
       `/fs/diff?path=${encodeURIComponent(path)}`,
     ),
 
+  // Command descriptions
+  getCommandDescriptions: () => get<Record<string, string>>("/command-descriptions"),
+
   // Usage limits
   getUsageLimits: () => get<UsageLimits>("/usage-limits"),
   getSessionUsageLimits: (sessionId: string) =>

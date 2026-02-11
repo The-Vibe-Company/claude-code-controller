@@ -19,6 +19,7 @@ vi.mock("../ws.js", () => ({
 vi.mock("../api.js", () => ({
   api: {
     gitPull: vi.fn().mockResolvedValue({ success: true, output: "", git_ahead: 0, git_behind: 0 }),
+    getCommandDescriptions: vi.fn().mockResolvedValue({}),
   },
 }));
 

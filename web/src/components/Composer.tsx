@@ -29,6 +29,7 @@ function readFileAsBase64(file: File): Promise<{ base64: string; mediaType: stri
 interface CommandItem {
   name: string;
   type: "command" | "skill";
+  description?: string;
 }
 
 export function Composer({ sessionId }: { sessionId: string }) {
@@ -66,6 +67,22 @@ export function Composer({ sessionId }: { sessionId: string }) {
     return cmds;
   }, [sessionData?.slash_commands, sessionData?.skills]);
 
+  // Fetch descriptions from server and merge into commands
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (allCommands.length > 0) {
+      api.getCommandDescriptions().then(setDescriptions).catch(() => {});
+    }
+  }, [allCommands.length]);
+
+  const commandsWithDescriptions = useMemo(() => {
+    if (Object.keys(descriptions).length === 0) return allCommands;
+    return allCommands.map((cmd) => ({
+      ...cmd,
+      description: descriptions[cmd.name],
+    }));
+  }, [allCommands, descriptions]);
+
   // Filter commands based on what the user typed after /
   const filteredCommands = useMemo(() => {
     if (!slashMenuOpen) return [];
@@ -73,9 +90,9 @@ export function Composer({ sessionId }: { sessionId: string }) {
     const match = text.match(/^\/(\S*)$/);
     if (!match) return [];
     const query = match[1].toLowerCase();
-    if (query === "") return allCommands;
-    return allCommands.filter((cmd) => cmd.name.toLowerCase().includes(query));
-  }, [text, slashMenuOpen, allCommands]);
+    if (query === "") return commandsWithDescriptions;
+    return commandsWithDescriptions.filter((cmd) => cmd.name.toLowerCase().includes(query));
+  }, [text, slashMenuOpen, commandsWithDescriptions]);
 
   // Open/close menu based on text
   useEffect(() => {
@@ -315,8 +332,13 @@ export function Composer({ sessionId }: { sessionId: string }) {
                     )}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <span className="text-[13px] font-medium text-cc-fg">/{cmd.name}</span>
-                    <span className="ml-2 text-[11px] text-cc-muted">{cmd.type}</span>
+                    <div className="flex items-center">
+                      <span className="text-[13px] font-medium text-cc-fg">/{cmd.name}</span>
+                      <span className="ml-2 text-[11px] text-cc-muted">{cmd.type}</span>
+                    </div>
+                    {cmd.description && (
+                      <p className="text-[11px] text-cc-muted/70 truncate mt-0.5">{cmd.description}</p>
+                    )}
                   </div>
                 </button>
               ))}
