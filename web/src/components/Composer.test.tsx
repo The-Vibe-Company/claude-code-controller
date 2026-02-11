@@ -19,7 +19,6 @@ vi.mock("../ws.js", () => ({
 vi.mock("../api.js", () => ({
   api: {
     gitPull: vi.fn().mockResolvedValue({ success: true, output: "", git_ahead: 0, git_behind: 0 }),
-    getCommandDescriptions: vi.fn().mockResolvedValue({}),
   },
 }));
 
@@ -50,8 +49,8 @@ function makeSession(overrides: Partial<SessionState> = {}): SessionState {
     claude_code_version: "1.0",
     mcp_servers: [],
     agents: [],
-    slash_commands: [],
-    skills: [],
+    slash_commands: [] as { name: string; description?: string }[],
+    skills: [] as { name: string; description?: string }[],
     total_cost_usd: 0,
     num_turns: 0,
     context_used_percent: 0,
@@ -251,8 +250,8 @@ describe("Composer slash menu", () => {
   it("slash menu opens when typing /", () => {
     setupMockStore({
       session: {
-        slash_commands: ["help", "clear"],
-        skills: ["commit"],
+        slash_commands: [{ name: "help" }, { name: "clear" }],
+        skills: [{ name: "commit" }],
       },
     });
     const { container } = render(<Composer sessionId="s1" />);
@@ -269,8 +268,8 @@ describe("Composer slash menu", () => {
   it("slash commands are filtered as user types", () => {
     setupMockStore({
       session: {
-        slash_commands: ["help", "clear"],
-        skills: ["commit"],
+        slash_commands: [{ name: "help" }, { name: "clear" }],
+        skills: [{ name: "commit" }],
       },
     });
     const { container } = render(<Composer sessionId="s1" />);
@@ -303,8 +302,8 @@ describe("Composer slash menu", () => {
   it("slash menu shows command types", () => {
     setupMockStore({
       session: {
-        slash_commands: ["help"],
-        skills: ["commit"],
+        slash_commands: [{ name: "help" }],
+        skills: [{ name: "commit" }],
       },
     });
     const { container } = render(<Composer sessionId="s1" />);
@@ -315,6 +314,25 @@ describe("Composer slash menu", () => {
     // Each command should display its type
     expect(screen.getByText("command")).toBeTruthy();
     expect(screen.getByText("skill")).toBeTruthy();
+  });
+
+  it("deduplicates skills that also appear in commands, preferring skill version", () => {
+    setupMockStore({
+      session: {
+        slash_commands: [{ name: "commit" }, { name: "help" }],
+        skills: [{ name: "commit", description: "Commit changes" }],
+      },
+    });
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "/" } });
+
+    // "commit" should appear once as skill with description, not twice
+    const commitItems = screen.getAllByText("/commit");
+    expect(commitItems).toHaveLength(1);
+    expect(screen.getByText("Commit changes")).toBeTruthy();
+    expect(screen.getByText("/help")).toBeTruthy();
   });
 });
 

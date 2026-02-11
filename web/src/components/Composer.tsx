@@ -51,37 +51,26 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const modes: ModeOption[] = isCodex ? CODEX_MODES : CLAUDE_MODES;
   const modeLabel = modes.find((m) => m.value === currentMode)?.label?.toLowerCase() || currentMode;
 
-  // Build command list from session data
+  // Build command list from session data (descriptions included from init)
+  // Skills take priority over commands with the same name (skills have descriptions)
   const allCommands = useMemo<CommandItem[]>(() => {
     const cmds: CommandItem[] = [];
-    if (sessionData?.slash_commands) {
-      for (const cmd of sessionData.slash_commands) {
-        cmds.push({ name: cmd, type: "command" });
-      }
-    }
+    const seen = new Set<string>();
+    // Add skills first (they have descriptions from SKILL.md)
     if (sessionData?.skills) {
       for (const skill of sessionData.skills) {
-        cmds.push({ name: skill, type: "skill" });
+        seen.add(skill.name);
+        cmds.push({ name: skill.name, type: "skill", description: skill.description });
+      }
+    }
+    if (sessionData?.slash_commands) {
+      for (const cmd of sessionData.slash_commands) {
+        if (seen.has(cmd.name)) continue;
+        cmds.push({ name: cmd.name, type: "command", description: cmd.description });
       }
     }
     return cmds;
   }, [sessionData?.slash_commands, sessionData?.skills]);
-
-  // Fetch descriptions from server and merge into commands
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
-  useEffect(() => {
-    if (allCommands.length > 0) {
-      api.getCommandDescriptions().then(setDescriptions).catch(() => {});
-    }
-  }, [allCommands.length]);
-
-  const commandsWithDescriptions = useMemo(() => {
-    if (Object.keys(descriptions).length === 0) return allCommands;
-    return allCommands.map((cmd) => ({
-      ...cmd,
-      description: descriptions[cmd.name],
-    }));
-  }, [allCommands, descriptions]);
 
   // Filter commands based on what the user typed after /
   const filteredCommands = useMemo(() => {
@@ -90,9 +79,9 @@ export function Composer({ sessionId }: { sessionId: string }) {
     const match = text.match(/^\/(\S*)$/);
     if (!match) return [];
     const query = match[1].toLowerCase();
-    if (query === "") return commandsWithDescriptions;
-    return commandsWithDescriptions.filter((cmd) => cmd.name.toLowerCase().includes(query));
-  }, [text, slashMenuOpen, commandsWithDescriptions]);
+    if (query === "") return allCommands;
+    return allCommands.filter((cmd) => cmd.name.toLowerCase().includes(query));
+  }, [text, slashMenuOpen, allCommands]);
 
   // Open/close menu based on text
   useEffect(() => {
