@@ -303,7 +303,15 @@ export function createRoutes(
   });
 
   api.get("/fs/home", (c) => {
-    return c.json({ home: homedir(), cwd: process.cwd() });
+    const home = homedir();
+    const cwd = process.cwd();
+    // Only report cwd if the user launched companion from a real project directory
+    // (not from the package root or the home directory itself)
+    const packageRoot = process.env.__VIBE_PACKAGE_ROOT;
+    const isProjectDir =
+      cwd !== home &&
+      (!packageRoot || !cwd.startsWith(packageRoot));
+    return c.json({ home, cwd: isProjectDir ? cwd : home });
   });
 
   // ─── Editor filesystem APIs ─────────────────────────────────────

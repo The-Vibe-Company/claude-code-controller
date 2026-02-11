@@ -725,6 +725,67 @@ describe("GET /api/fs/home", () => {
     expect(typeof json.home).toBe("string");
     expect(typeof json.cwd).toBe("string");
   });
+
+  it("returns home as cwd when process.cwd() is the package root", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__VIBE_PACKAGE_ROOT;
+    try {
+      process.env.__VIBE_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/opt/companion";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__VIBE_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns home as cwd when process.cwd() is inside the package root", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__VIBE_PACKAGE_ROOT;
+    try {
+      process.env.__VIBE_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/opt/companion/node_modules/.bin";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__VIBE_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns actual cwd when launched from a project directory", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__VIBE_PACKAGE_ROOT;
+    try {
+      process.env.__VIBE_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/Users/testuser/my-project";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe("/Users/testuser/my-project");
+    } finally {
+      process.cwd = origCwd;
+      process.env.__VIBE_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns home as cwd when process.cwd() equals home directory", async () => {
+    const { homedir } = await import("node:os");
+    const origCwd = process.cwd;
+    const origEnv = process.env.__VIBE_PACKAGE_ROOT;
+    try {
+      delete process.env.__VIBE_PACKAGE_ROOT;
+      process.cwd = () => homedir();
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__VIBE_PACKAGE_ROOT = origEnv;
+    }
+  });
 });
 
 describe("GET /api/fs/diff", () => {
