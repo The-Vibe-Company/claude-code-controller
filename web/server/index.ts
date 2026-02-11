@@ -100,8 +100,11 @@ if (process.env.NODE_ENV === "production") {
   app.get("/*", serveStatic({ path: resolve(distDir, "index.html") }));
 }
 
+const hostname = process.env.HOST || "localhost";
+
 const server = Bun.serve<SocketData>({
   port,
+  hostname,
   async fetch(req, server) {
     const url = new URL(req.url);
 
@@ -109,14 +112,12 @@ const server = Bun.serve<SocketData>({
     if (authEnabled && authConfig && url.searchParams.has("token")) {
       if (url.searchParams.get("token") === authConfig.token) {
         const cookieValue = createSessionCookie(authConfig.token);
-        const host = req.headers.get("host") || "";
-        const isLocalhost = host.startsWith("localhost:") || host === "localhost";
         url.searchParams.delete("token");
         return new Response(null, {
           status: 302,
           headers: {
             location: url.toString(),
-            "set-cookie": `companion_session=${cookieValue}; HttpOnly; SameSite=${isLocalhost ? "Lax" : "Strict"}${isLocalhost ? "" : "; Secure"}; Max-Age=${Math.floor(authConfig.sessionMaxAge / 1000)}; Path=/`,
+            "set-cookie": `companion_session=${cookieValue}; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(authConfig.sessionMaxAge / 1000)}; Path=/`,
           },
         });
       }
@@ -182,12 +183,12 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://localhost:${server.port}`);
+console.log(`Server running on http://${server.hostname}:${server.port}`);
 console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
+console.log(`  Browser WebSocket: ws://${server.hostname}:${server.port}/ws/browser/:sessionId`);
 
 if (authEnabled && authConfig) {
-  console.log(`  Auth URL:          http://localhost:${server.port}?token=${authConfig.token}`);
+  console.log(`  Auth URL:          http://${server.hostname}:${server.port}?token=${authConfig.token}`);
 }
 
 if (process.env.NODE_ENV !== "production") {
