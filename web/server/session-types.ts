@@ -188,8 +188,11 @@ export type BrowserIncomingMessage =
 
 // ─── Session State ────────────────────────────────────────────────────────────
 
+export type BackendType = "claude" | "codex";
+
 export interface SessionState {
   session_id: string;
+  backend_type?: BackendType;
   model: string;
   cwd: string;
   tools: string[];

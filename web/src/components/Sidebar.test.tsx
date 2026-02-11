@@ -394,7 +394,8 @@ describe("Sidebar", () => {
 
     render(<Sidebar />);
     const nameElement = screen.getByText("Auto Generated Title");
-    expect(nameElement.className).toContain("animate-name-appear");
+    // Animation class is on the parent span wrapper, not the inner text span
+    expect(nameElement.closest(".animate-name-appear")).toBeTruthy();
   });
 
   it("session name does NOT have animate-name-appear when not recently renamed", () => {
@@ -444,8 +445,9 @@ describe("Sidebar", () => {
     const renamedElement = screen.getByText("Renamed Session");
     const otherElement = screen.getByText("Other Session");
 
-    expect(renamedElement.className).toContain("animate-name-appear");
-    expect(otherElement.className).not.toContain("animate-name-appear");
+    // Animation class is on the parent span wrapper, not the inner text span
+    expect(renamedElement.closest(".animate-name-appear")).toBeTruthy();
+    expect(otherElement.closest(".animate-name-appear")).toBeFalsy();
   });
 
   it("permission badge shows count for sessions with pending permissions", () => {

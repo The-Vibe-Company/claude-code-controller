@@ -35,6 +35,11 @@ wsBridge.onCLISessionIdReceived((sessionId, cliSessionId) => {
   launcher.setCLISessionId(sessionId, cliSessionId);
 });
 
+// When a Codex adapter is created, attach it to the WsBridge
+launcher.onCodexAdapterCreated((sessionId, adapter) => {
+  wsBridge.attachCodexAdapter(sessionId, adapter);
+});
+
 // Auto-relaunch CLI when a browser connects to a session with no CLI
 const relaunchingSet = new Set<string>();
 wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
@@ -58,8 +63,9 @@ wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
   if (sessionNames.getName(sessionId)) return;
   const info = launcher.getSession(sessionId);
   const model = info?.model || "claude-sonnet-4-5-20250929";
-  console.log(`[server] Auto-naming session ${sessionId} with model ${model}...`);
-  const title = await generateSessionTitle(firstUserMessage, model);
+  const backendType = info?.backendType || "claude";
+  console.log(`[server] Auto-naming session ${sessionId} with model ${model} (${backendType})...`);
+  const title = await generateSessionTitle(firstUserMessage, model, { backendType });
   // Re-check: a manual rename may have occurred while we were generating
   if (title && !sessionNames.getName(sessionId)) {
     console.log(`[server] Auto-named session ${sessionId}: "${title}"`);

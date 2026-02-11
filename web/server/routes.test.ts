@@ -13,6 +13,15 @@ vi.mock("node:child_process", () => ({
   execSync: vi.fn(() => ""),
 }));
 
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn(() => false),
+    readFileSync: vi.fn(() => ""),
+  };
+});
+
 vi.mock("./git-utils.js", () => ({
   getRepoInfo: vi.fn(() => null),
   listBranches: vi.fn(() => []),
@@ -32,6 +41,7 @@ vi.mock("./session-names.js", () => ({
 
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { createRoutes } from "./routes.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
@@ -201,6 +211,19 @@ describe("POST /api/sessions/create", () => {
     expect(res.status).toBe(500);
     const json = await res.json();
     expect(json).toEqual({ error: "CLI binary not found" });
+  });
+
+  it("returns 400 for invalid backend values", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/test", backend: "invalid-backend" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("Invalid backend");
+    expect(launcher.launch).not.toHaveBeenCalled();
   });
 });
 
@@ -691,5 +714,134 @@ describe("GET /api/fs/diff", () => {
     const json = await res.json();
     expect(json.diff).toBe("");
     expect(json.path).toContain("file.ts");
+  });
+});
+
+// ─── Backends ─────────────────────────────────────────────────────────────────
+
+describe("GET /api/backends", () => {
+  it("returns both backends with availability status", async () => {
+    // First call: `which claude` succeeds, second: `which codex` succeeds
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/usr/bin/claude")
+      .mockReturnValueOnce("/usr/bin/codex");
+
+    const res = await app.request("/api/backends", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual([
+      { id: "claude", name: "Claude Code", available: true },
+      { id: "codex", name: "Codex", available: true },
+    ]);
+  });
+
+  it("marks backends as unavailable when CLI is not found", async () => {
+    vi.mocked(execSync)
+      .mockImplementationOnce(() => { throw new Error("not found"); })
+      .mockImplementationOnce(() => { throw new Error("not found"); });
+
+    const res = await app.request("/api/backends", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual([
+      { id: "claude", name: "Claude Code", available: false },
+      { id: "codex", name: "Codex", available: false },
+    ]);
+  });
+
+  it("handles mixed availability", async () => {
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/usr/bin/claude") // claude found
+      .mockImplementationOnce(() => { throw new Error("not found"); }); // codex not found
+
+    const res = await app.request("/api/backends", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json[0].available).toBe(true);
+    expect(json[1].available).toBe(false);
+  });
+});
+
+describe("GET /api/backends/:id/models", () => {
+  it("returns codex models from cache file sorted by priority", async () => {
+    const cacheContent = JSON.stringify({
+      models: [
+        { slug: "gpt-5.1-codex-mini", display_name: "gpt-5.1-codex-mini", description: "Fast model", visibility: "list", priority: 10 },
+        { slug: "gpt-5.2-codex", display_name: "gpt-5.2-codex", description: "Frontier model", visibility: "list", priority: 0 },
+        { slug: "gpt-5-codex", display_name: "gpt-5-codex", description: "Old model", visibility: "hide", priority: 8 },
+      ],
+    });
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(cacheContent);
+
+    const res = await app.request("/api/backends/codex/models", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // Should only include visible models, sorted by priority
+    expect(json).toEqual([
+      { value: "gpt-5.2-codex", label: "gpt-5.2-codex", description: "Frontier model" },
+      { value: "gpt-5.1-codex-mini", label: "gpt-5.1-codex-mini", description: "Fast model" },
+    ]);
+  });
+
+  it("returns 404 when codex cache file does not exist", async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    const res = await app.request("/api/backends/codex/models", { method: "GET" });
+
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toContain("Codex models cache not found");
+  });
+
+  it("returns 500 when cache file is malformed", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("not valid json{{{");
+
+    const res = await app.request("/api/backends/codex/models", { method: "GET" });
+
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toContain("Failed to parse");
+  });
+
+  it("returns 404 for claude backend (uses frontend defaults)", async () => {
+    const res = await app.request("/api/backends/claude/models", { method: "GET" });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── Session creation with backend type ──────────────────────────────────────
+
+describe("POST /api/sessions/create with backend", () => {
+  it("passes backendType codex to launcher", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-5.2-codex", cwd: "/test", backend: "codex" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt-5.2-codex", backendType: "codex" }),
+    );
+  });
+
+  it("defaults to claude backend when not specified", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/test" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({ backendType: "claude" }),
+    );
   });
 });

@@ -16,8 +16,10 @@ import type {
   BrowserIncomingMessage,
   SessionState,
   PermissionRequest,
+  BackendType,
 } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
+import type { CodexAdapter } from "./codex-adapter.js";
 
 // ─── WebSocket data tags ──────────────────────────────────────────────────────
 
@@ -37,7 +39,9 @@ export type SocketData = CLISocketData | BrowserSocketData;
 
 interface Session {
   id: string;
+  backendType: BackendType;
   cliSocket: ServerWebSocket<SocketData> | null;
+  codexAdapter: CodexAdapter | null;
   browserSockets: Set<ServerWebSocket<SocketData>>;
   state: SessionState;
   pendingPermissions: Map<string, PermissionRequest>;
@@ -46,9 +50,10 @@ interface Session {
   pendingMessages: string[];
 }
 
-function makeDefaultState(sessionId: string): SessionState {
+function makeDefaultState(sessionId: string, backendType: BackendType = "claude"): SessionState {
   return {
     session_id: sessionId,
+    backend_type: backendType,
     model: "",
     cwd: "",
     tools: [],
@@ -111,13 +116,16 @@ export class WsBridge {
       if (this.sessions.has(p.id)) continue; // don't overwrite live sessions
       const session: Session = {
         id: p.id,
+        backendType: p.state.backend_type || "claude",
         cliSocket: null,
+        codexAdapter: null,
         browserSockets: new Set(),
         state: p.state,
         pendingPermissions: new Map(p.pendingPermissions || []),
         messageHistory: p.messageHistory || [],
         pendingMessages: p.pendingMessages || [],
       };
+      session.state.backend_type = session.backendType;
       this.sessions.set(p.id, session);
       // Restored sessions with completed turns don't need auto-naming re-triggered
       if (session.state.num_turns > 0) {
@@ -145,20 +153,24 @@ export class WsBridge {
 
   // ── Session management ──────────────────────────────────────────────────
 
-  getOrCreateSession(sessionId: string): Session {
+  getOrCreateSession(sessionId: string, backendType: BackendType = "claude"): Session {
     let session = this.sessions.get(sessionId);
     if (!session) {
       session = {
         id: sessionId,
+        backendType,
         cliSocket: null,
+        codexAdapter: null,
         browserSockets: new Set(),
-        state: makeDefaultState(sessionId),
+        state: makeDefaultState(sessionId, backendType),
         pendingPermissions: new Map(),
         messageHistory: [],
         pendingMessages: [],
       };
       this.sessions.set(sessionId, session);
     }
+    session.backendType = backendType;
+    session.state.backend_type = backendType;
     return session;
   }
 
@@ -171,7 +183,12 @@ export class WsBridge {
   }
 
   isCliConnected(sessionId: string): boolean {
-    return !!this.sessions.get(sessionId)?.cliSocket;
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    if (session.backendType === "codex") {
+      return !!session.codexAdapter?.isConnected();
+    }
+    return !!session.cliSocket;
   }
 
   removeSession(sessionId: string) {
@@ -187,10 +204,16 @@ export class WsBridge {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Close CLI socket
+    // Close CLI socket (Claude)
     if (session.cliSocket) {
       try { session.cliSocket.close(); } catch {}
       session.cliSocket = null;
+    }
+
+    // Disconnect Codex adapter
+    if (session.codexAdapter) {
+      session.codexAdapter.disconnect().catch(() => {});
+      session.codexAdapter = null;
     }
 
     // Close all browser sockets
@@ -202,6 +225,112 @@ export class WsBridge {
     this.sessions.delete(sessionId);
     this.autoNamingAttempted.delete(sessionId);
     this.store?.remove(sessionId);
+  }
+
+  // ── Codex adapter attachment ────────────────────────────────────────────
+
+  /**
+   * Attach a CodexAdapter to a session. The adapter handles all message
+   * translation between the Codex app-server (stdio JSON-RPC) and the
+   * browser WebSocket protocol.
+   */
+  attachCodexAdapter(sessionId: string, adapter: CodexAdapter): void {
+    const session = this.getOrCreateSession(sessionId, "codex");
+    session.backendType = "codex";
+    session.state.backend_type = "codex";
+    session.codexAdapter = adapter;
+
+    // Forward translated messages to browsers
+    adapter.onBrowserMessage((msg) => {
+      if (msg.type === "session_init") {
+        session.state = { ...session.state, ...msg.session, backend_type: "codex" };
+        this.persistSession(session);
+      } else if (msg.type === "session_update") {
+        session.state = { ...session.state, ...msg.session, backend_type: "codex" };
+        this.persistSession(session);
+      } else if (msg.type === "status_change") {
+        session.state.is_compacting = msg.status === "compacting";
+        this.persistSession(session);
+      }
+
+      // Store assistant/result messages in history for replay
+      if (msg.type === "assistant" || msg.type === "result") {
+        session.messageHistory.push(msg);
+        this.persistSession(session);
+      }
+
+      // Diagnostic: log tool_use assistant messages
+      if (msg.type === "assistant") {
+        const content = (msg as { message?: { content?: Array<{ type: string }> } }).message?.content;
+        const hasToolUse = content?.some((b) => b.type === "tool_use");
+        if (hasToolUse) {
+          console.log(`[ws-bridge] Broadcasting tool_use assistant to ${session.browserSockets.size} browser(s) for session ${session.id}`);
+        }
+      }
+
+      // Handle permission requests
+      if (msg.type === "permission_request") {
+        session.pendingPermissions.set(msg.request.request_id, msg.request);
+        this.persistSession(session);
+      }
+
+      this.broadcastToBrowsers(session, msg);
+
+      // Trigger auto-naming after the first result
+      if (
+        msg.type === "result" &&
+        !(msg.data as { is_error?: boolean }).is_error &&
+        this.onFirstTurnCompleted &&
+        !this.autoNamingAttempted.has(session.id)
+      ) {
+        this.autoNamingAttempted.add(session.id);
+        const firstUserMsg = session.messageHistory.find((m) => m.type === "user_message");
+        if (firstUserMsg && firstUserMsg.type === "user_message") {
+          this.onFirstTurnCompleted(session.id, firstUserMsg.content);
+        }
+      }
+    });
+
+    // Handle session metadata updates
+    adapter.onSessionMeta((meta) => {
+      if (meta.cliSessionId && this.onCLISessionId) {
+        this.onCLISessionId(session.id, meta.cliSessionId);
+      }
+      if (meta.model) session.state.model = meta.model;
+      if (meta.cwd) session.state.cwd = meta.cwd;
+      session.state.backend_type = "codex";
+      this.persistSession(session);
+    });
+
+    // Handle disconnect
+    adapter.onDisconnect(() => {
+      for (const [reqId] of session.pendingPermissions) {
+        this.broadcastToBrowsers(session, { type: "permission_cancelled", request_id: reqId });
+      }
+      session.pendingPermissions.clear();
+      session.codexAdapter = null;
+      this.persistSession(session);
+      console.log(`[ws-bridge] Codex adapter disconnected for session ${sessionId}`);
+      this.broadcastToBrowsers(session, { type: "cli_disconnected" });
+    });
+
+    // Flush any messages queued while waiting for the adapter
+    if (session.pendingMessages.length > 0) {
+      console.log(`[ws-bridge] Flushing ${session.pendingMessages.length} queued message(s) to Codex adapter for session ${sessionId}`);
+      const queued = session.pendingMessages.splice(0);
+      for (const raw of queued) {
+        try {
+          const msg = JSON.parse(raw) as BrowserOutgoingMessage;
+          adapter.sendBrowserMessage(msg);
+        } catch {
+          console.warn(`[ws-bridge] Failed to parse queued message for Codex: ${raw.substring(0, 100)}`);
+        }
+      }
+    }
+
+    // Notify browsers that the backend is connected
+    this.broadcastToBrowsers(session, { type: "cli_connected" });
+    console.log(`[ws-bridge] Codex adapter attached for session ${sessionId}`);
   }
 
   // ── CLI WebSocket handlers ──────────────────────────────────────────────
@@ -285,11 +414,15 @@ export class WsBridge {
       this.sendToBrowser(ws, { type: "permission_request", request: perm });
     }
 
-    // Notify if CLI is not connected and request relaunch
-    if (!session.cliSocket) {
+    // Notify if backend is not connected and request relaunch
+    const backendConnected = session.backendType === "codex"
+      ? session.codexAdapter?.isConnected()
+      : !!session.cliSocket;
+
+    if (!backendConnected) {
       this.sendToBrowser(ws, { type: "cli_disconnected" });
       if (this.onCLIRelaunchNeeded) {
-        console.log(`[ws-bridge] Browser connected but CLI is dead for session ${sessionId}, requesting relaunch`);
+        console.log(`[ws-bridge] Browser connected but backend is dead for session ${sessionId}, requesting relaunch`);
         this.onCLIRelaunchNeeded(sessionId);
       }
     }
@@ -478,9 +611,10 @@ export class WsBridge {
     if (msg.modelUsage) {
       for (const usage of Object.values(msg.modelUsage)) {
         if (usage.contextWindow > 0) {
-          session.state.context_used_percent = Math.round(
+          const pct = Math.round(
             ((usage.inputTokens + usage.outputTokens) / usage.contextWindow) * 100
           );
+          session.state.context_used_percent = Math.max(0, Math.min(pct, 100));
         }
       }
     }
@@ -570,6 +704,35 @@ export class WsBridge {
   // ── Browser message routing ─────────────────────────────────────────────
 
   private routeBrowserMessage(session: Session, msg: BrowserOutgoingMessage) {
+    // For Codex sessions, delegate entirely to the adapter
+    if (session.backendType === "codex") {
+      // Store user messages in history for replay
+      if (msg.type === "user_message") {
+        session.messageHistory.push({
+          type: "user_message",
+          content: msg.content,
+          timestamp: Date.now(),
+        });
+        this.persistSession(session);
+      }
+      if (msg.type === "permission_response") {
+        session.pendingPermissions.delete(msg.request_id);
+        this.persistSession(session);
+      }
+
+      if (session.codexAdapter) {
+        session.codexAdapter.sendBrowserMessage(msg);
+      } else {
+        // Adapter not yet attached — queue for when it's ready.
+        // The adapter itself also queues during init, but this covers
+        // the window between session creation and adapter attachment.
+        console.log(`[ws-bridge] Codex adapter not yet attached for session ${session.id}, queuing ${msg.type}`);
+        session.pendingMessages.push(JSON.stringify(msg));
+      }
+      return;
+    }
+
+    // Claude Code path (existing logic)
     switch (msg.type) {
       case "user_message":
         this.handleUserMessage(session, msg);
@@ -723,6 +886,10 @@ export class WsBridge {
   }
 
   private broadcastToBrowsers(session: Session, msg: BrowserIncomingMessage) {
+    // Debug: warn when assistant messages are broadcast to 0 browsers (they may be lost)
+    if (session.browserSockets.size === 0 && (msg.type === "assistant" || msg.type === "stream_event" || msg.type === "result")) {
+      console.log(`[ws-bridge] ⚠ Broadcasting ${msg.type} to 0 browsers for session ${session.id} (stored in history: ${msg.type === "assistant" || msg.type === "result"})`);
+    }
     const json = JSON.stringify(msg);
     for (const ws of session.browserSockets) {
       try {

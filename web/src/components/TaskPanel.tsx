@@ -147,13 +147,19 @@ function UsageLimitsSection() {
 export function TaskPanel({ sessionId }: { sessionId: string }) {
   const tasks = useStore((s) => s.sessionTasks.get(sessionId) || EMPTY_TASKS);
   const session = useStore((s) => s.sessions.get(sessionId));
+  const sdkBackendType = useStore((s) => s.sdkSessions.find((x) => x.sessionId === sessionId)?.backendType);
   const taskPanelOpen = useStore((s) => s.taskPanelOpen);
   const setTaskPanelOpen = useStore((s) => s.setTaskPanelOpen);
 
   if (!taskPanelOpen) return null;
 
   const completedCount = tasks.filter((t) => t.status === "completed").length;
-  const contextPct = session?.context_used_percent ?? 0;
+  const isCodex = (session?.backend_type || sdkBackendType) === "codex";
+  const showTasks = !!session && !isCodex;
+  const rawContextPct = session?.context_used_percent ?? 0;
+  const contextPct = Number.isFinite(rawContextPct)
+    ? Math.max(0, Math.min(Math.round(rawContextPct), 100))
+    : 0;
 
   return (
     <aside className="w-[280px] h-full flex flex-col bg-cc-card border-l border-cc-border">
@@ -198,7 +204,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
                 Context
               </span>
               <span className="text-[11px] text-cc-muted tabular-nums">
-                {contextPct > 0 ? `${contextPct}%` : "--"}
+                {`${contextPct}%`}
               </span>
             </div>
             <div className="w-full h-1.5 rounded-full bg-cc-hover overflow-hidden">
@@ -230,28 +236,32 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
       {/* Usage limits */}
       <UsageLimitsSection />
 
-      {/* Task section header */}
-      <div className="shrink-0 px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
-        <span className="text-[12px] font-semibold text-cc-fg">Tasks</span>
-        {tasks.length > 0 && (
-          <span className="text-[11px] text-cc-muted tabular-nums">
-            {completedCount}/{tasks.length}
-          </span>
-        )}
-      </div>
-
-      {/* Task list */}
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        {tasks.length === 0 ? (
-          <p className="text-xs text-cc-muted text-center py-8">No tasks yet</p>
-        ) : (
-          <div className="space-y-0.5">
-            {tasks.map((task) => (
-              <TaskRow key={task.id} task={task} />
-            ))}
+      {showTasks && (
+        <>
+          {/* Task section header */}
+          <div className="shrink-0 px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
+            <span className="text-[12px] font-semibold text-cc-fg">Tasks</span>
+            {tasks.length > 0 && (
+              <span className="text-[11px] text-cc-muted tabular-nums">
+                {completedCount}/{tasks.length}
+              </span>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Task list */}
+          <div className="flex-1 overflow-y-auto px-3 py-2">
+            {tasks.length === 0 ? (
+              <p className="text-xs text-cc-muted text-center py-8">No tasks yet</p>
+            ) : (
+              <div className="space-y-0.5">
+                {tasks.map((task) => (
+                  <TaskRow key={task.id} task={task} />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </aside>
   );
 }

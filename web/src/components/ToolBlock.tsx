@@ -13,6 +13,9 @@ const TOOL_ICONS: Record<string, string> = {
   TaskCreate: "list",
   TaskUpdate: "list",
   SendMessage: "message",
+  // Codex tool types (mapped by codex-adapter)
+  web_search: "globe",
+  mcp_tool_call: "tool",
 };
 
 export function getToolIcon(name: string): string {
@@ -26,6 +29,10 @@ export function getToolLabel(name: string): string {
   if (name === "Edit") return "Edit File";
   if (name === "Glob") return "Find Files";
   if (name === "Grep") return "Search Content";
+  if (name === "web_search") return "Web Search";
+  if (name === "mcp_tool_call") return "MCP Tool";
+  // Codex MCP tools come as "mcp:server:tool"
+  if (name.startsWith("mcp:")) return name.split(":").slice(1).join(":");
   return name;
 }
 

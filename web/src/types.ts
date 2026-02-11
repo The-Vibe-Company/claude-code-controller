@@ -4,9 +4,10 @@ import type {
   ContentBlock,
   BrowserIncomingMessage,
   BrowserOutgoingMessage,
+  BackendType,
 } from "../server/session-types.js";
 
-export type { SessionState, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage };
+export type { SessionState, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage, BackendType };
 
 export interface ChatMessage {
   id: string;
@@ -46,4 +47,5 @@ export interface SdkSessionInfo {
   branch?: string;
   actualBranch?: string;
   name?: string;
+  backendType?: BackendType;
 }

@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "../store.js";
-import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo } from "../api.js";
+import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
+import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
+import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
 
@@ -27,27 +29,28 @@ function readFileAsBase64(file: File): Promise<{ base64: string; mediaType: stri
   });
 }
 
-const MODELS = [
-  { value: "claude-opus-4-6", label: "Opus", icon: "\u2733" },
-  { value: "claude-sonnet-4-5-20250929", label: "Sonnet", icon: "\u25D0" },
-  { value: "claude-haiku-4-5-20251001", label: "Haiku", icon: "\u26A1" },
-];
-
-const MODES = [
-  { value: "bypassPermissions", label: "Agent" },
-  { value: "plan", label: "Plan" },
-];
-
 let idCounter = 0;
 
 export function HomePage() {
   const [text, setText] = useState("");
-  const [model, setModel] = useState(MODELS[0].value);
-  const [mode, setMode] = useState(MODES[0].value);
+  const [backend, setBackend] = useState<BackendType>(() =>
+    (localStorage.getItem("cc-backend") as BackendType) || "claude",
+  );
+  const [backends, setBackends] = useState<BackendInfo[]>([]);
+  const [model, setModel] = useState(() => getDefaultModel(
+    (localStorage.getItem("cc-backend") as BackendType) || "claude",
+  ));
+  const [mode, setMode] = useState(() => getDefaultMode(
+    (localStorage.getItem("cc-backend") as BackendType) || "claude",
+  ));
   const [cwd, setCwd] = useState(() => getRecentDirs()[0] || "");
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
+
+  const MODELS = dynamicModels || getModelsForBackend(backend);
+  const MODES = getModesForBackend(backend);
 
   // Environment state
   const [envs, setEnvs] = useState<CompanionEnv[]>([]);
@@ -85,7 +88,7 @@ export function HomePage() {
     textareaRef.current?.focus();
   }, []);
 
-  // Load server home/cwd on mount
+  // Load server home/cwd and available backends on mount
   useEffect(() => {
     api.getHome().then(({ home, cwd: serverCwd }) => {
       if (!cwd) {
@@ -93,7 +96,37 @@ export function HomePage() {
       }
     }).catch(() => {});
     api.listEnvs().then(setEnvs).catch(() => {});
+    api.getBackends().then(setBackends).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When backend changes, reset model and mode to defaults
+  function switchBackend(newBackend: BackendType) {
+    setBackend(newBackend);
+    localStorage.setItem("cc-backend", newBackend);
+    setDynamicModels(null);
+    setModel(getDefaultModel(newBackend));
+    setMode(getDefaultMode(newBackend));
+  }
+
+  // Fetch dynamic models for the selected backend
+  useEffect(() => {
+    if (backend !== "codex") {
+      setDynamicModels(null);
+      return;
+    }
+    api.getBackendModels(backend).then((models) => {
+      if (models.length > 0) {
+        const options = toModelOptions(models);
+        setDynamicModels(options);
+        // If current model isn't in the list, switch to first
+        if (!options.some((m) => m.value === model)) {
+          setModel(options[0].value);
+        }
+      }
+    }).catch(() => {
+      // Fall back to hardcoded models silently
+    });
+  }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -142,6 +175,7 @@ export function HomePage() {
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
+  const logoSrc = backend === "codex" ? "/logo-codex.svg" : "/logo.svg";
   const dirLabel = cwd ? cwd.split("/").pop() || cwd : "Select folder";
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -188,7 +222,10 @@ export function HomePage() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
-      setMode(mode === "plan" ? "bypassPermissions" : "plan");
+      const currentModes = getModesForBackend(backend);
+      const currentIndex = currentModes.findIndex((m) => m.value === mode);
+      const nextIndex = (currentIndex + 1) % currentModes.length;
+      setMode(currentModes[nextIndex].value);
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
@@ -220,6 +257,7 @@ export function HomePage() {
         branch: branchName,
         createBranch: branchName && isNewBranch ? true : undefined,
         useWorktree: useWorktree || undefined,
+        backend,
       });
       const sessionId = result.sessionId;
 
@@ -270,7 +308,7 @@ export function HomePage() {
       <div className="w-full max-w-2xl">
         {/* Logo + Title */}
         <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
-          <img src="/logo.svg" alt="The Vibe Companion" className="w-24 h-24 sm:w-32 sm:h-32 mb-3" />
+          <img src={logoSrc} alt="The Vibe Companion" className="w-24 h-24 sm:w-32 sm:h-32 mb-3" />
           <h1 className="text-xl sm:text-2xl font-semibold text-cc-fg">
             The Vibe Companion
           </h1>
@@ -391,7 +429,36 @@ export function HomePage() {
         </div>
 
         {/* Below-card selectors */}
-        <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap overflow-x-auto">
+        <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap">
+          {/* Backend toggle */}
+          {backends.length > 1 && (
+            <div className="flex items-center bg-cc-hover/50 rounded-lg p-0.5">
+              {backends.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => b.available && switchBackend(b.id as BackendType)}
+                  disabled={!b.available}
+                  title={b.available ? b.name : `${b.name} CLI not found in PATH`}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
+                    !b.available
+                      ? "text-cc-muted/40 cursor-not-allowed"
+                      : backend === b.id
+                        ? "bg-cc-card text-cc-fg font-medium shadow-sm cursor-pointer"
+                        : "text-cc-muted hover:text-cc-fg cursor-pointer"
+                  }`}
+                >
+                  {b.name}
+                  {!b.available && (
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3 text-cc-error/60">
+                      <circle cx="8" cy="8" r="6" />
+                      <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Folder selector */}
           <div>
             <button
@@ -652,7 +719,7 @@ export function HomePage() {
               </svg>
             </button>
             {showModelDropdown && (
-              <div className="absolute left-0 bottom-full mb-1 w-44 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1 overflow-hidden">
+              <div className="absolute left-0 bottom-full mb-1 w-48 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1">
                 {MODELS.map((m) => (
                   <button
                     key={m.value}

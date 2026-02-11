@@ -65,11 +65,25 @@ export interface CreateSessionOpts {
   permissionMode?: string;
   cwd?: string;
   claudeBinary?: string;
+  codexBinary?: string;
   allowedTools?: string[];
   envSlug?: string;
   branch?: string;
   createBranch?: boolean;
   useWorktree?: boolean;
+  backend?: "claude" | "codex";
+}
+
+export interface BackendInfo {
+  id: string;
+  name: string;
+  available: boolean;
+}
+
+export interface BackendModelInfo {
+  value: string;
+  label: string;
+  description: string;
 }
 
 export interface GitRepoInfo {
@@ -222,6 +236,11 @@ export const api = {
       git_ahead: number;
       git_behind: number;
     }>("/git/pull", { cwd }),
+
+  // Backends
+  getBackends: () => get<BackendInfo[]>("/backends"),
+  getBackendModels: (backendId: string) =>
+    get<BackendModelInfo[]>(`/backends/${encodeURIComponent(backendId)}/models`),
 
   // Editor
   startEditor: (sessionId: string) =>

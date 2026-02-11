@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
@@ -25,6 +26,11 @@ export function createRoutes(
   api.post("/sessions/create", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     try {
+      const backend = body.backend ?? "claude";
+      if (backend !== "claude" && backend !== "codex") {
+        return c.json({ error: `Invalid backend: ${String(backend)}` }, 400);
+      }
+
       // Resolve environment variables from envSlug
       let envVars: Record<string, string> | undefined = body.env;
       if (body.envSlug) {
@@ -88,8 +94,10 @@ export function createRoutes(
         permissionMode: body.permissionMode,
         cwd,
         claudeBinary: body.claudeBinary,
+        codexBinary: body.codexBinary,
         allowedTools: body.allowedTools,
         env: envVars,
+        backendType: backend,
         worktreeInfo,
       });
 
@@ -188,6 +196,69 @@ export function createRoutes(
     launcher.setArchived(id, false);
     sessionStore.setArchived(id, false);
     return c.json({ ok: true });
+  });
+
+  // ─── Available backends ─────────────────────────────────────
+
+  api.get("/backends", (c) => {
+    const backends: Array<{ id: string; name: string; available: boolean }> = [];
+
+    // Check Claude Code
+    let claudeAvailable = false;
+    try {
+      execSync("which claude", { encoding: "utf-8", timeout: 3000 });
+      claudeAvailable = true;
+    } catch {}
+    backends.push({ id: "claude", name: "Claude Code", available: claudeAvailable });
+
+    // Check Codex
+    let codexAvailable = false;
+    try {
+      execSync("which codex", { encoding: "utf-8", timeout: 3000 });
+      codexAvailable = true;
+    } catch {}
+    backends.push({ id: "codex", name: "Codex", available: codexAvailable });
+
+    return c.json(backends);
+  });
+
+  api.get("/backends/:id/models", (c) => {
+    const backendId = c.req.param("id");
+
+    if (backendId === "codex") {
+      // Read Codex model list from its local cache file
+      const cachePath = join(homedir(), ".codex", "models_cache.json");
+      if (!existsSync(cachePath)) {
+        return c.json({ error: "Codex models cache not found. Run codex once to populate it." }, 404);
+      }
+      try {
+        const raw = readFileSync(cachePath, "utf-8");
+        const cache = JSON.parse(raw) as {
+          models: Array<{
+            slug: string;
+            display_name?: string;
+            description?: string;
+            visibility?: string;
+            priority?: number;
+          }>;
+        };
+        // Only return visible models, sorted by priority
+        const models = cache.models
+          .filter((m) => m.visibility === "list")
+          .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+          .map((m) => ({
+            value: m.slug,
+            label: m.display_name || m.slug,
+            description: m.description || "",
+          }));
+        return c.json(models);
+      } catch (e) {
+        return c.json({ error: "Failed to parse Codex models cache" }, 500);
+      }
+    }
+
+    // Claude models are hardcoded on the frontend
+    return c.json({ error: "Use frontend defaults for this backend" }, 404);
   });
 
   // ─── Filesystem browsing ─────────────────────────────────────
