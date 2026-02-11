@@ -10,7 +10,7 @@ function parseFrontmatterDescription(content: string): string | null {
   const descMatch = frontmatter.match(/^description:\s*(.+)$/m);
   if (!descMatch) return null;
   const raw = descMatch[1].trim();
-  return raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw;
+  return (raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'")) ? raw.slice(1, -1) : raw;
 }
 
 function readDescriptionFromFile(filePath: string): string | null {
