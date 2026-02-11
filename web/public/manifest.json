@@ -1,0 +1,24 @@
+{
+  "name": "The Vibe Companion",
+  "short_name": "Companion",
+  "description": "Web UI for Claude Code and Codex",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#2b2a27",
+  "theme_color": "#ae5630",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
