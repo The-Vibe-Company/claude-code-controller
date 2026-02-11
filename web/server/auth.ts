@@ -131,12 +131,9 @@ export function authMiddleware(): MiddlewareHandler {
     const tokenParam = c.req.query("token");
     if (tokenParam === config.token) {
       const cookieValue = createSessionCookie(config.token);
-      const host = c.req.header("host") || "";
-      const isLocalhost = host.startsWith("localhost:") || host === "localhost";
       setCookie(c, SESSION_COOKIE, cookieValue, {
         httpOnly: true,
-        sameSite: isLocalhost ? "Lax" : "Strict",
-        secure: !isLocalhost,
+        sameSite: "Lax",
         maxAge: Math.floor(config.sessionMaxAge / 1000),
         path: "/",
       });
