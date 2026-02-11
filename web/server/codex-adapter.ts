@@ -47,6 +47,17 @@ interface CodexItem {
   [key: string]: unknown;
 }
 
+/** Safely extract a string kind from a Codex file change entry.
+ *  Codex may send kind as a string ("create") or as an object ({ type: "modify" }). */
+function safeKind(kind: unknown): string {
+  if (typeof kind === "string") return kind;
+  if (kind && typeof kind === "object" && "type" in kind) {
+    const t = (kind as Record<string, unknown>).type;
+    if (typeof t === "string") return t;
+  }
+  return "modify";
+}
+
 interface CodexAgentMessageItem extends CodexItem {
   type: "agentMessage";
   text?: string;
@@ -63,7 +74,7 @@ interface CodexCommandExecutionItem extends CodexItem {
 
 interface CodexFileChangeItem extends CodexItem {
   type: "fileChange";
-  changes?: Array<{ path: string; kind: "create" | "modify" | "delete"; diff?: string }>;
+  changes?: Array<{ path: string; kind: unknown; diff?: string }>;
   status: "inProgress" | "completed" | "failed" | "declined";
 }
 
@@ -943,10 +954,10 @@ export class CodexAdapter {
         const fc = item as CodexFileChangeItem;
         const changes = fc.changes || [];
         const firstChange = changes[0];
-        const toolName = firstChange?.kind === "create" ? "Write" : "Edit";
+        const toolName = safeKind(firstChange?.kind) === "create" ? "Write" : "Edit";
         const toolInput = {
           file_path: firstChange?.path || "",
-          changes: changes.map((c) => ({ path: c.path, kind: c.kind })),
+          changes: changes.map((c) => ({ path: c.path, kind: safeKind(c.kind) })),
         };
         this.emitToolUseStart(item.id, toolName, toolInput);
         break;
@@ -1115,13 +1126,13 @@ export class CodexAdapter {
         const fc = item as CodexFileChangeItem;
         const changes = fc.changes || [];
         const firstChange = changes[0];
-        const toolName = firstChange?.kind === "create" ? "Write" : "Edit";
+        const toolName = safeKind(firstChange?.kind) === "create" ? "Write" : "Edit";
         // Ensure tool_use was emitted
         this.ensureToolUseEmitted(item.id, toolName, {
           file_path: firstChange?.path || "",
-          changes: changes.map((c) => ({ path: c.path, kind: c.kind })),
+          changes: changes.map((c) => ({ path: c.path, kind: safeKind(c.kind) })),
         });
-        const summary = changes.map((c) => `${c.kind}: ${c.path}`).join("\n");
+        const summary = changes.map((c) => `${safeKind(c.kind)}: ${c.path}`).join("\n");
         this.emitToolResult(item.id, summary || "File changes applied", fc.status === "failed");
         break;
       }
@@ -1321,7 +1332,8 @@ export class CodexAdapter {
   }
 
   /** Emit an assistant message with a tool_result content block. */
-  private emitToolResult(toolUseId: string, content: string, isError: boolean): void {
+  private emitToolResult(toolUseId: string, content: unknown, isError: boolean): void {
+    const safeContent = typeof content === "string" ? content : JSON.stringify(content);
     this.emit({
       type: "assistant",
       message: {
@@ -1333,7 +1345,7 @@ export class CodexAdapter {
           {
             type: "tool_result",
             tool_use_id: toolUseId,
-            content,
+            content: safeContent,
             is_error: isError,
           },
         ],
