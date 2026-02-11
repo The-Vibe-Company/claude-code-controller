@@ -7,6 +7,7 @@ async function post<T = unknown>(path: string, body?: object): Promise<T> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -16,7 +17,7 @@ async function post<T = unknown>(path: string, body?: object): Promise<T> {
 }
 
 async function get<T = unknown>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { credentials: "include" });
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
@@ -26,6 +27,7 @@ async function put<T = unknown>(path: string, body?: object): Promise<T> {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -39,6 +41,7 @@ async function patch<T = unknown>(path: string, body?: object): Promise<T> {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -52,6 +55,7 @@ async function del<T = unknown>(path: string, body?: object): Promise<T> {
     method: "DELETE",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    credentials: "include",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -218,4 +222,8 @@ export const api = {
     put<{ ok: boolean; path: string }>("/fs/write", { path, content }),
   getFileDiff: (path: string) =>
     get<{ path: string; diff: string }>(`/fs/diff?path=${encodeURIComponent(path)}`),
+
+  // Auth
+  authStatus: () =>
+    get<{ enabled: boolean; authenticated: boolean }>("/auth/status"),
 };

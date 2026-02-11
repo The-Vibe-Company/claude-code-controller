@@ -11,9 +11,14 @@ import type { WorktreeTracker } from "./worktree-tracker.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import { authMiddleware, authStatusHandler, isAuthEnabled } from "./auth.js";
 
 export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionStore: SessionStore, worktreeTracker: WorktreeTracker) {
   const api = new Hono();
+
+  // ─── Auth (public route first, then middleware) ─────────────────────
+  api.get("/auth/status", authStatusHandler);
+  api.use("/*", authMiddleware());
 
   // ─── SDK Sessions (--sdk-url) ─────────────────────────────────────
 
@@ -357,7 +362,7 @@ export function createRoutes(launcher: CliLauncher, wsBridge: WsBridge, sessionS
     }
   });
 
-  // ─── Environments (~/.companion/envs/) ────────────────────────────
+  // ─── Environments (~/.companion/envs/) ────────────────────────
 
   api.get("/envs", (c) => {
     try {

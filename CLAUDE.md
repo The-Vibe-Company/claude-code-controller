@@ -61,6 +61,7 @@ Browser (React) ←→ WebSocket ←→ Hono Server (Bun) ←→ WebSocket (NDJS
   - `session-store.ts` — JSON file persistence to `$TMPDIR/vibe-sessions/`. Debounced writes.
   - `session-types.ts` — All TypeScript types for CLI messages (NDJSON), browser messages, session state, permissions.
   - `routes.ts` — REST API: session CRUD, filesystem browsing, environment management.
+  - `auth.ts` — Optional auth layer (enabled via `COMPANION_AUTH=true`). Auto-generates 256-bit token, stores in `~/.companion/auth.json` (0600), validates via HMAC session cookies. Protects all WebSocket and REST endpoints.
   - `env-manager.ts` — CRUD for environment profiles stored in `~/.companion/envs/`.
 
 - **`web/src/`** — React 19 frontend
@@ -82,6 +83,10 @@ Full protocol documentation is in `WEBSOCKET_PROTOCOL_REVERSED.md`.
 ### Session Lifecycle
 
 Sessions persist to disk (`$TMPDIR/vibe-sessions/`) and survive server restarts. On restart, live CLI processes are detected by PID and given a grace period to reconnect their WebSocket. If they don't, they're killed and relaunched with `--resume` using the CLI's internal session ID.
+
+### Authentication (Optional)
+
+Enable opt-in auth by setting `COMPANION_AUTH=true`. Jupyter-style: server auto-generates a 256-bit hex token stored at `~/.companion/auth.json` (0600), prints a clickable `?token=` URL to terminal. Visiting that URL sets an HMAC-signed httpOnly cookie (`companion_session`, 7-day expiry). Protects `/api/*` and `/ws/browser/:id`; CLI WebSocket (`/ws/cli/:id`) stays unprotected (has its own auth). `/api/auth/status` is always public.
 
 ## Browser Exploration
 

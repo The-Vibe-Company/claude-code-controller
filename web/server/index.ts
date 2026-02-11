@@ -12,6 +12,7 @@ import { SessionStore } from "./session-store.js";
 import { WorktreeTracker } from "./worktree-tracker.js";
 import { generateSessionTitle } from "./auto-namer.js";
 import * as sessionNames from "./session-names.js";
+import { isAuthEnabled, getOrCreateAuthConfig, validateRequest, createSessionCookie } from "./auth.js";
 import type { SocketData } from "./ws-bridge.js";
 import type { ServerWebSocket } from "bun";
 
@@ -76,9 +77,20 @@ wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
 
 console.log(`[server] Session persistence: ${sessionStore.directory}`);
 
+// ── Auth initialization ─────────────────────────────────────────────────────
+const authEnabled = isAuthEnabled();
+const authConfig = authEnabled ? getOrCreateAuthConfig() : null;
+if (authEnabled) {
+  console.log(`[server] Auth enabled`);
+}
+
 const app = new Hono();
 
-app.use("/api/*", cors());
+app.use("/api/*", cors(
+  authEnabled
+    ? { origin: `http://localhost:${process.env.VITE_PORT || 5174}`, credentials: true }
+    : undefined
+));
 app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
@@ -92,6 +104,23 @@ const server = Bun.serve<SocketData>({
   port,
   async fetch(req, server) {
     const url = new URL(req.url);
+
+    // ── Token exchange — set cookie and redirect (works for any route) ──
+    if (authEnabled && authConfig && url.searchParams.has("token")) {
+      if (url.searchParams.get("token") === authConfig.token) {
+        const cookieValue = createSessionCookie(authConfig.token);
+        const host = req.headers.get("host") || "";
+        const isLocalhost = host.startsWith("localhost:") || host === "localhost";
+        url.searchParams.delete("token");
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: url.toString(),
+            "set-cookie": `companion_session=${cookieValue}; HttpOnly; SameSite=${isLocalhost ? "Lax" : "Strict"}${isLocalhost ? "" : "; Secure"}; Max-Age=${Math.floor(authConfig.sessionMaxAge / 1000)}; Path=/`,
+          },
+        });
+      }
+    }
 
     // ── CLI WebSocket — Claude Code CLI connects here via --sdk-url ────
     const cliMatch = url.pathname.match(/^\/ws\/cli\/([a-f0-9-]+)$/);
@@ -107,6 +136,12 @@ const server = Bun.serve<SocketData>({
     // ── Browser WebSocket — connects to a specific session ─────────────
     const browserMatch = url.pathname.match(/^\/ws\/browser\/([a-f0-9-]+)$/);
     if (browserMatch) {
+      // Auth check before upgrade — Bun can't reject after upgrade
+      const authResult = validateRequest(req);
+      if (!authResult.valid) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
       const sessionId = browserMatch[1];
       const upgraded = server.upgrade(req, {
         data: { kind: "browser" as const, sessionId },
@@ -150,6 +185,10 @@ const server = Bun.serve<SocketData>({
 console.log(`Server running on http://localhost:${server.port}`);
 console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
 console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
+
+if (authEnabled && authConfig) {
+  console.log(`  Auth URL:          http://localhost:${server.port}?token=${authConfig.token}`);
+}
 
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
