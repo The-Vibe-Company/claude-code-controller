@@ -281,9 +281,6 @@ export class CodexAdapter {
   private streamingText = "";
   private streamingItemId: string | null = null;
 
-  // Track message counter for synthesized IDs
-  private msgCounter = 0;
-
   // Accumulate reasoning text by item ID so we can emit final thinking blocks.
   private reasoningTextByItemId = new Map<string, string>();
 
@@ -941,7 +938,7 @@ export class CodexAdapter {
           event: {
             type: "message_start",
             message: {
-              id: `codex-msg-${++this.msgCounter}`,
+              id: this.makeMessageId("agent", item.id),
               type: "message",
               role: "assistant",
               model: this.options.model || "",
@@ -1097,7 +1094,7 @@ export class CodexAdapter {
         this.emit({
           type: "assistant",
           message: {
-            id: `codex-msg-${++this.msgCounter}`,
+            id: this.makeMessageId("agent", item.id),
             type: "message",
             role: "assistant",
             model: this.options.model || "",
@@ -1187,7 +1184,7 @@ export class CodexAdapter {
           this.emit({
             type: "assistant",
             message: {
-              id: `codex-msg-${++this.msgCounter}`,
+              id: this.makeMessageId("reasoning", item.id),
               type: "message",
               role: "assistant",
               model: this.options.model || "",
@@ -1301,7 +1298,7 @@ export class CodexAdapter {
     this.emit({
       type: "assistant",
       message: {
-        id: `codex-msg-${++this.msgCounter}`,
+        id: this.makeMessageId("tool_use", toolUseId),
         type: "message",
         role: "assistant",
         model: this.options.model || "",
@@ -1360,7 +1357,7 @@ export class CodexAdapter {
     this.emit({
       type: "assistant",
       message: {
-        id: `codex-msg-${++this.msgCounter}`,
+        id: this.makeMessageId("tool_result", toolUseId),
         type: "message",
         role: "assistant",
         model: this.options.model || "",
@@ -1378,6 +1375,11 @@ export class CodexAdapter {
       parent_tool_use_id: null,
       timestamp: Date.now(),
     });
+  }
+
+  private makeMessageId(kind: string, sourceId?: string): string {
+    if (sourceId) return `codex-${kind}-${sourceId}`;
+    return `codex-${kind}-${randomUUID()}`;
   }
 
   private mapApprovalPolicy(mode?: string): string {

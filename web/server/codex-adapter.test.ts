@@ -136,6 +136,46 @@ describe("CodexAdapter", () => {
     expect(secondDelta.event.delta.text).toBe("world!");
   });
 
+  it("uses stable assistant message IDs derived from Codex item IDs", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "item/started",
+      params: { item: { type: "agentMessage", id: "item_1" } },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+
+    stdout.push(JSON.stringify({
+      method: "item/agentMessage/delta",
+      params: { itemId: "item_1", delta: "Hello world" },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+
+    stdout.push(JSON.stringify({
+      method: "item/completed",
+      params: { item: { type: "agentMessage", id: "item_1" } },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const assistantMsgs = messages.filter((m) => m.type === "assistant");
+    expect(assistantMsgs.length).toBeGreaterThan(0);
+    const last = assistantMsgs[assistantMsgs.length - 1] as {
+      message: { id: string; content: Array<{ type: string; text?: string }> };
+    };
+    expect(last.message.id).toBe("codex-agent-item_1");
+    expect(last.message.content[0].type).toBe("text");
+    expect(last.message.content[0].text).toBe("Hello world");
+  });
+
   it("translates command approval request to permission_request", async () => {
     const messages: BrowserIncomingMessage[] = [];
     const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
