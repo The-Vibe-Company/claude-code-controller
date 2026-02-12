@@ -138,7 +138,7 @@ describe("launch", () => {
 
     // Core required flags
     expect(cmdAndArgs).toContain("--sdk-url");
-    expect(cmdAndArgs).toContain("ws://localhost:3456/ws/cli/test-session-id");
+    expect(cmdAndArgs).toContain("ws://127.0.0.1:3456/ws/cli/test-session-id");
     expect(cmdAndArgs).toContain("--print");
     expect(cmdAndArgs).toContain("--output-format");
     expect(cmdAndArgs).toContain("stream-json");
