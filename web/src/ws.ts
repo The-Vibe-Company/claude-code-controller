@@ -349,6 +349,11 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       break;
     }
 
+    case "tunnel_status": {
+      store.setTunnelStatus(data.state);
+      break;
+    }
+
     case "session_name_update": {
       // Only apply auto-name if user hasn't manually renamed (still has random Adj+Noun name)
       const currentName = store.sessionNames.get(sessionId);

@@ -58,10 +58,20 @@ switch (command) {
     break;
   }
 
+  case "tunnel-setup": {
+    const { runInteractiveSetup } = await import("../server/tunnel-setup.js");
+    await runInteractiveSetup();
+    break;
+  }
+
   case "start":
   case undefined: {
     // Default: start server in foreground (current behavior)
     process.env.NODE_ENV = process.env.NODE_ENV || "production";
+    // Check for --tunnel flag
+    if (process.argv.includes("--tunnel")) {
+      process.env.__COMPANION_TUNNEL = "1";
+    }
     await import("../server/index.ts");
     break;
   }
@@ -72,15 +82,17 @@ switch (command) {
 Usage: the-companion [command]
 
 Commands:
-  (none)      Start the server in foreground (default)
-  start       Start the server in foreground
-  install     Install as a background service (launchd/systemd)
-  uninstall   Remove the background service
-  status      Show service status
-  logs        Tail service log files
+  (none)          Start the server in foreground (default)
+  start           Start the server in foreground
+  install         Install as a background service (launchd/systemd)
+  uninstall       Remove the background service
+  status          Show service status
+  logs            Tail service log files
+  tunnel-setup    Run interactive Cloudflare Tunnel setup wizard
 
 Options:
-  --port <n>  Override the default port (default: 3456)
+  --port <n>      Override the default port (default: 3456)
+  --tunnel        Start Cloudflare Tunnel on boot
 `);
     process.exit(1);
 }

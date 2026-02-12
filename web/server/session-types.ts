@@ -185,7 +185,8 @@ export type BrowserIncomingMessage =
   | { type: "user_message"; content: string; timestamp: number; id?: string }
   | { type: "message_history"; messages: BrowserIncomingMessage[] }
   | { type: "session_name_update"; name: string }
-  | { type: "pr_status_update"; pr: import("./github-pr.js").GitHubPRInfo | null; available: boolean };
+  | { type: "pr_status_update"; pr: import("./github-pr.js").GitHubPRInfo | null; available: boolean }
+  | { type: "tunnel_status"; state: { status: string; hostname: string | null; connectedAt: number | null; error: string | null; connections: number } };
 
 // ─── Session State ────────────────────────────────────────────────────────────
 

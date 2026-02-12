@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { TunnelIndicator } from "./TunnelPanel.js";
 
 export function TopBar() {
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -86,6 +87,8 @@ export function TopBar() {
               <span className="text-cc-primary font-medium">Thinking</span>
             </div>
           )}
+
+          <TunnelIndicator />
 
           {/* Chat / Editor tab toggle */}
           <div className="flex items-center bg-cc-hover rounded-lg p-0.5">

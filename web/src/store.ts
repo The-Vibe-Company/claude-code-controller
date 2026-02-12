@@ -52,6 +52,9 @@ interface AppState {
   updateInfo: UpdateInfo | null;
   updateDismissedVersion: string | null;
 
+  // Tunnel
+  tunnelStatus: { status: string; hostname: string | null; connectedAt: number | null; error: string | null; connections: number } | null;
+
   // UI
   darkMode: boolean;
   notificationSound: boolean;
@@ -110,6 +113,9 @@ interface AppState {
 
   // Plan mode actions
   setPreviousPermissionMode: (sessionId: string, mode: string) => void;
+
+  // Tunnel actions
+  setTunnelStatus: (status: AppState["tunnelStatus"]) => void;
 
   // Connection actions
   setConnectionStatus: (sessionId: string, status: "connecting" | "connected" | "disconnected") => void;
@@ -206,6 +212,7 @@ export const useStore = create<AppState>((set) => ({
   notificationSound: getInitialNotificationSound(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : false,
+  tunnelStatus: null,
   homeResetKey: 0,
   activeTab: "chat",
   diffPanelSelectedFile: new Map(),
@@ -498,6 +505,8 @@ export const useStore = create<AppState>((set) => ({
       previousPermissionMode.set(sessionId, mode);
       return { previousPermissionMode };
     }),
+
+  setTunnelStatus: (status) => set({ tunnelStatus: status }),
 
   setConnectionStatus: (sessionId, status) =>
     set((s) => {

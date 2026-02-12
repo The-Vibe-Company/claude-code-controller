@@ -9,9 +9,11 @@ import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
 import type { WorktreeTracker } from "./worktree-tracker.js";
 import type { TerminalManager } from "./terminal-manager.js";
+import { TunnelManager } from "./tunnel-manager.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import * as tunnelConfig from "./tunnel-config.js";
 import { containerManager, type ContainerConfig, type ContainerInfo } from "./container-manager.js";
 import { DEFAULT_OPENROUTER_MODEL, getSettings, updateSettings } from "./settings-manager.js";
 import { getUsageLimits } from "./usage-limits.js";
@@ -45,6 +47,7 @@ export function createRoutes(
   worktreeTracker: WorktreeTracker,
   terminalManager: TerminalManager,
   prPoller?: import("./pr-poller.js").PRPoller,
+  tunnelManager?: TunnelManager,
 ) {
   const api = new Hono();
 
@@ -902,6 +905,110 @@ export function createRoutes(
       message: "Update started. Server will restart shortly.",
     });
   });
+
+  // ─── Tunnel ─────────────────────────────────────────────────────────────
+
+  if (tunnelManager) {
+    api.get("/tunnel/status", async (c) => {
+      const state = tunnelManager.getState();
+      const config = tunnelConfig.loadConfig();
+      return c.json({
+        ...state,
+        configured: !!config,
+        tunnelName: config?.tunnelName ?? null,
+        cloudflaredInstalled: await TunnelManager.checkCloudflaredInstalled(),
+      });
+    });
+
+    api.get("/tunnel/config", (c) => {
+      const config = tunnelConfig.loadConfig();
+      if (!config) return c.json({ configured: false });
+      const { credentialsFile: _, ...safe } = config;
+      return c.json({ configured: true, ...safe });
+    });
+
+    api.post("/tunnel/start", async (c) => {
+      try {
+        await tunnelManager.start();
+        return c.json({ ok: true, state: tunnelManager.getState() });
+      } catch (e: unknown) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      }
+    });
+
+    api.post("/tunnel/stop", async (c) => {
+      await tunnelManager.stop();
+      return c.json({ ok: true });
+    });
+
+    api.post("/tunnel/setup", async (c) => {
+      const body = await c.req.json().catch(() => ({}));
+      const { step, tunnelName, hostname, teamDomain, audienceTag } = body;
+
+      switch (step) {
+        case "check":
+          return c.json({
+            cloudflaredInstalled: await TunnelManager.checkCloudflaredInstalled(),
+          });
+
+        case "login": {
+          const result = await TunnelManager.runLogin();
+          return c.json(result);
+        }
+
+        case "create": {
+          if (!tunnelName) return c.json({ error: "tunnelName required" }, 400);
+          const result = await TunnelManager.createTunnel(tunnelName);
+          if ("error" in result) return c.json(result, 500);
+
+          const now = Date.now();
+          tunnelConfig.saveConfig({
+            tunnelName,
+            tunnelId: result.tunnelId,
+            hostname: "",
+            credentialsFile: result.credentialsFile,
+            teamDomain: "",
+            createdAt: now,
+            updatedAt: now,
+          });
+          return c.json({ ok: true, tunnelId: result.tunnelId });
+        }
+
+        case "route": {
+          const config = tunnelConfig.loadConfig();
+          if (!config) return c.json({ error: "Tunnel not created yet" }, 400);
+          if (!hostname) return c.json({ error: "hostname required" }, 400);
+
+          const result = await TunnelManager.routeDns(config.tunnelName, hostname);
+          if (!result.success) return c.json(result, 500);
+
+          tunnelConfig.saveConfig({
+            ...config,
+            hostname,
+            teamDomain: teamDomain || config.teamDomain || "",
+            audienceTag: audienceTag || config.audienceTag,
+            updatedAt: Date.now(),
+          });
+          return c.json({ ok: true });
+        }
+
+        case "configure": {
+          const config = tunnelConfig.loadConfig();
+          if (!config) return c.json({ error: "Tunnel not created yet" }, 400);
+          tunnelConfig.saveConfig({
+            ...config,
+            teamDomain: teamDomain ?? config.teamDomain,
+            audienceTag: audienceTag ?? config.audienceTag,
+            updatedAt: Date.now(),
+          });
+          return c.json({ ok: true });
+        }
+
+        default:
+          return c.json({ error: "Unknown setup step" }, 400);
+      }
+    });
+  }
 
   // ─── Helper ─────────────────────────────────────────────────────────
 

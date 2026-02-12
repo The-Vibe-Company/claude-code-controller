@@ -127,6 +127,15 @@ function createMockTracker() {
   } as any;
 }
 
+function createMockTunnelManager() {
+  return {
+    getState: vi.fn(() => ({ status: "stopped", hostname: null, connectedAt: null, error: null, connections: 0 })),
+    isRunning: vi.fn(() => false),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
+  } as any;
+}
+
 // ─── Test setup ──────────────────────────────────────────────────────────────
 
 let app: Hono;
@@ -134,6 +143,7 @@ let launcher: ReturnType<typeof createMockLauncher>;
 let bridge: ReturnType<typeof createMockBridge>;
 let sessionStore: ReturnType<typeof createMockStore>;
 let tracker: ReturnType<typeof createMockTracker>;
+let tunnelManager: ReturnType<typeof createMockTunnelManager>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -141,9 +151,10 @@ beforeEach(() => {
   bridge = createMockBridge();
   sessionStore = createMockStore();
   tracker = createMockTracker();
+  tunnelManager = createMockTunnelManager();
   app = new Hono();
   const terminalManager = { getInfo: () => null, spawn: () => "", kill: () => {} } as any;
-  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker, terminalManager));
+  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker, terminalManager, undefined, tunnelManager));
 });
 
 // ─── Sessions ────────────────────────────────────────────────────────────────

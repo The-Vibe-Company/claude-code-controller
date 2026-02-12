@@ -11,6 +11,10 @@ import { WsBridge } from "./ws-bridge.js";
 import { SessionStore } from "./session-store.js";
 import { WorktreeTracker } from "./worktree-tracker.js";
 import { TerminalManager } from "./terminal-manager.js";
+import { TunnelManager } from "./tunnel-manager.js";
+import { cfAccessMiddleware } from "./cf-access-middleware.js";
+import { verifyAccessJwt } from "./cf-access-middleware.js";
+import { loadConfig as loadTunnelConfig } from "./tunnel-config.js";
 import { generateSessionTitle } from "./auto-namer.js";
 import * as sessionNames from "./session-names.js";
 import { getSettings } from "./settings-manager.js";
@@ -33,6 +37,7 @@ const launcher = new CliLauncher(port);
 const worktreeTracker = new WorktreeTracker();
 const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
+const tunnelManager = new TunnelManager(port);
 
 // ── Restore persisted sessions from disk ────────────────────────────────────
 wsBridge.setStore(sessionStore);
@@ -93,8 +98,9 @@ console.log(`[server] Session persistence: ${sessionStore.directory}`);
 
 const app = new Hono();
 
+app.use("/*", cfAccessMiddleware());
 app.use("/api/*", cors());
-app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller));
+app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, tunnelManager));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
 if (process.env.NODE_ENV === "production") {
@@ -107,6 +113,19 @@ const server = Bun.serve<SocketData>({
   port,
   async fetch(req, server) {
     const url = new URL(req.url);
+
+    // ── Cloudflare Access JWT verification for WebSocket upgrades ────
+    const jwt = req.headers.get("Cf-Access-Jwt-Assertion");
+    if (jwt) {
+      const tunnelCfg = loadTunnelConfig();
+      if (tunnelCfg?.teamDomain) {
+        try {
+          await verifyAccessJwt(jwt, tunnelCfg.teamDomain, tunnelCfg.audienceTag);
+        } catch {
+          return new Response("Access denied", { status: 403 });
+        }
+      }
+    }
 
     // ── CLI WebSocket — Claude Code CLI connects here via --sdk-url ────
     const cliMatch = url.pathname.match(/^\/ws\/cli\/([a-f0-9-]+)$/);
@@ -193,6 +212,30 @@ if (isRunningAsService()) {
   setServiceMode(true);
   console.log("[server] Running as launchd service (auto-update available)");
 }
+
+// ── Tunnel status broadcasting ───────────────────────────────────────────────
+tunnelManager.onStateChange((state) => {
+  wsBridge.broadcastToAll({ type: "tunnel_status", state });
+});
+
+// Auto-start tunnel if --tunnel flag was set
+if (process.env.__COMPANION_TUNNEL === "1") {
+  console.log("[server] Auto-starting Cloudflare Tunnel...");
+  tunnelManager.start().catch((err) => {
+    console.error("[server] Failed to start tunnel:", err);
+  });
+}
+
+// ── Graceful shutdown ────────────────────────────────────────────────────────
+async function shutdown() {
+  if (tunnelManager.isRunning()) {
+    console.log("[server] Stopping tunnel...");
+    await tunnelManager.stop();
+  }
+  process.exit(0);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 // ── Reconnection watchdog ────────────────────────────────────────────────────
 // After a server restart, restored CLI processes may not reconnect their

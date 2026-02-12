@@ -5,6 +5,7 @@ import "@testing-library/jest-dom";
 vi.mock("../api.js", () => ({
   api: {
     relaunchSession: vi.fn().mockResolvedValue({ ok: true }),
+    getTunnelStatus: vi.fn().mockResolvedValue({ status: "stopped", configured: false, cloudflaredInstalled: false }),
   },
 }));
 

@@ -167,6 +167,29 @@ export interface UpdateInfo {
   lastChecked: number;
 }
 
+export interface TunnelState {
+  status: "stopped" | "starting" | "connected" | "error" | "reconnecting";
+  hostname: string | null;
+  connectedAt: number | null;
+  error: string | null;
+  connections: number;
+}
+
+export interface TunnelStatusResponse extends TunnelState {
+  configured: boolean;
+  tunnelName: string | null;
+  cloudflaredInstalled: boolean;
+}
+
+export interface TunnelConfigResponse {
+  configured: boolean;
+  tunnelName?: string;
+  tunnelId?: string;
+  hostname?: string;
+  teamDomain?: string;
+  audienceTag?: string;
+}
+
 export interface UsageLimits {
   five_hour: { utilization: number; resets_at: string | null } | null;
   seven_day: { utilization: number; resets_at: string | null } | null;
@@ -351,4 +374,12 @@ export const api = {
   forceCheckForUpdate: () => post<UpdateInfo>("/update-check"),
   triggerUpdate: () =>
     post<{ ok: boolean; message: string }>("/update"),
+
+  // Tunnel
+  getTunnelStatus: () => get<TunnelStatusResponse>("/tunnel/status"),
+  getTunnelConfig: () => get<TunnelConfigResponse>("/tunnel/config"),
+  startTunnel: () => post<{ ok: boolean; state: TunnelState }>("/tunnel/start"),
+  stopTunnel: () => post<{ ok: boolean }>("/tunnel/stop"),
+  setupTunnel: (body: { step: string; tunnelName?: string; hostname?: string; teamDomain?: string; audienceTag?: string }) =>
+    post<unknown>("/tunnel/setup", body),
 };
