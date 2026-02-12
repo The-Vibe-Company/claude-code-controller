@@ -169,8 +169,9 @@ export class WsBridge {
       };
       this.sessions.set(sessionId, session);
     }
-    session.backendType = backendType;
-    session.state.backend_type = backendType;
+    // Only update backendType for NEW sessions (already set above).
+    // Existing sessions must keep their original backendType to avoid
+    // corrupting Codex sessions when browsers reconnect without specifying the type.
     return session;
   }
 

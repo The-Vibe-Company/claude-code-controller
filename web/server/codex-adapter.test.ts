@@ -647,13 +647,11 @@ describe("CodexAdapter", () => {
     expect(blockStops.length).toBeGreaterThanOrEqual(1);
   });
 
-  // ── Regression: Codex CLI enum values must be kebab-case ─────────────────
-  // The Codex CLI uses camelCase for JSON-RPC field names (approvalPolicy, sandbox)
-  // but kebab-case for enum VALUES. These tests ensure we never regress to camelCase values.
+  // ── Codex CLI enum values must be kebab-case (v0.99+) ─────────────────
   // Valid sandbox values: "read-only", "workspace-write", "danger-full-access"
   // Valid approvalPolicy values: "never", "unless-trusted", "on-failure", "on-request"
 
-  it("sends kebab-case sandbox value, never camelCase", async () => {
+  it("sends kebab-case sandbox value", async () => {
     new CodexAdapter(proc as never, "test-session", { model: "gpt-5.3-codex", cwd: "/tmp" });
 
     await new Promise((r) => setTimeout(r, 50));
@@ -662,7 +660,7 @@ describe("CodexAdapter", () => {
 
     const allWritten = stdin.chunks.join("");
     expect(allWritten).toContain('"sandbox":"workspace-write"');
-    // Reject all known camelCase variants that could sneak in
+    // Reject camelCase variants
     expect(allWritten).not.toContain('"sandbox":"workspaceWrite"');
     expect(allWritten).not.toContain('"sandbox":"readOnly"');
     expect(allWritten).not.toContain('"sandbox":"dangerFullAccess"');
@@ -688,7 +686,7 @@ describe("CodexAdapter", () => {
 
     const allWritten = mock.stdin.chunks.join("");
     expect(allWritten).toContain(`"approvalPolicy":"${expected}"`);
-    // Reject camelCase variants that previously caused Codex to reject the request
+    // Reject camelCase variants
     expect(allWritten).not.toContain('"approvalPolicy":"unlessTrusted"');
     expect(allWritten).not.toContain('"approvalPolicy":"onFailure"');
     expect(allWritten).not.toContain('"approvalPolicy":"onRequest"');

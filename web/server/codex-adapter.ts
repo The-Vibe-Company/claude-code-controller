@@ -147,6 +147,12 @@ class JsonRpcTransport {
       console.error("[codex-adapter] stdout reader error:", err);
     } finally {
       this.connected = false;
+      // Reject all pending promises so callers don't hang indefinitely
+      // when the Codex process crashes or exits unexpectedly.
+      for (const [id, { reject }] of this.pending) {
+        reject(new Error("Transport closed"));
+      }
+      this.pending.clear();
     }
   }
 
@@ -414,7 +420,7 @@ export class CodexAdapter {
           model: this.options.model,
           cwd: this.options.cwd,
           approvalPolicy: this.mapApprovalPolicy(this.options.approvalMode),
-          sandbox: "workspace-write",
+          sandbox: this.mapSandboxPolicy(this.options.approvalMode),
         }) as { thread: { id: string } };
         this.threadId = resumeResult.thread.id;
       } else {
@@ -423,7 +429,7 @@ export class CodexAdapter {
           model: this.options.model,
           cwd: this.options.cwd,
           approvalPolicy: this.mapApprovalPolicy(this.options.approvalMode),
-          sandbox: "workspace-write",
+          sandbox: this.mapSandboxPolicy(this.options.approvalMode),
         }) as { thread: { id: string } };
         this.threadId = threadResult.thread.id;
       }
@@ -610,8 +616,24 @@ export class CodexAdapter {
         break;
       case "account/updated":
       case "account/login/completed":
+      case "account/rateLimits/updated":
         // Auth events
         break;
+      case "codex/event/stream_error": {
+        const msg = params.msg as { message?: string } | undefined;
+        if (msg?.message) {
+          console.log(`[codex-adapter] Stream error: ${msg.message}`);
+        }
+        break;
+      }
+      case "codex/event/error": {
+        const msg = params.msg as { message?: string } | undefined;
+        if (msg?.message) {
+          console.error(`[codex-adapter] Codex error: ${msg.message}`);
+          this.emit({ type: "error", message: msg.message });
+        }
+        break;
+      }
       default:
         // Unknown notification, log for debugging
         if (!method.startsWith("account/") && !method.startsWith("codex/event/")) {
@@ -1167,6 +1189,15 @@ export class CodexAdapter {
       case "default":
       default:
         return "unless-trusted";
+    }
+  }
+
+  private mapSandboxPolicy(mode?: string): string {
+    switch (mode) {
+      case "bypassPermissions":
+        return "danger-full-access";
+      default:
+        return "workspace-write";
     }
   }
 }
