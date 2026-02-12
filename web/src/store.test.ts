@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-// jsdom does not implement window.matchMedia, which the store uses for initial dark mode detection.
-// vi.hoisted runs before any imports, ensuring matchMedia is available when store.ts initializes.
+// vi.hoisted runs before any imports, ensuring browser globals are available when store.ts initializes.
 vi.hoisted(() => {
+  // jsdom does not implement matchMedia
   Object.defineProperty(globalThis.window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -17,6 +17,27 @@ vi.hoisted(() => {
       dispatchEvent: () => false,
     }),
   });
+
+  // Node.js 22+ native localStorage may be broken (invalid --localstorage-file).
+  // Polyfill before store.ts import triggers getInitialSessionId().
+  if (
+    typeof globalThis.localStorage === "undefined" ||
+    typeof globalThis.localStorage.getItem !== "function"
+  ) {
+    const store = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => { store.set(key, String(value)); },
+        removeItem: (key: string) => { store.delete(key); },
+        clear: () => { store.clear(); },
+        get length() { return store.size; },
+        key: (index: number) => [...store.keys()][index] ?? null,
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
 });
 
 import { useStore } from "./store.js";
