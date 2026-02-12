@@ -201,7 +201,7 @@ function handleMessage(sessionId: string, event: MessageEvent) {
 
     case "result": {
       const r = data.data;
-      const sessionUpdates: Partial<{ total_cost_usd: number; num_turns: number; context_used_percent: number; total_lines_added: number; total_lines_removed: number }> = {
+      const sessionUpdates: Partial<import("./types.js").SessionState> = {
         total_cost_usd: r.total_cost_usd,
         num_turns: r.num_turns,
       };
@@ -212,15 +212,32 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       if (typeof r.total_lines_removed === "number") {
         sessionUpdates.total_lines_removed = r.total_lines_removed;
       }
-      // Compute context % from modelUsage if available
+      // Extract token usage from modelUsage if available
       if (r.modelUsage) {
+        let totalInput = 0;
+        let totalOutput = 0;
+        let totalCacheRead = 0;
+        let totalCacheCreation = 0;
+        let contextWindow = 0;
         for (const usage of Object.values(r.modelUsage)) {
+          totalInput += usage.inputTokens || 0;
+          totalOutput += usage.outputTokens || 0;
+          totalCacheRead += usage.cacheReadInputTokens || 0;
+          totalCacheCreation += usage.cacheCreationInputTokens || 0;
           if (usage.contextWindow > 0) {
-            const pct = Math.round(
-              ((usage.inputTokens + usage.outputTokens) / usage.contextWindow) * 100
-            );
-            sessionUpdates.context_used_percent = Math.max(0, Math.min(pct, 100));
+            contextWindow = usage.contextWindow;
           }
+        }
+        sessionUpdates.input_tokens = totalInput;
+        sessionUpdates.output_tokens = totalOutput;
+        sessionUpdates.cache_read_tokens = totalCacheRead;
+        sessionUpdates.cache_creation_tokens = totalCacheCreation;
+        sessionUpdates.context_window = contextWindow;
+        if (contextWindow > 0) {
+          const pct = Math.round(
+            ((totalInput + totalOutput) / contextWindow) * 100
+          );
+          sessionUpdates.context_used_percent = Math.max(0, Math.min(pct, 100));
         }
       }
       store.updateSession(sessionId, sessionUpdates);

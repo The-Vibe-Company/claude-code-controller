@@ -205,6 +205,11 @@ export interface SessionState {
   total_cost_usd: number;
   num_turns: number;
   context_used_percent: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  context_window: number;
   is_compacting: boolean;
   git_branch: string;
   is_worktree: boolean;
