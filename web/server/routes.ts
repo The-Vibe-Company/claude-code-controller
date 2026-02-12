@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -34,6 +34,9 @@ function execCaptureStdout(
     throw err;
   }
 }
+
+/** Reject branch names that contain shell metacharacters */
+const SAFE_BRANCH_RE = /^[\w\-.\/]+$/;
 
 export function createRoutes(
   launcher: CliLauncher,
@@ -615,6 +618,57 @@ export function createRoutes(
       /* no upstream */
     }
     return c.json({ ...result, git_ahead, git_behind });
+  });
+
+  api.get("/git/commits", (c) => {
+    const cwd = c.req.query("cwd");
+    const baseBranch = c.req.query("baseBranch");
+    if (!cwd || !baseBranch) return c.json({ error: "cwd and baseBranch required" }, 400);
+    if (!SAFE_BRANCH_RE.test(baseBranch)) return c.json({ error: "Invalid baseBranch" }, 400);
+    return c.json(gitUtils.getCommitLog(cwd, baseBranch));
+  });
+
+  api.post("/git/create-pr", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { cwd, branch, baseBranch, title, body: prBody, draft } = body;
+    if (!cwd || !branch || !baseBranch || !title) {
+      return c.json({ error: "cwd, branch, baseBranch, and title are required" }, 400);
+    }
+    if (!SAFE_BRANCH_RE.test(branch) || !SAFE_BRANCH_RE.test(baseBranch)) {
+      return c.json({ error: "Invalid branch name" }, 400);
+    }
+
+    // Step 1: Push the branch
+    const pushResult = gitUtils.gitPush(cwd, branch);
+    if (!pushResult.success) {
+      return c.json({ error: `Failed to push branch: ${pushResult.output}` }, 500);
+    }
+
+    // Step 2: Create the PR
+    const prResult = gitUtils.ghCreatePR(cwd, {
+      branch,
+      baseBranch,
+      title,
+      body: prBody,
+      draft,
+    });
+    if (!prResult.success) {
+      return c.json({ error: prResult.error }, 500);
+    }
+
+    // Step 3: Refresh ahead/behind counts
+    let git_ahead = 0, git_behind = 0;
+    try {
+      const counts = execFileSync(
+        "git", ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+        { cwd, encoding: "utf-8", timeout: 3000, stdio: ["pipe", "pipe", "pipe"] },
+      ).trim();
+      const [behind, ahead] = counts.split(/\s+/).map(Number);
+      git_ahead = ahead || 0;
+      git_behind = behind || 0;
+    } catch { /* no upstream */ }
+
+    return c.json({ ok: true, prUrl: prResult.prUrl, git_ahead, git_behind });
   });
 
   // ─── Usage Limits ─────────────────────────────────────────────────────

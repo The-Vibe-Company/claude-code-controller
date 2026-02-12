@@ -29,6 +29,9 @@ vi.mock("./git-utils.js", () => ({
   ensureWorktree: vi.fn(),
   gitFetch: vi.fn(() => ({ success: true, output: "" })),
   gitPull: vi.fn(() => ({ success: true, output: "" })),
+  gitPush: vi.fn(() => ({ success: true, output: "" })),
+  ghCreatePR: vi.fn(() => ({ success: true, prUrl: "https://github.com/owner/repo/pull/1" })),
+  getCommitLog: vi.fn(() => []),
   checkoutBranch: vi.fn(),
   removeWorktree: vi.fn(),
   isWorktreeDirty: vi.fn(() => false),
@@ -759,6 +762,120 @@ describe("DELETE /api/git/worktree", () => {
     const json = await res.json();
     expect(json).toEqual({ removed: true });
     expect(gitUtils.removeWorktree).toHaveBeenCalledWith("/repo", "/wt/feat", { force: true });
+  });
+});
+
+// ─── Create PR ──────────────────────────────────────────────────────────────
+
+describe("GET /api/git/commits", () => {
+  it("returns commit log", async () => {
+    vi.mocked(gitUtils.getCommitLog).mockReturnValue([
+      { hash: "abc1234", subject: "feat: add button" },
+      { hash: "def5678", subject: "fix: typo" },
+    ]);
+
+    const res = await app.request(
+      "/api/git/commits?cwd=/wt/path&baseBranch=main",
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual([
+      { hash: "abc1234", subject: "feat: add button" },
+      { hash: "def5678", subject: "fix: typo" },
+    ]);
+    expect(gitUtils.getCommitLog).toHaveBeenCalledWith("/wt/path", "main");
+  });
+
+  it("returns 400 when params missing", async () => {
+    const res = await app.request("/api/git/commits?cwd=/wt/path");
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/git/create-pr", () => {
+  it("pushes branch and creates PR", async () => {
+    vi.mocked(gitUtils.ghCreatePR).mockReturnValue({
+      success: true,
+      prUrl: "https://github.com/org/repo/pull/42",
+    });
+
+    const res = await app.request("/api/git/create-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/wt/path",
+        branch: "main-wt-7540",
+        baseBranch: "main",
+        title: "feat: add create PR button",
+        body: "Some body text",
+        draft: false,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.prUrl).toBe("https://github.com/org/repo/pull/42");
+    expect(gitUtils.gitPush).toHaveBeenCalledWith("/wt/path", "main-wt-7540");
+    expect(gitUtils.ghCreatePR).toHaveBeenCalledWith("/wt/path", {
+      branch: "main-wt-7540",
+      baseBranch: "main",
+      title: "feat: add create PR button",
+      body: "Some body text",
+      draft: false,
+    });
+  });
+
+  it("returns 400 when required params missing", async () => {
+    const res = await app.request("/api/git/create-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/wt/path" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 500 when push fails", async () => {
+    vi.mocked(gitUtils.gitPush).mockReturnValue({
+      success: false,
+      output: "permission denied",
+    });
+
+    const res = await app.request("/api/git/create-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/wt/path",
+        branch: "feat",
+        baseBranch: "main",
+        title: "Test PR",
+      }),
+    });
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toContain("push");
+  });
+
+  it("returns 500 when gh create fails", async () => {
+    vi.mocked(gitUtils.gitPush).mockReturnValue({ success: true, output: "" });
+    vi.mocked(gitUtils.ghCreatePR).mockReturnValue({
+      success: false,
+      error: "GitHub CLI (gh) is not installed",
+    });
+
+    const res = await app.request("/api/git/create-pr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/wt/path",
+        branch: "feat",
+        baseBranch: "main",
+        title: "Test PR",
+      }),
+    });
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toContain("not installed");
   });
 });
 

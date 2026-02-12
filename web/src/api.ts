@@ -118,6 +118,18 @@ export interface WorktreeCreateResult {
   isNew: boolean;
 }
 
+export interface CreatePRResult {
+  ok: boolean;
+  prUrl: string;
+  git_ahead: number;
+  git_behind: number;
+}
+
+export interface CommitLogEntry {
+  hash: string;
+  subject: string;
+}
+
 export interface CompanionEnv {
   name: string;
   slug: string;
@@ -246,6 +258,18 @@ export const api = {
       git_ahead: number;
       git_behind: number;
     }>("/git/pull", { cwd }),
+  getCommitLog: (cwd: string, baseBranch: string) =>
+    get<CommitLogEntry[]>(
+      `/git/commits?cwd=${encodeURIComponent(cwd)}&baseBranch=${encodeURIComponent(baseBranch)}`,
+    ),
+  createPR: (opts: {
+    cwd: string;
+    branch: string;
+    baseBranch: string;
+    title: string;
+    body?: string;
+    draft?: boolean;
+  }) => post<CreatePRResult>("/git/create-pr", opts),
 
   // Backends
   getBackends: () => get<BackendInfo[]>("/backends"),

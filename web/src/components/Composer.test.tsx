@@ -91,6 +91,7 @@ function setupMockStore(overrides: {
 
   mockStoreState = {
     sessions: sessionsMap,
+    sdkSessions: [],
     cliConnected: cliConnectedMap,
     sessionStatus: sessionStatusMap,
     previousPermissionMode: previousPermissionModeMap,

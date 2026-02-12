@@ -620,6 +620,9 @@ export function Playground() {
                       <span className="text-green-500">+142</span>
                       <span className="text-red-400">-38</span>
                     </span>
+                    <button className="text-[10px] text-cc-primary hover:text-cc-primary-hover hover:underline cursor-pointer ml-auto shrink-0">
+                      Create PR
+                    </button>
                   </div>
                   <div className="flex items-center justify-between px-2.5 pb-2.5">
                     <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium text-cc-muted">

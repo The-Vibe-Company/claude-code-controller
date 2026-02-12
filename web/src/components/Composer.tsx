@@ -4,6 +4,7 @@ import { sendToSession } from "../ws.js";
 import { api } from "../api.js";
 import { CLAUDE_MODES, CODEX_MODES } from "../utils/backends.js";
 import type { ModeOption } from "../utils/backends.js";
+import { CreatePRModal } from "./CreatePRModal.js";
 
 let idCounter = 0;
 
@@ -36,11 +37,13 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [showPRModal, setShowPRModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionData = useStore((s) => s.sessions.get(sessionId));
+  const sdkSession = useStore((s) => s.sdkSessions.find((sdk) => sdk.sessionId === sessionId));
   const previousMode = useStore((s) => s.previousPermissionMode.get(sessionId) || "acceptEdits");
 
   const isConnected = cliConnected.get(sessionId) ?? false;
@@ -378,6 +381,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   <span className="text-red-400">-{sessionData.total_lines_removed || 0}</span>
                 </span>
               )}
+              {sessionData.is_worktree && (sessionData.git_ahead || 0) > 0 && (
+                <button
+                  className="text-[10px] text-cc-primary hover:text-cc-primary-hover hover:underline cursor-pointer ml-auto shrink-0"
+                  title="Create a pull request on GitHub"
+                  onClick={() => setShowPRModal(true)}
+                >
+                  Create PR
+                </button>
+              )}
             </div>
           )}
 
@@ -459,6 +471,23 @@ export function Composer({ sessionId }: { sessionId: string }) {
           </div>
         </div>
       </div>
+
+      {showPRModal && sessionData?.git_branch && (
+        <CreatePRModal
+          cwd={sessionData.cwd}
+          branch={sessionData.git_branch}
+          baseBranch={sdkSession?.branch || "main"}
+          onClose={() => setShowPRModal(false)}
+          onSuccess={(prUrl, gitAhead, gitBehind) => {
+            setShowPRModal(false);
+            useStore.getState().updateSession(sessionId, {
+              git_ahead: gitAhead,
+              git_behind: gitBehind,
+            });
+            window.open(prUrl, "_blank");
+          }}
+        />
+      )}
     </div>
   );
 }
