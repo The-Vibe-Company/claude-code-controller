@@ -513,6 +513,103 @@ describe("handleMessage: message_history", () => {
     expect(msgs[0].role).toBe("system");
     expect(msgs[0].content).toBe("Error: Timed out");
   });
+
+  it("assigns stable IDs to error results based on history index", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        { type: "user_message", content: "hi", timestamp: 1000 },
+        {
+          type: "result",
+          data: {
+            type: "result",
+            subtype: "error_during_execution",
+            is_error: true,
+            errors: ["Timed out"],
+            duration_ms: 100,
+            duration_api_ms: 50,
+            num_turns: 1,
+            total_cost_usd: 0,
+            stop_reason: null,
+            usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            uuid: "u1",
+            session_id: "s1",
+          },
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    const errorMsg = msgs.find((m) => m.role === "system")!;
+    expect(errorMsg.id).toBe("hist-error-1");
+  });
+
+  it("deduplicates messages on reconnection (replayed history)", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    const history = {
+      type: "message_history",
+      messages: [
+        { type: "user_message", id: "user-1", content: "hello", timestamp: 1000 },
+        {
+          type: "assistant",
+          message: {
+            id: "msg-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "text", text: "hi" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 2000,
+        },
+      ],
+    };
+
+    // Initial connect
+    fireMessage(history);
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
+
+    // Simulate reconnect: same history replayed
+    fireMessage(history);
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
+  });
+
+  it("preserves original timestamps from history instead of using Date.now()", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        { type: "user_message", content: "hello", timestamp: 42000 },
+        {
+          type: "assistant",
+          message: {
+            id: "msg-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "text", text: "hi" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 43000,
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs[0].timestamp).toBe(42000);
+    expect(msgs[1].timestamp).toBe(43000);
+  });
 });
 
 // ===========================================================================

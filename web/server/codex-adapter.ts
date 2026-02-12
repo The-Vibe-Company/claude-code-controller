@@ -1085,6 +1085,7 @@ export class CodexAdapter {
             usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
           },
           parent_tool_use_id: null,
+          timestamp: Date.now(),
         });
 
         // Reset streaming state
@@ -1174,6 +1175,7 @@ export class CodexAdapter {
               usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
             },
             parent_tool_use_id: null,
+            timestamp: Date.now(),
           });
         }
 
@@ -1294,6 +1296,7 @@ export class CodexAdapter {
         usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
       },
       parent_tool_use_id: null,
+      timestamp: Date.now(),
     });
   }
 
@@ -1352,6 +1355,7 @@ export class CodexAdapter {
         usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
       },
       parent_tool_use_id: null,
+      timestamp: Date.now(),
     });
   }
 

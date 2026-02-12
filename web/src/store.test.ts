@@ -247,6 +247,27 @@ describe("Messages", () => {
     expect(useStore.getState().messages.get("s1")).toHaveLength(1);
   });
 
+  it("appendMessage: deduplicates by ID", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    const msg = makeMessage({ id: "dup-1", content: "first" });
+    useStore.getState().appendMessage("s1", msg);
+    useStore.getState().appendMessage("s1", { ...msg, content: "duplicate" });
+
+    const messages = useStore.getState().messages.get("s1")!;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("first");
+  });
+
+  it("appendMessage: allows messages without IDs (no dedup)", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    const msg1 = makeMessage({ id: "", content: "a" });
+    const msg2 = makeMessage({ id: "", content: "b" });
+    useStore.getState().appendMessage("s1", msg1);
+    useStore.getState().appendMessage("s1", msg2);
+
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
+  });
+
   it("setMessages: replaces all messages for a session", () => {
     useStore.getState().addSession(makeSession("s1"));
     useStore.getState().appendMessage("s1", makeMessage({ content: "old" }));

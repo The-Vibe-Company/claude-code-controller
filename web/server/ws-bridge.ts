@@ -135,6 +135,7 @@ export class WsBridge {
   private onCLIRelaunchNeeded: ((sessionId: string) => void) | null = null;
   private onFirstTurnCompleted: ((sessionId: string, firstUserMessage: string) => void) | null = null;
   private autoNamingAttempted = new Set<string>();
+  private userMsgCounter = 0;
 
   /** Register a callback for when we learn the CLI's internal session ID. */
   onCLISessionIdReceived(cb: (sessionId: string, cliSessionId: string) => void): void {
@@ -315,7 +316,10 @@ export class WsBridge {
       }
 
       // Store assistant/result messages in history for replay
-      if (msg.type === "assistant" || msg.type === "result") {
+      if (msg.type === "assistant") {
+        session.messageHistory.push({ ...msg, timestamp: msg.timestamp || Date.now() });
+        this.persistSession(session);
+      } else if (msg.type === "result") {
         session.messageHistory.push(msg);
         this.persistSession(session);
       }
@@ -610,6 +614,7 @@ export class WsBridge {
       type: "assistant",
       message: msg.message,
       parent_tool_use_id: msg.parent_tool_use_id,
+      timestamp: Date.now(),
     };
     session.messageHistory.push(browserMsg);
     this.broadcastToBrowsers(session, browserMsg);
@@ -728,12 +733,14 @@ export class WsBridge {
   private routeBrowserMessage(session: Session, msg: BrowserOutgoingMessage) {
     // For Codex sessions, delegate entirely to the adapter
     if (session.backendType === "codex") {
-      // Store user messages in history for replay
+      // Store user messages in history for replay with stable ID for dedup on reconnect
       if (msg.type === "user_message") {
+        const ts = Date.now();
         session.messageHistory.push({
           type: "user_message",
           content: msg.content,
-          timestamp: Date.now(),
+          timestamp: ts,
+          id: `user-${ts}-${this.userMsgCounter++}`,
         });
         this.persistSession(session);
       }
@@ -782,11 +789,13 @@ export class WsBridge {
     session: Session,
     msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] }
   ) {
-    // Store user message in history for replay (text-only for replay)
+    // Store user message in history for replay with stable ID for dedup on reconnect
+    const ts = Date.now();
     session.messageHistory.push({
       type: "user_message",
       content: msg.content,
-      timestamp: Date.now(),
+      timestamp: ts,
+      id: `user-${ts}-${this.userMsgCounter++}`,
     });
 
     // Build content: if images are present, use content block array; otherwise plain string
