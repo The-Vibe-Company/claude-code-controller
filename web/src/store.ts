@@ -55,6 +55,7 @@ interface AppState {
   // UI
   darkMode: boolean;
   notificationSound: boolean;
+  notificationDesktop: boolean;
   sidebarOpen: boolean;
   taskPanelOpen: boolean;
   homeResetKey: number;
@@ -66,6 +67,8 @@ interface AppState {
   toggleDarkMode: () => void;
   setNotificationSound: (v: boolean) => void;
   toggleNotificationSound: () => void;
+  setNotificationDesktop: (v: boolean) => void;
+  toggleNotificationDesktop: () => void;
   setSidebarOpen: (v: boolean) => void;
   setTaskPanelOpen: (open: boolean) => void;
   newSession: () => void;
@@ -167,6 +170,13 @@ function getInitialNotificationSound(): boolean {
   return true;
 }
 
+function getInitialNotificationDesktop(): boolean {
+  if (typeof window === "undefined") return false;
+  const stored = localStorage.getItem("cc-notification-desktop");
+  if (stored !== null) return stored === "true";
+  return false;
+}
+
 function getInitialDismissedVersion(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("cc-update-dismissed") || null;
@@ -204,6 +214,7 @@ export const useStore = create<AppState>((set) => ({
   updateDismissedVersion: getInitialDismissedVersion(),
   darkMode: getInitialDarkMode(),
   notificationSound: getInitialNotificationSound(),
+  notificationDesktop: getInitialNotificationDesktop(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : false,
   homeResetKey: 0,
@@ -232,6 +243,16 @@ export const useStore = create<AppState>((set) => ({
       const next = !s.notificationSound;
       localStorage.setItem("cc-notification-sound", String(next));
       return { notificationSound: next };
+    }),
+  setNotificationDesktop: (v) => {
+    localStorage.setItem("cc-notification-desktop", String(v));
+    set({ notificationDesktop: v });
+  },
+  toggleNotificationDesktop: () =>
+    set((s) => {
+      const next = !s.notificationDesktop;
+      localStorage.setItem("cc-notification-desktop", String(next));
+      return { notificationDesktop: next };
     }),
   setSidebarOpen: (v) => set({ sidebarOpen: v }),
   setTaskPanelOpen: (open) => set({ taskPanelOpen: open }),

@@ -123,6 +123,12 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
   }
 }
 
+function sendBrowserNotification(title: string, body: string, tag: string) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  new Notification(title, { body, tag });
+}
+
 let idCounter = 0;
 function nextId(): string {
   return `msg-${Date.now()}-${++idCounter}`;
@@ -264,6 +270,9 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       if (!document.hasFocus() && store.notificationSound) {
         playNotificationSound();
       }
+      if (!document.hasFocus() && store.notificationDesktop) {
+        sendBrowserNotification("Session completed", "Claude finished the task", sessionId);
+      }
       if (r.is_error && r.errors?.length) {
         store.appendMessage(sessionId, {
           id: nextId(),
@@ -277,6 +286,14 @@ function handleMessage(sessionId: string, event: MessageEvent) {
 
     case "permission_request": {
       store.addPermission(sessionId, data.request);
+      if (!document.hasFocus() && store.notificationDesktop) {
+        const req = data.request;
+        sendBrowserNotification(
+          "Permission needed",
+          `${req.tool_name}: approve or deny`,
+          req.request_id,
+        );
+      }
       // Also extract tasks and changed files from permission requests
       const req = data.request;
       if (req.tool_name && req.input) {

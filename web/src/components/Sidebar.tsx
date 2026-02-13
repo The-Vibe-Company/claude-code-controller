@@ -24,6 +24,8 @@ export function Sidebar() {
   const toggleDarkMode = useStore((s) => s.toggleDarkMode);
   const notificationSound = useStore((s) => s.notificationSound);
   const toggleNotificationSound = useStore((s) => s.toggleNotificationSound);
+  const notificationDesktop = useStore((s) => s.notificationDesktop);
+  const setNotificationDesktop = useStore((s) => s.setNotificationDesktop);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);
   const removeSession = useStore((s) => s.removeSession);
@@ -386,6 +388,33 @@ export function Sidebar() {
           )}
           <span>{notificationSound ? "Sound on" : "Sound off"}</span>
         </button>
+        {typeof Notification !== "undefined" && (
+          <button
+            onClick={async () => {
+              if (!notificationDesktop) {
+                if (Notification.permission !== "granted") {
+                  const result = await Notification.requestPermission();
+                  if (result !== "granted") return;
+                }
+                setNotificationDesktop(true);
+              } else {
+                setNotificationDesktop(false);
+              }
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+          >
+            {notificationDesktop ? (
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" opacity="0.4" />
+              </svg>
+            )}
+            <span>{notificationDesktop ? "Alerts on" : "Alerts off"}</span>
+          </button>
+        )}
         <button
           onClick={toggleDarkMode}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
