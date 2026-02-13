@@ -12,6 +12,17 @@ vi.mock("./env-manager.js", () => ({
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(() => ""),
 }));
+const mockSpawn = vi.hoisted(() => vi.fn());
+vi.stubGlobal("Bun", { spawn: mockSpawn });
+
+function createMockSpawnProc(exitCode = 0) {
+  return {
+    exited: Promise.resolve(exitCode),
+    kill: vi.fn(),
+    stdout: null,
+    stderr: null,
+  };
+}
 
 const mockResolveBinary = vi.hoisted(() => vi.fn((_name: string) => null as string | null));
 vi.mock("./path-resolver.js", () => ({
@@ -155,6 +166,7 @@ beforeEach(() => {
   mockUpdateCheckerState.isServiceMode = false;
   mockUpdateCheckerState.checking = false;
   mockUpdateCheckerState.updateInProgress = false;
+  mockSpawn.mockReturnValue(createMockSpawnProc());
   launcher = createMockLauncher();
   bridge = createMockBridge();
   sessionStore = createMockStore();
@@ -1339,7 +1351,18 @@ describe("POST /api/backends/:id/models/refresh", () => {
     const res = await app.request("/api/backends/codex/models/refresh", { method: "POST" });
 
     expect(res.status).toBe(200);
-    expect(execSync).toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalledWith(
+      [
+        "/usr/bin/codex",
+        "exec",
+        "--skip-git-repo-check",
+        "-C",
+        "/tmp",
+        "Reply with OK",
+      ],
+      expect.objectContaining({ cwd: "/tmp" }),
+    );
     const json = await res.json();
     expect(json).toEqual([
       { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", description: "Fast" },

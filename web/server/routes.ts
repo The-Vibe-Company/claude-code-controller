@@ -42,6 +42,41 @@ function execCaptureStdout(
   }
 }
 
+async function refreshCodexModelsFromCli(
+  codexBinary: string,
+): Promise<{ ok: boolean; timedOut: boolean; exitCode: number }> {
+  const proc = Bun.spawn(
+    [codexBinary, "exec", "--skip-git-repo-check", "-C", "/tmp", "Reply with OK"],
+    {
+      cwd: "/tmp",
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+  );
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    timeoutHandle = setTimeout(() => resolve("timeout"), 30_000);
+  });
+
+  const result = await Promise.race([
+    proc.exited.then((code) => ({ kind: "finished", exitCode: code } as const)),
+    timeoutPromise.then(() => ({ kind: "timeout", exitCode: -1 } as const)),
+  ]).finally(() => timeoutHandle && clearTimeout(timeoutHandle));
+
+  if (result.kind === "timeout") {
+    proc.kill();
+    await proc.exited.catch(() => {});
+    return { ok: false, timedOut: true, exitCode: -1 };
+  }
+
+  return {
+    ok: result.exitCode === 0,
+    timedOut: false,
+    exitCode: result.exitCode,
+  };
+}
+
 interface CachedCodexModel {
   slug: string;
   display_name?: string;
@@ -400,7 +435,7 @@ export function createRoutes(
     return c.json({ error: "Use frontend defaults for this backend" }, 404);
   });
 
-  api.post("/backends/:id/models/refresh", (c) => {
+  api.post("/backends/:id/models/refresh", async (c) => {
     const backendId = c.req.param("id");
     if (backendId !== "codex") {
       return c.json({ error: "Refresh is only supported for codex backend" }, 404);
@@ -412,14 +447,7 @@ export function createRoutes(
     }
 
     try {
-      execCaptureStdout(
-        `"${codexBinary}" exec --skip-git-repo-check -C /tmp "Reply with OK"`,
-        {
-          cwd: "/tmp",
-          encoding: "utf-8",
-          timeout: 30_000,
-        },
-      );
+      await refreshCodexModelsFromCli(codexBinary);
     } catch {
       // Even if the command fails, a partial refresh may still have updated cache files.
     }
