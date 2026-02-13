@@ -204,6 +204,31 @@ describe("POST /api/sessions/create", () => {
     );
   });
 
+  it("skips all git operations when no branch is specified in a git repo", async () => {
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "main",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.gitFetch).not.toHaveBeenCalled();
+    expect(gitUtils.gitPull).not.toHaveBeenCalled();
+    expect(gitUtils.checkoutBranch).not.toHaveBeenCalled();
+    expect(gitUtils.ensureWorktree).not.toHaveBeenCalled();
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/repo" }),
+    );
+  });
+
   it("sets up a worktree when branch is specified", async () => {
     vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
       repoRoot: "/repo",
