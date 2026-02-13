@@ -23,6 +23,7 @@ import type {
   BackendType,
   McpServerDetail,
   McpServerConfig,
+  AgentInfo,
 } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import type { CodexAdapter } from "./codex-adapter.js";
@@ -106,6 +107,7 @@ function makeDefaultState(sessionId: string, backendType: BackendType = "claude"
     git_behind: 0,
     total_lines_added: 0,
     total_lines_removed: 0,
+    agents_active: [],
   };
 }
 
@@ -764,6 +766,41 @@ export class WsBridge {
     session.messageHistory.push(browserMsg);
     this.broadcastToBrowsers(session, browserMsg);
     this.persistSession(session);
+
+    // Detect agent spawns from Task tool_use blocks
+    for (const block of msg.message.content) {
+      if (block.type === "tool_use" && block.name === "Task") {
+        const input = block.input as Record<string, unknown>;
+        const agentInfo: AgentInfo = {
+          agentId: block.id,
+          agentType: (input.subagent_type as string) || "general-purpose",
+          agentName: (input.name as string) || (input.description as string) || undefined,
+          parentToolUseId: block.id,
+          status: "running",
+          spawnedAt: Date.now(),
+        };
+        if (!session.state.agents_active) session.state.agents_active = [];
+        session.state.agents_active.push(agentInfo);
+        this.broadcastToBrowsers(session, { type: "agent_spawned", agent: agentInfo });
+      }
+    }
+
+    // Fallback: detect agent completions from tool_result blocks (works with Codex sessions)
+    for (const block of msg.message.content) {
+      if (block.type === "tool_result") {
+        this.markAgentStopped(session, block.tool_use_id);
+      }
+    }
+  }
+
+  /** Mark an agent as stopped by its tool_use_id. Updates status instead of removing. */
+  private markAgentStopped(session: Session, toolUseId: string) {
+    const agents = session.state.agents_active || [];
+    const agent = agents.find((a) => a.parentToolUseId === toolUseId);
+    if (agent && agent.status !== "stopped") {
+      agent.status = "stopped";
+      this.broadcastToBrowsers(session, { type: "agent_stopped", agentId: agent.agentId });
+    }
   }
 
   private handleResultMessage(session: Session, msg: CLIResultMessage) {
@@ -801,6 +838,14 @@ export class WsBridge {
     session.messageHistory.push(browserMsg);
     this.broadcastToBrowsers(session, browserMsg);
     this.persistSession(session);
+
+    // Session ended — mark any remaining running agents as stopped
+    for (const agent of session.state.agents_active || []) {
+      if (agent.status === "running" || agent.status === "idle") {
+        agent.status = "stopped";
+        this.broadcastToBrowsers(session, { type: "agent_stopped", agentId: agent.agentId });
+      }
+    }
 
     // Trigger auto-naming after the first successful result for this session.
     // Note: num_turns counts all internal tool-use turns, so it's typically > 1
@@ -865,6 +910,11 @@ export class WsBridge {
       summary: msg.summary,
       tool_use_ids: msg.preceding_tool_use_ids,
     });
+
+    // Primary agent completion detection: tool_use_summary references completed tool_use IDs
+    for (const toolUseId of msg.preceding_tool_use_ids) {
+      this.markAgentStopped(session, toolUseId);
+    }
   }
 
   private handleAuthStatus(session: Session, msg: CLIAuthStatusMessage) {

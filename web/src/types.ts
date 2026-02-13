@@ -56,3 +56,12 @@ export interface SdkSessionInfo {
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
 }
+
+export interface AgentInfo {
+  agentId: string;
+  agentType: string;
+  agentName?: string;
+  parentToolUseId: string;
+  status: "running" | "idle" | "stopped";
+  spawnedAt: number;
+}

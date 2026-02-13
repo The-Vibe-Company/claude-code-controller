@@ -365,8 +365,12 @@ function AssistantAvatar() {
 
 // ─── Main Feed ───────────────────────────────────────────────────────────────
 
-export function MessageFeed({ sessionId }: { sessionId: string }) {
-  const messages = useStore((s) => s.messages.get(sessionId) ?? EMPTY_MESSAGES);
+export function MessageFeed({ sessionId, filterParentToolUseId }: { sessionId: string; filterParentToolUseId?: string }) {
+  const allMessages = useStore((s) => s.messages.get(sessionId) ?? EMPTY_MESSAGES);
+  const messages = useMemo(() => {
+    if (!filterParentToolUseId) return allMessages;
+    return allMessages.filter(m => m.parentToolUseId === filterParentToolUseId);
+  }, [allMessages, filterParentToolUseId]);
   const streamingText = useStore((s) => s.streaming.get(sessionId));
   const streamingStartedAt = useStore((s) => s.streamingStartedAt.get(sessionId));
   const streamingOutputTokens = useStore((s) => s.streamingOutputTokens.get(sessionId));

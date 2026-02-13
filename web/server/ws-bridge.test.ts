@@ -2914,3 +2914,298 @@ describe("MCP control messages", () => {
     vi.useRealTimers();
   });
 });
+
+// ─── Agent Detection ──────────────────────────────────────────────────────────
+
+describe("Agent detection", () => {
+  let cli: ReturnType<typeof makeCliSocket>;
+  let browser: ReturnType<typeof makeBrowserSocket>;
+
+  beforeEach(() => {
+    cli = makeCliSocket("s1");
+    browser = makeBrowserSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+  });
+
+  it("handleAssistantMessage with Task tool_use broadcasts agent_spawned with correct info", () => {
+    // Test that Task tool_use blocks trigger agent spawn detection
+    // This validates that the system tracks new agent spawns in real-time
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          {
+            type: "tool_use",
+            id: "task-123",
+            name: "Task",
+            input: {
+              subagent_type: "researcher",
+              name: "Research Agent",
+              description: "Researches a topic",
+            },
+          },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    // Should broadcast assistant message + agent_spawned
+    expect(browser.send).toHaveBeenCalledTimes(2);
+
+    const agentSpawnedMsg = JSON.parse(browser.send.mock.calls[1][0] as string);
+    expect(agentSpawnedMsg.type).toBe("agent_spawned");
+    expect(agentSpawnedMsg.agent).toMatchObject({
+      agentId: "task-123",
+      agentType: "researcher",
+      agentName: "Research Agent",
+      parentToolUseId: "task-123",
+      status: "running",
+    });
+    expect(agentSpawnedMsg.agent.spawnedAt).toBeGreaterThan(0);
+
+    // Verify agent is stored in session state
+    const session = bridge.getSession("s1");
+    expect(session?.state.agents_active).toHaveLength(1);
+    expect(session?.state.agents_active?.[0].agentId).toBe("task-123");
+  });
+
+  it("handleAssistantMessage with Task tool_use defaults agentType and agentName", () => {
+    // Test fallback behavior when Task input lacks subagent_type or name
+    // Edge case: ensures robustness when agent metadata is incomplete
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          {
+            type: "tool_use",
+            id: "task-456",
+            name: "Task",
+            input: {},
+          },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    const agentSpawnedMsg = JSON.parse(browser.send.mock.calls[1][0] as string);
+    expect(agentSpawnedMsg.agent.agentType).toBe("general-purpose");
+    expect(agentSpawnedMsg.agent.agentName).toBeUndefined();
+  });
+
+  it("handleToolUseSummary with preceding_tool_use_ids broadcasts agent_stopped", () => {
+    // Test primary agent completion detection via tool_use_summary
+    // This is the main mechanism for detecting when agents finish their work
+
+    // First spawn an agent
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_use", id: "task-789", name: "Task", input: { subagent_type: "coder" } },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    browser.send.mockClear();
+
+    // Send tool_use_summary referencing the agent's tool_use_id
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "tool_use_summary",
+      summary: "Completed coding task",
+      preceding_tool_use_ids: ["task-789"],
+      uuid: "uuid-2",
+      session_id: "s1",
+    }));
+
+    // Should broadcast tool_use_summary + agent_stopped
+    expect(browser.send).toHaveBeenCalledTimes(2);
+
+    const stoppedMsg = JSON.parse(browser.send.mock.calls[1][0] as string);
+    expect(stoppedMsg.type).toBe("agent_stopped");
+    expect(stoppedMsg.agentId).toBe("task-789");
+
+    // Verify agent status is updated to stopped (not removed from array)
+    const session = bridge.getSession("s1");
+    expect(session?.state.agents_active).toHaveLength(1);
+    expect(session?.state.agents_active?.[0].status).toBe("stopped");
+  });
+
+  it("handleResultMessage marks all remaining running agents as stopped", () => {
+    // Test that session end (result message) stops all active agents
+    // Important edge case: ensures clean state when session completes
+
+    // Spawn two agents
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_use", id: "agent-1", name: "Task", input: {} },
+          { type: "tool_use", id: "agent-2", name: "Task", input: {} },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    browser.send.mockClear();
+
+    // Send result message
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      duration_ms: 1000,
+      duration_api_ms: 500,
+      num_turns: 3,
+      total_cost_usd: 0.05,
+      stop_reason: "end_turn",
+      usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      uuid: "uuid-2",
+      session_id: "s1",
+    }));
+
+    // Should broadcast result + 2x agent_stopped messages
+    const calls = browser.send.mock.calls.map((c: unknown[]) => JSON.parse(c[0] as string));
+    const stoppedMessages = calls.filter((m: Record<string, unknown>) => m.type === "agent_stopped");
+    expect(stoppedMessages).toHaveLength(2);
+    expect(stoppedMessages.map((m: Record<string, unknown>) => m.agentId).sort()).toEqual(["agent-1", "agent-2"]);
+
+    // Verify both agents are stopped
+    const session = bridge.getSession("s1");
+    expect(session?.state.agents_active?.every(a => a.status === "stopped")).toBe(true);
+  });
+
+  it("markAgentStopped updates status to stopped without removing from array", () => {
+    // Test that stopped agents remain in the agents_active array
+    // This is important for UI to show agent history
+
+    // Spawn an agent
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_use", id: "agent-x", name: "Task", input: { name: "Test Agent" } },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    const sessionBefore = bridge.getSession("s1");
+    expect(sessionBefore?.state.agents_active).toHaveLength(1);
+    expect(sessionBefore?.state.agents_active?.[0].status).toBe("running");
+
+    // Stop the agent via tool_use_summary
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "tool_use_summary",
+      summary: "Done",
+      preceding_tool_use_ids: ["agent-x"],
+      uuid: "uuid-2",
+      session_id: "s1",
+    }));
+
+    const sessionAfter = bridge.getSession("s1");
+    expect(sessionAfter?.state.agents_active).toHaveLength(1); // Still 1 agent
+    expect(sessionAfter?.state.agents_active?.[0].status).toBe("stopped"); // But now stopped
+    expect(sessionAfter?.state.agents_active?.[0].agentId).toBe("agent-x");
+  });
+
+  it("tool_result block fallback detection triggers agent_stopped", () => {
+    // Test Codex compatibility: tool_result blocks also trigger agent stop
+    // This is a fallback mechanism for systems that don't emit tool_use_summary
+
+    // Spawn an agent
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_use", id: "agent-y", name: "Task", input: {} },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-1",
+      session_id: "s1",
+    }));
+
+    browser.send.mockClear();
+
+    // Send assistant message with tool_result
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "assistant",
+      message: {
+        id: "msg-2",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-4-5-20250929",
+        content: [
+          { type: "tool_result", tool_use_id: "agent-y", content: "Result" },
+        ],
+        stop_reason: null,
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+      uuid: "uuid-2",
+      session_id: "s1",
+    }));
+
+    // Should broadcast assistant + agent_stopped
+    const calls = browser.send.mock.calls.map((c: unknown[]) => JSON.parse(c[0] as string));
+    const stoppedMsg = calls.find((m: Record<string, unknown>) => m.type === "agent_stopped");
+    expect(stoppedMsg).toBeDefined();
+    expect(stoppedMsg.agentId).toBe("agent-y");
+
+    const session = bridge.getSession("s1");
+    expect(session?.state.agents_active?.[0].status).toBe("stopped");
+  });
+});

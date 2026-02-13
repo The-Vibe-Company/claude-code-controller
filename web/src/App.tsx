@@ -13,12 +13,21 @@ import { UpdateBanner } from "./components/UpdateBanner.js";
 import { SettingsPage } from "./components/SettingsPage.js";
 import { EnvManager } from "./components/EnvManager.js";
 import { TerminalPage } from "./components/TerminalPage.js";
+import { AgentTabBar } from "./components/AgentTabBar.js";
+import { AgentPage } from "./components/AgentChatView.js";
 
 function useHash() {
   return useSyncExternalStore(
     (cb) => { window.addEventListener("hashchange", cb); return () => window.removeEventListener("hashchange", cb); },
     () => window.location.hash,
   );
+}
+
+/** Parse #/agent/:sessionId/:agentId from the hash */
+function parseAgentRoute(hash: string): { sessionId: string; agentId: string } | null {
+  const match = hash.match(/^#\/agent\/([^/]+)\/([^/]+)$/);
+  if (!match) return null;
+  return { sessionId: match[1], agentId: match[2] };
 }
 
 export default function App() {
@@ -32,7 +41,8 @@ export default function App() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
-  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
+  const agentRoute = parseAgentRoute(hash);
+  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage && !agentRoute;
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -60,6 +70,11 @@ export default function App() {
 
   if (hash === "#/playground") {
     return <Playground />;
+  }
+
+  // Standalone agent tab — minimal chrome, full-screen agent view
+  if (agentRoute) {
+    return <AgentPage sessionId={agentRoute.sessionId} agentId={agentRoute.agentId} />;
   }
 
   return (
@@ -108,9 +123,11 @@ export default function App() {
           )}
 
           {isSessionView && (
-            <>
+            <div className="absolute inset-0 flex flex-col">
+              {currentSessionId && <AgentTabBar sessionId={currentSessionId} />}
+
               {/* Chat tab — visible when activeTab is "chat" or no session */}
-              <div className={`absolute inset-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
+              <div className={`flex-1 min-h-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
                 {currentSessionId ? (
                   <ChatView sessionId={currentSessionId} />
                 ) : (
@@ -120,11 +137,11 @@ export default function App() {
 
               {/* Diff tab */}
               {currentSessionId && activeTab === "diff" && (
-                <div className="absolute inset-0">
+                <div className="flex-1 min-h-0">
                   <DiffPanel sessionId={currentSessionId} />
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>

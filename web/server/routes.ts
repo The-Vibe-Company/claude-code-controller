@@ -1019,6 +1019,17 @@ export function createRoutes(
     return { cleaned: result.removed, path: mapping.worktreePath };
   }
 
+  // ─── Team / Agent endpoints ───────────────────────────────────────────────
+
+  api.get("/sessions/:id/agents", (c) => {
+    const sessionId = c.req.param("id");
+    const bridgeSession = wsBridge.getSession(sessionId);
+    if (!bridgeSession) {
+      return c.json({ error: "Session not found" }, 404);
+    }
+    return c.json({ agents: bridgeSession.state.agents_active || [] });
+  });
+
   // ─── Terminal ──────────────────────────────────────────────────────
 
   api.get("/terminal", (c) => {
