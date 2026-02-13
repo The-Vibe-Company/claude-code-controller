@@ -2520,3 +2520,189 @@ describe("broadcastNameUpdate", () => {
     bridge.broadcastNameUpdate("nonexistent", "Name");
   });
 });
+
+// ─── /clear command interception ──────────────────────────────────────────────
+
+describe("/clear command interception", () => {
+  it("intercepts /clear and does not forward to CLI", () => {
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+
+    // Send system.init so session has some state
+    bridge.handleCLIMessage(cli, makeInitMsg());
+
+    // Add a message to history first
+    const session = bridge.getSession("s1")!;
+    session.messageHistory.push({ type: "user_message", content: "hello", timestamp: Date.now() });
+
+    // Reset CLI send mock to track only new calls
+    cli.send.mockClear();
+
+    // Send /clear
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    browser.send.mockClear();
+
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "/clear",
+    }));
+
+    // CLI should NOT have received any message
+    expect(cli.send).not.toHaveBeenCalled();
+  });
+
+  it("resets session state but preserves cwd and model", () => {
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg({ cwd: "/my/project", model: "claude-opus-4-6" }));
+
+    const session = bridge.getSession("s1")!;
+    session.messageHistory.push({ type: "user_message", content: "hello", timestamp: Date.now() });
+    session.state.total_cost_usd = 1.5;
+    session.state.num_turns = 5;
+
+    bridge.clearSession("s1");
+
+    expect(session.messageHistory).toEqual([]);
+    expect(session.pendingMessages).toEqual([]);
+    expect(session.pendingPermissions.size).toBe(0);
+    expect(session.state.cwd).toBe("/my/project");
+    expect(session.state.model).toBe("claude-opus-4-6");
+    expect(session.state.total_cost_usd).toBe(0);
+    expect(session.state.num_turns).toBe(0);
+    expect(session.state.context_used_percent).toBe(0);
+  });
+
+  it("broadcasts session_cleared to browsers", () => {
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    browser.send.mockClear();
+
+    bridge.clearSession("s1");
+
+    const calls = browser.send.mock.calls.map((c: unknown[]) => JSON.parse(c[0] as string));
+    const cleared = calls.find((m: { type: string }) => m.type === "session_cleared");
+    expect(cleared).toEqual({ type: "session_cleared" });
+  });
+
+  it("calls onClearSession callback", () => {
+    const callback = vi.fn();
+    bridge.onClearSessionCallback(callback);
+
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+
+    bridge.clearSession("s1");
+
+    expect(callback).toHaveBeenCalledWith("s1");
+  });
+
+  it("does not intercept regular messages starting with /", () => {
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+    cli.send.mockClear();
+
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "/commit fix the bug",
+    }));
+
+    // CLI should have received the message (forwarded normally)
+    expect(cli.send).toHaveBeenCalled();
+    const sent = cli.send.mock.calls[0][0] as string;
+    const parsed = JSON.parse(sent.trim());
+    expect(parsed.type).toBe("user");
+    expect(parsed.message.content).toBe("/commit fix the bug");
+  });
+
+  it("handles /clear with extra whitespace", () => {
+    const callback = vi.fn();
+    bridge.onClearSessionCallback(callback);
+
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+    cli.send.mockClear();
+
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "  /clear  ",
+    }));
+
+    // Should be intercepted (trimmed match)
+    expect(cli.send).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledWith("s1");
+  });
+
+  it("allows auto-naming again after clear", () => {
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg());
+
+    // Simulate first turn completion triggering auto-naming
+    const namingCallback = vi.fn();
+    bridge.onFirstTurnCompletedCallback(namingCallback);
+
+    // Send a user message + result to trigger auto-naming
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "hello",
+    }));
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      duration_ms: 100,
+      duration_api_ms: 80,
+      num_turns: 1,
+      total_cost_usd: 0.01,
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      uuid: "uuid-result",
+      session_id: "cli-123",
+    }));
+
+    expect(namingCallback).toHaveBeenCalledTimes(1);
+    namingCallback.mockClear();
+
+    // Now clear the session
+    bridge.clearSession("s1");
+
+    // After clear, a new first turn should trigger auto-naming again
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "new conversation",
+    }));
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      duration_ms: 100,
+      duration_api_ms: 80,
+      num_turns: 1,
+      total_cost_usd: 0.01,
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      uuid: "uuid-result-2",
+      session_id: "cli-123",
+    }));
+
+    expect(namingCallback).toHaveBeenCalledTimes(1);
+    expect(namingCallback).toHaveBeenCalledWith("s1", "new conversation");
+  });
+});

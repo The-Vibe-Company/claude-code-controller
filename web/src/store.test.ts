@@ -499,6 +499,58 @@ describe("UI state", () => {
   });
 });
 
+// ─── clearSessionData (for /clear command) ──────────────────────────────────
+
+describe("clearSessionData", () => {
+  it("clears conversation data but keeps session identity", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    useStore.getState().setCurrentSession("s1");
+    useStore.getState().appendMessage("s1", makeMessage({ content: "hello" }));
+    useStore.getState().setStreaming("s1", "partial text");
+    useStore.getState().setStreamingStats("s1", { startedAt: 100, outputTokens: 50 });
+    useStore.getState().addPermission("s1", makePermission());
+    useStore.getState().addTask("s1", makeTask());
+    useStore.getState().addChangedFile("s1", "/test/file.ts");
+    useStore.getState().setSessionName("s1", "My Session");
+    useStore.getState().setConnectionStatus("s1", "connected");
+    useStore.getState().setCliConnected("s1", true);
+    useStore.getState().setSessionStatus("s1", "running");
+
+    useStore.getState().clearSessionData("s1");
+    const state = useStore.getState();
+
+    // Conversation data should be cleared
+    expect(state.messages.get("s1")).toEqual([]); // empty array, not deleted
+    expect(state.streaming.has("s1")).toBe(false);
+    expect(state.streamingStartedAt.has("s1")).toBe(false);
+    expect(state.streamingOutputTokens.has("s1")).toBe(false);
+    expect(state.pendingPermissions.has("s1")).toBe(false);
+    expect(state.sessionTasks.has("s1")).toBe(false);
+    expect(state.changedFiles.has("s1")).toBe(false);
+    expect(state.sessionStatus.get("s1")).toBe("idle");
+
+    // Identity and connection should be preserved
+    expect(state.sessions.has("s1")).toBe(true);
+    expect(state.sessionNames.get("s1")).toBe("My Session");
+    expect(state.connectionStatus.get("s1")).toBe("connected");
+    expect(state.cliConnected.get("s1")).toBe(true);
+    expect(state.currentSessionId).toBe("s1");
+  });
+
+  it("does not affect other sessions", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    useStore.getState().addSession(makeSession("s2"));
+    useStore.getState().appendMessage("s1", makeMessage({ content: "s1 msg" }));
+    useStore.getState().appendMessage("s2", makeMessage({ content: "s2 msg" }));
+
+    useStore.getState().clearSessionData("s1");
+
+    expect(useStore.getState().messages.get("s1")).toEqual([]);
+    expect(useStore.getState().messages.get("s2")).toHaveLength(1);
+    expect(useStore.getState().messages.get("s2")![0].content).toBe("s2 msg");
+  });
+});
+
 // ─── Reset ──────────────────────────────────────────────────────────────────
 
 describe("reset", () => {

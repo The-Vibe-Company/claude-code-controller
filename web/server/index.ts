@@ -72,6 +72,11 @@ wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
   }
 });
 
+// Handle /clear command — relaunch CLI without --resume for a fresh session
+wsBridge.onClearSessionCallback(async (sessionId) => {
+  await launcher.clearAndRelaunch(sessionId);
+});
+
 // Auto-generate session title after first turn completes
 wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
   // Don't overwrite a name that was already set (manual rename or prior auto-name)

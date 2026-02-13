@@ -146,6 +146,7 @@ export class WsBridge {
   private onCLISessionId: ((sessionId: string, cliSessionId: string) => void) | null = null;
   private onCLIRelaunchNeeded: ((sessionId: string) => void) | null = null;
   private onFirstTurnCompleted: ((sessionId: string, firstUserMessage: string) => void) | null = null;
+  private onClearSession: ((sessionId: string) => void) | null = null;
   private autoNamingAttempted = new Set<string>();
   private userMsgCounter = 0;
   private onGitInfoReady: ((sessionId: string, cwd: string, branch: string) => void) | null = null;
@@ -170,6 +171,11 @@ export class WsBridge {
   /** Register a callback for when a session completes its first turn. */
   onFirstTurnCompletedCallback(cb: (sessionId: string, firstUserMessage: string) => void): void {
     this.onFirstTurnCompleted = cb;
+  }
+
+  /** Register a callback for when /clear is invoked (to relaunch CLI fresh). */
+  onClearSessionCallback(cb: (sessionId: string) => void): void {
+    this.onClearSession = cb;
   }
 
   /** Register a callback for when git info is resolved and branch is known. */
@@ -361,6 +367,52 @@ export class WsBridge {
     this.sessions.delete(sessionId);
     this.autoNamingAttempted.delete(sessionId);
     this.store?.remove(sessionId);
+  }
+
+  /**
+   * Clear a session's conversation state (for /clear command).
+   * Resets message history and state but keeps the session alive.
+   */
+  clearSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    // Close CLI socket immediately to prevent stale messages during kill window
+    if (session.cliSocket) {
+      try { session.cliSocket.close(); } catch {}
+      session.cliSocket = null;
+    }
+    if (session.codexAdapter) {
+      session.codexAdapter.disconnect().catch(() => {});
+      session.codexAdapter = null;
+    }
+
+    // Preserve identity and config
+    const { cwd, model, permissionMode } = session.state;
+
+    // Reset state to defaults, restoring preserved fields
+    session.state = makeDefaultState(sessionId, session.backendType);
+    session.state.cwd = cwd;
+    session.state.model = model;
+    session.state.permissionMode = permissionMode;
+
+    // Clear conversation data
+    session.messageHistory = [];
+    session.pendingMessages = [];
+    session.pendingPermissions.clear();
+
+    // Allow auto-naming again for the cleared session
+    this.autoNamingAttempted.delete(sessionId);
+
+    // Notify browsers
+    this.broadcastToBrowsers(session, { type: "session_cleared" });
+
+    this.persistSession(session);
+
+    // Trigger CLI relaunch without --resume
+    if (this.onClearSession) {
+      this.onClearSession(sessionId);
+    }
   }
 
   // ── Codex adapter attachment ────────────────────────────────────────────
@@ -817,6 +869,12 @@ export class WsBridge {
   // ── Browser message routing ─────────────────────────────────────────────
 
   private routeBrowserMessage(session: Session, msg: BrowserOutgoingMessage) {
+    // Intercept /clear for ALL backends before any routing
+    if (msg.type === "user_message" && msg.content.trim() === "/clear") {
+      this.clearSession(session.id);
+      return;
+    }
+
     // For Codex sessions, delegate entirely to the adapter
     if (session.backendType === "codex") {
       // Store user messages in history for replay with stable ID for dedup on reconnect
@@ -875,6 +933,8 @@ export class WsBridge {
     session: Session,
     msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] }
   ) {
+    // Note: /clear interception happens in routeBrowserMessage() before this method is called.
+
     // Store user message in history for replay with stable ID for dedup on reconnect
     const ts = Date.now();
     session.messageHistory.push({

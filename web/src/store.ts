@@ -111,6 +111,9 @@ interface AppState {
   // Plan mode actions
   setPreviousPermissionMode: (sessionId: string, mode: string) => void;
 
+  // Session clear action (for /clear command)
+  clearSessionData: (sessionId: string) => void;
+
   // Connection actions
   setConnectionStatus: (sessionId: string, status: "connecting" | "connected" | "disconnected") => void;
   setCliConnected: (sessionId: string, connected: boolean) => void;
@@ -449,6 +452,30 @@ export const useStore = create<AppState>((set) => ({
       const changedFiles = new Map(s.changedFiles);
       changedFiles.delete(sessionId);
       return { changedFiles };
+    }),
+
+  clearSessionData: (sessionId) =>
+    set((s) => {
+      const messages = new Map(s.messages);
+      messages.set(sessionId, []);
+      const streaming = new Map(s.streaming);
+      streaming.delete(sessionId);
+      const streamingStartedAt = new Map(s.streamingStartedAt);
+      streamingStartedAt.delete(sessionId);
+      const streamingOutputTokens = new Map(s.streamingOutputTokens);
+      streamingOutputTokens.delete(sessionId);
+      const pendingPermissions = new Map(s.pendingPermissions);
+      pendingPermissions.delete(sessionId);
+      const sessionTasks = new Map(s.sessionTasks);
+      sessionTasks.delete(sessionId);
+      const changedFiles = new Map(s.changedFiles);
+      changedFiles.delete(sessionId);
+      const sessionStatus = new Map(s.sessionStatus);
+      sessionStatus.set(sessionId, "idle");
+      return {
+        messages, streaming, streamingStartedAt, streamingOutputTokens,
+        pendingPermissions, sessionTasks, changedFiles, sessionStatus,
+      };
     }),
 
   setSessionName: (sessionId, name) =>

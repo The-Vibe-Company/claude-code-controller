@@ -227,6 +227,20 @@ export class CliLauncher {
   }
 
   /**
+   * Clear session context and relaunch CLI fresh (no --resume).
+   * Used by /clear command to start a clean conversation.
+   */
+  async clearAndRelaunch(sessionId: string): Promise<boolean> {
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+
+    // Clear the CLI session ID so relaunch() won't use --resume
+    info.cliSessionId = undefined;
+
+    return this.relaunch(sessionId);
+  }
+
+  /**
    * Get all sessions in "starting" state (awaiting CLI WebSocket connection).
    */
   getStartingSessions(): SdkSessionInfo[] {
