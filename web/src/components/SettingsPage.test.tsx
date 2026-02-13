@@ -43,6 +43,11 @@ const mockApi = {
   triggerUpdate: vi.fn(),
 };
 
+const mockTelemetry = {
+  getTelemetryPreferenceEnabled: vi.fn(),
+  setTelemetryPreferenceEnabled: vi.fn(),
+};
+
 vi.mock("../api.js", () => ({
   api: {
     getSettings: (...args: unknown[]) => mockApi.getSettings(...args),
@@ -50,6 +55,11 @@ vi.mock("../api.js", () => ({
     forceCheckForUpdate: (...args: unknown[]) => mockApi.forceCheckForUpdate(...args),
     triggerUpdate: (...args: unknown[]) => mockApi.triggerUpdate(...args),
   },
+}));
+
+vi.mock("../analytics.js", () => ({
+  getTelemetryPreferenceEnabled: (...args: unknown[]) => mockTelemetry.getTelemetryPreferenceEnabled(...args),
+  setTelemetryPreferenceEnabled: (...args: unknown[]) => mockTelemetry.setTelemetryPreferenceEnabled(...args),
 }));
 
 vi.mock("../store.js", () => {
@@ -84,6 +94,7 @@ beforeEach(() => {
     ok: true,
     message: "Update started. Server will restart shortly.",
   });
+  mockTelemetry.getTelemetryPreferenceEnabled.mockReturnValue(true);
 });
 
 describe("SettingsPage", () => {
@@ -247,6 +258,14 @@ describe("SettingsPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Theme/i }));
     expect(mockState.toggleDarkMode).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles telemetry preference from settings", async () => {
+    render(<SettingsPage />);
+    await screen.findByText("OpenRouter key configured");
+
+    fireEvent.click(screen.getByRole("button", { name: /Usage analytics and errors/i }));
+    expect(mockTelemetry.setTelemetryPreferenceEnabled).toHaveBeenCalledWith(false);
   });
 
   it("navigates to environments page from settings", async () => {

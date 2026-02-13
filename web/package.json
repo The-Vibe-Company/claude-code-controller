@@ -38,7 +38,8 @@
   },
   "dependencies": {
     "diff": "^8.0.3",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "posthog-js": "^1.347.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

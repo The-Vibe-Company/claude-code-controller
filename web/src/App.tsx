@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useStore } from "./store.js";
 import { connectSession } from "./ws.js";
 import { api } from "./api.js";
+import { capturePageView } from "./analytics.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ChatView } from "./components/ChatView.js";
 import { TopBar } from "./components/TopBar.js";
@@ -33,6 +34,10 @@ export default function App() {
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
   const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
+
+  useEffect(() => {
+    capturePageView(hash || "#/");
+  }, [hash]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);

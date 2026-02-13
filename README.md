@@ -100,6 +100,19 @@ Dev uses port 3457 for the backend and 5174 for Vite HMR, so both dev and prod c
 
 Bun runtime, Hono server, React 19, Zustand, Tailwind v4, Vite.
 
+## Telemetry
+
+The Companion can send product analytics and frontend crash reports to PostHog so we can improve reliability and UX.
+
+- Telemetry is configured via `VITE_POSTHOG_KEY` (and optional `VITE_POSTHOG_HOST`).
+- In this open-source repo, telemetry is optional: if no key is configured, nothing is sent.
+- Users can disable telemetry anytime in `Settings -> Telemetry`.
+- Browser Do Not Track is respected (`respect_dnt` is enabled).
+
+## Cloud
+
+See [`cloud.md`](cloud.md) for the cloud environment roadmap and core image strategy.
+
 ## Contributing
 
 Check [open issues](https://github.com/The-Vibe-Company/companion/issues), fork, branch, PR. For protocol-level work, read the [WebSocket spec](WEBSOCKET_PROTOCOL_REVERSED.md) first.
