@@ -623,7 +623,11 @@ describe("start (linux)", () => {
     vi.resetModules();
     service = await import("./service.js");
     mockExecSync.mockReset();
-    mockExecSync.mockImplementation(() => "");
+    // start() now calls refreshServiceDefinition() which needs `which`
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      return "";
+    });
 
     await service.start();
 
@@ -653,6 +657,41 @@ describe("start (linux)", () => {
       ([cmd]) => typeof cmd === "string" && cmd.includes("enable --now"),
     );
     expect(enableCall).toBeDefined();
+  });
+
+  it("refreshes the service definition before starting an already-installed service", async () => {
+    // Install first with an older-style unit file (missing SuccessExitStatus).
+    // start() should rewrite the unit via refreshServiceDefinition() so that
+    // stale definitions from older versions don't cause restart loops.
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+    await service.install();
+
+    // Manually overwrite the unit with a stale version (no SuccessExitStatus)
+    const staleUnit = readFileSync(unitPath(), "utf-8")
+      .replace("SuccessExitStatus=42\n", "")
+      .replace("Restart=always", "Restart=on-failure");
+    writeFileSync(unitPath(), staleUnit, "utf-8");
+    expect(readFileSync(unitPath(), "utf-8")).not.toContain("SuccessExitStatus=42");
+
+    vi.resetModules();
+    service = await import("./service.js");
+    mockExecSync.mockReset();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+
+    await service.start();
+
+    // Verify the unit file was refreshed with current template values
+    const updatedContent = readFileSync(unitPath(), "utf-8");
+    expect(updatedContent).toContain("SuccessExitStatus=42");
+    expect(updatedContent).toContain("Restart=always");
   });
 });
 
@@ -808,7 +847,11 @@ describe("restart (linux)", () => {
     vi.resetModules();
     service = await import("./service.js");
     mockExecSync.mockReset();
-    mockExecSync.mockImplementation(() => "");
+    // restart() now calls refreshServiceDefinition() which needs `which`
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      return "";
+    });
 
     await service.restart();
 
@@ -821,6 +864,37 @@ describe("restart (linux)", () => {
   it("handles not-installed gracefully", async () => {
     // Should not throw
     await service.restart();
+  });
+
+  it("refreshes the service definition before restarting", async () => {
+    // Install first
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+    await service.install();
+
+    // Manually write a stale unit (no SuccessExitStatus)
+    const staleUnit = readFileSync(unitPath(), "utf-8")
+      .replace("SuccessExitStatus=42\n", "");
+    writeFileSync(unitPath(), staleUnit, "utf-8");
+    expect(readFileSync(unitPath(), "utf-8")).not.toContain("SuccessExitStatus=42");
+
+    vi.resetModules();
+    service = await import("./service.js");
+    mockExecSync.mockReset();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+
+    await service.restart();
+
+    // Verify the unit file was refreshed with current template
+    const updatedContent = readFileSync(unitPath(), "utf-8");
+    expect(updatedContent).toContain("SuccessExitStatus=42");
   });
 });
 
