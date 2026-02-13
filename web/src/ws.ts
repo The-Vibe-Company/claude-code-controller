@@ -201,7 +201,6 @@ function extractTextFromBlocks(blocks: ContentBlock[]): string {
 }
 
 function handleMessage(sessionId: string, event: MessageEvent) {
-  const store = useStore.getState();
   let data: BrowserIncomingMessage;
   try {
     data = JSON.parse(event.data);
@@ -209,11 +208,24 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     return;
   }
 
-  if (typeof data.seq === "number") {
+  handleParsedMessage(sessionId, data);
+}
+
+function handleParsedMessage(
+  sessionId: string,
+  data: BrowserIncomingMessage,
+  options: { processSeq?: boolean; ackSeqMessage?: boolean } = {},
+) {
+  const { processSeq = true, ackSeqMessage = true } = options;
+  const store = useStore.getState();
+
+  if (processSeq && typeof data.seq === "number") {
     const previous = getLastSeq(sessionId);
     if (data.seq <= previous) return;
     setLastSeq(sessionId, data.seq);
-    ackSeq(sessionId, data.seq);
+    if (ackSeqMessage) {
+      ackSeq(sessionId, data.seq);
+    }
   }
 
   switch (data.type) {
@@ -510,15 +522,20 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     }
 
     case "event_replay": {
+      let latestProcessed: number | undefined;
       for (const evt of data.events) {
         const previous = getLastSeq(sessionId);
         if (evt.seq <= previous) continue;
-        const wrapped = { ...evt.message, seq: evt.seq } as BrowserIncomingMessage;
-        handleMessage(sessionId, { data: JSON.stringify(wrapped) } as MessageEvent);
+        setLastSeq(sessionId, evt.seq);
+        latestProcessed = evt.seq;
+        handleParsedMessage(
+          sessionId,
+          evt.message as BrowserIncomingMessage,
+          { processSeq: false, ackSeqMessage: false },
+        );
       }
-      const latest = data.events[data.events.length - 1]?.seq;
-      if (typeof latest === "number") {
-        ackSeq(sessionId, latest);
+      if (typeof latestProcessed === "number") {
+        ackSeq(sessionId, latestProcessed);
       }
       break;
     }

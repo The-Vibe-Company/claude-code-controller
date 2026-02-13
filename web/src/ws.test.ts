@@ -254,6 +254,40 @@ describe("handleMessage: event_replay", () => {
       JSON.stringify({ type: "session_ack", last_seq: 1 }),
     );
   });
+
+  it("acks only once using the latest replayed seq", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+    lastWs.send.mockClear();
+
+    fireMessage({
+      type: "event_replay",
+      events: [
+        {
+          seq: 1,
+          message: {
+            type: "stream_event",
+            event: { type: "content_block_delta", delta: { type: "text_delta", text: "A" } },
+            parent_tool_use_id: null,
+          },
+        },
+        {
+          seq: 2,
+          message: {
+            type: "stream_event",
+            event: { type: "content_block_delta", delta: { type: "text_delta", text: "B" } },
+            parent_tool_use_id: null,
+          },
+        },
+      ],
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("AB");
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    expect(lastWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "session_ack", last_seq: 2 }),
+    );
+  });
 });
 
 // ===========================================================================

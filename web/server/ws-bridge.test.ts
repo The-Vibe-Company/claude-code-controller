@@ -671,6 +671,9 @@ describe("Browser handlers", () => {
     const historyMsg = calls.find((c: any) => c.type === "message_history");
     expect(historyMsg).toBeDefined();
     expect(historyMsg.messages.some((m: any) => m.type === "assistant")).toBe(true);
+    const replayMsg = calls.find((c: any) => c.type === "event_replay");
+    expect(replayMsg).toBeDefined();
+    expect(replayMsg.events.some((e: any) => e.message.type === "stream_event")).toBe(true);
   });
 
   it("session_ack: updates lastAckSeq for the session", () => {

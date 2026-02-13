@@ -1012,6 +1012,14 @@ export class WsBridge {
         type: "message_history",
         messages: session.messageHistory,
       });
+      const transientMissed = session.eventBuffer
+        .filter((evt) => evt.seq > lastAckSeq && !this.isHistoryBackedEvent(evt.message));
+      if (transientMissed.length > 0) {
+        this.sendToBrowser(ws, {
+          type: "event_replay",
+          events: transientMissed,
+        });
+      }
       return;
     }
 
@@ -1238,6 +1246,13 @@ export class WsBridge {
     return msg.type !== "session_init"
       && msg.type !== "message_history"
       && msg.type !== "event_replay";
+  }
+
+  private isHistoryBackedEvent(msg: ReplayableBrowserIncomingMessage): boolean {
+    return msg.type === "assistant"
+      || msg.type === "result"
+      || msg.type === "user_message"
+      || msg.type === "error";
   }
 
   private sequenceEvent(
