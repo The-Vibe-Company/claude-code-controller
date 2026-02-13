@@ -85,6 +85,11 @@ function makeDefaultState(sessionId: string, backendType: BackendType = "claude"
     total_cost_usd: 0,
     num_turns: 0,
     context_used_percent: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_creation_tokens: 0,
+    context_window: 0,
     is_compacting: false,
     git_branch: "",
     is_worktree: false,
@@ -734,15 +739,32 @@ export class WsBridge {
       session.state.total_lines_removed = msg.total_lines_removed;
     }
 
-    // Compute context usage from modelUsage
+    // Extract token usage from modelUsage
     if (msg.modelUsage) {
+      let totalInput = 0;
+      let totalOutput = 0;
+      let totalCacheRead = 0;
+      let totalCacheCreation = 0;
+      let contextWindow = 0;
       for (const usage of Object.values(msg.modelUsage)) {
+        totalInput += usage.inputTokens || 0;
+        totalOutput += usage.outputTokens || 0;
+        totalCacheRead += usage.cacheReadInputTokens || 0;
+        totalCacheCreation += usage.cacheCreationInputTokens || 0;
         if (usage.contextWindow > 0) {
-          const pct = Math.round(
-            ((usage.inputTokens + usage.outputTokens) / usage.contextWindow) * 100
-          );
-          session.state.context_used_percent = Math.max(0, Math.min(pct, 100));
+          contextWindow = usage.contextWindow;
         }
+      }
+      session.state.input_tokens = totalInput;
+      session.state.output_tokens = totalOutput;
+      session.state.cache_read_tokens = totalCacheRead;
+      session.state.cache_creation_tokens = totalCacheCreation;
+      if (contextWindow > 0) {
+        session.state.context_window = contextWindow;
+        const pct = Math.round(
+          ((totalInput + totalOutput) / contextWindow) * 100
+        );
+        session.state.context_used_percent = Math.max(0, Math.min(pct, 100));
       }
     }
 

@@ -3,8 +3,21 @@ import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
 
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 export function TopBar() {
   const currentSessionId = useStore((s) => s.currentSessionId);
+  const sessions = useStore((s) => s.sessions);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
@@ -37,6 +50,9 @@ export function TopBar() {
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
+  const session = currentSessionId ? sessions.get(currentSessionId) : undefined;
+
+  const hasTokenData = session && (session.input_tokens > 0 || session.output_tokens > 0);
 
   return (
     <header className="shrink-0 flex items-center justify-between px-2 sm:px-4 py-2 sm:py-2.5 bg-cc-card border-b border-cc-border">
@@ -84,6 +100,44 @@ export function TopBar() {
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-cc-primary animate-[pulse-dot_1s_ease-in-out_infinite]" />
               <span className="text-cc-primary font-medium">Thinking</span>
+            </div>
+          )}
+
+          {/* Token usage stats */}
+          {hasTokenData && (
+            <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono-code" title={
+              `Input: ${formatTokenCount(session.input_tokens)} | Output: ${formatTokenCount(session.output_tokens)}` +
+              (session.cache_read_tokens > 0 ? ` | Cache read: ${formatTokenCount(session.cache_read_tokens)}` : "") +
+              (session.context_window > 0 ? ` | Context: ${session.context_used_percent}% of ${formatTokenCount(session.context_window)}` : "")
+            }>
+              {/* Context usage bar */}
+              {session.context_window > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-16 h-1.5 rounded-full bg-cc-hover overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        session.context_used_percent >= 80
+                          ? "bg-cc-error"
+                          : session.context_used_percent >= 50
+                            ? "bg-cc-warning"
+                            : "bg-cc-primary"
+                      }`}
+                      style={{ width: `${Math.max(2, session.context_used_percent)}%` }}
+                    />
+                  </div>
+                  <span>{session.context_used_percent}%</span>
+                </div>
+              )}
+              {/* Token counts */}
+              <span className="text-cc-muted/60">|</span>
+              <span>{formatTokenCount(session.input_tokens + session.output_tokens)} tokens</span>
+              {/* Cost */}
+              {session.total_cost_usd > 0 && (
+                <>
+                  <span className="text-cc-muted/60">|</span>
+                  <span>{formatCost(session.total_cost_usd)}</span>
+                </>
+              )}
             </div>
           )}
 
