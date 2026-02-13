@@ -397,13 +397,18 @@ describe("Sidebar", () => {
     expect(mockState.toggleDarkMode).toHaveBeenCalled();
   });
 
-  it("groups notification toggles under Notification section", () => {
+  it("hides notification toggles by default and shows summary on Notification button", () => {
     vi.stubGlobal("Notification", {
       permission: "granted",
       requestPermission: vi.fn().mockResolvedValue("granted"),
     });
     render(<Sidebar />);
-    expect(screen.getByText("Notification")).toBeInTheDocument();
+    const notificationButton = screen.getByRole("button", { name: /Notification/i });
+    expect(notificationButton).toBeInTheDocument();
+    expect(notificationButton).toHaveTextContent("2 on");
+    expect(screen.queryByText("Sound on")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alerts on")).not.toBeInTheDocument();
+    fireEvent.click(notificationButton);
     expect(screen.getByText("Sound on")).toBeInTheDocument();
     expect(screen.getByText("Alerts on")).toBeInTheDocument();
     vi.unstubAllGlobals();

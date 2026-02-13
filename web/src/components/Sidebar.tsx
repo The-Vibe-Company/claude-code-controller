@@ -15,6 +15,7 @@ export function Sidebar() {
   const [showTerminalPicker, setShowTerminalPicker] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
   const sessions = useStore((s) => s.sessions);
   const sdkSessions = useStore((s) => s.sdkSessions);
@@ -35,6 +36,8 @@ export function Sidebar() {
   const collapsedProjects = useStore((s) => s.collapsedProjects);
   const toggleProjectCollapse = useStore((s) => s.toggleProjectCollapse);
   const terminalOpen = useStore((s) => s.terminalOpen);
+  const notificationEnabledCount = Number(notificationSound) + Number(notificationDesktop);
+  const notificationSummary = notificationEnabledCount === 0 ? "Off" : `${notificationEnabledCount} on`;
 
   // Poll for SDK sessions on mount
   useEffect(() => {
@@ -374,51 +377,67 @@ export function Sidebar() {
           <span>Environments</span>
         </button>
         <div className="pt-1">
-          <div className="px-3 py-1 text-[11px] font-medium text-cc-muted uppercase tracking-wider">Notification</div>
-          <div className="space-y-0.5">
-            <button
-              onClick={toggleNotificationSound}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
-            >
-              {notificationSound ? (
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                  <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-              )}
-              <span>{notificationSound ? "Sound on" : "Sound off"}</span>
-            </button>
-            {typeof Notification !== "undefined" && (
+          <button
+            onClick={() => setNotificationMenuOpen((open) => !open)}
+            aria-expanded={notificationMenuOpen}
+            aria-controls="notification-settings"
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+            </svg>
+            <span className="flex-1 text-left">Notification</span>
+            <span className="text-xs">{notificationSummary}</span>
+            <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 transition-transform ${notificationMenuOpen ? "rotate-180" : ""}`}>
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+          </button>
+          {notificationMenuOpen && (
+            <div id="notification-settings" className="mt-1 space-y-0.5 border-l border-cc-border ml-5 pl-3">
               <button
-                onClick={async () => {
-                  if (!notificationDesktop) {
-                    if (Notification.permission !== "granted") {
-                      const result = await Notification.requestPermission();
-                      if (result !== "granted") return;
-                    }
-                    setNotificationDesktop(true);
-                  } else {
-                    setNotificationDesktop(false);
-                  }
-                }}
+                onClick={toggleNotificationSound}
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
               >
-                {notificationDesktop ? (
+                {notificationSound ? (
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                    <path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" />
                   </svg>
                 ) : (
                   <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" opacity="0.4" />
+                    <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
                   </svg>
                 )}
-                <span>{notificationDesktop ? "Alerts on" : "Alerts off"}</span>
+                <span>{notificationSound ? "Sound on" : "Sound off"}</span>
               </button>
-            )}
-          </div>
+              {typeof Notification !== "undefined" && (
+                <button
+                  onClick={async () => {
+                    if (!notificationDesktop) {
+                      if (Notification.permission !== "granted") {
+                        const result = await Notification.requestPermission();
+                        if (result !== "granted") return;
+                      }
+                      setNotificationDesktop(true);
+                    } else {
+                      setNotificationDesktop(false);
+                    }
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+                >
+                  {notificationDesktop ? (
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" opacity="0.4" />
+                    </svg>
+                  )}
+                  <span>{notificationDesktop ? "Alerts on" : "Alerts off"}</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <button
           onClick={toggleDarkMode}
