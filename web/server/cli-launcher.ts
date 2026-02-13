@@ -12,7 +12,7 @@ import type { Subprocess } from "bun";
 import type { SessionStore } from "./session-store.js";
 import type { BackendType } from "./session-types.js";
 import { CodexAdapter } from "./codex-adapter.js";
-import { resolveBinary } from "./path-resolver.js";
+import { resolveBinary, getEnrichedPath } from "./path-resolver.js";
 import {
   getLegacyCodexHome,
   resolveCompanionCodexSessionHome,
@@ -298,10 +298,13 @@ export class CliLauncher {
     }
     args.push("-p", "");
 
+    // Use enriched PATH so spawned CLI processes inherit the user's
+    // full PATH (nvm, volta, etc.) regardless of how the server started.
     const env: Record<string, string | undefined> = {
       ...process.env,
       CLAUDECODE: undefined,
       ...options.env,
+      PATH: getEnrichedPath(),
     };
 
     console.log(`[cli-launcher] Spawning session ${sessionId}: ${binary} ${args.join(" ")}`);
@@ -406,11 +409,20 @@ export class CliLauncher {
     );
     this.prepareCodexHome(codexHome);
 
+    // Use enriched PATH so the spawned codex process can find the correct
+    // Node version (e.g. nvm-managed v22 instead of system v12).
+    // Prepend the directory containing the resolved binary so its sibling
+    // `node` is found first.
+    const binaryDir = resolve(binary, "..");
+    const enrichedPath = getEnrichedPath();
+    const spawnPath = [binaryDir, ...enrichedPath.split(":")].filter(Boolean).join(":");
+
     const env: Record<string, string | undefined> = {
       ...process.env,
       CLAUDECODE: undefined,
       ...options.env,
       CODEX_HOME: codexHome,
+      PATH: spawnPath,
     };
 
     console.log(`[cli-launcher] Spawning Codex session ${sessionId}: ${binary} ${args.join(" ")}`);
