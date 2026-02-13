@@ -24,6 +24,10 @@ jobs:
         working-directory: web
         run: bun run typecheck
 
+      - name: Codex protocol contract (offline)
+        working-directory: web
+        run: bun run test:codex-contract
+
       - name: Run tests
         working-directory: web
         run: bun run test

@@ -5,9 +5,10 @@ import { ToolBlock, getToolIcon, getToolLabel, getPreview, ToolIcon } from "./To
 import { DiffViewer } from "./DiffViewer.js";
 import { UpdateBanner } from "./UpdateBanner.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { ChatView } from "./ChatView.js";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
-import type { PermissionRequest, ChatMessage, ContentBlock, McpServerDetail } from "../types.js";
+import type { PermissionRequest, ChatMessage, ContentBlock, SessionState, McpServerDetail } from "../types.js";
 import type { TaskItem } from "../types.js";
 import type { UpdateInfo, GitHubPRInfo } from "../api.js";
 import { GitHubPRDisplay } from "./TaskPanel.js";
@@ -116,6 +117,12 @@ const PERM_GENERIC = mockPermission({
   tool_name: "WebSearch",
   input: { query: "TypeScript 5.5 new features", allowed_domains: ["typescriptlang.org", "github.com"] },
   description: "Search the web for TypeScript 5.5 features",
+});
+
+const PERM_DYNAMIC = mockPermission({
+  tool_name: "dynamic:code_interpreter",
+  input: { code: "print('hello from dynamic tool')" },
+  description: "Custom tool call: code_interpreter",
 });
 
 const PERM_ASK_SINGLE = mockPermission({
@@ -431,6 +438,98 @@ export function Playground() {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
+  useEffect(() => {
+    const store = useStore.getState();
+    const snapshot = useStore.getState();
+    const sessionId = MOCK_SESSION_ID;
+
+    const prevSession = snapshot.sessions.get(sessionId);
+    const prevMessages = snapshot.messages.get(sessionId);
+    const prevPerms = snapshot.pendingPermissions.get(sessionId);
+    const prevConn = snapshot.connectionStatus.get(sessionId);
+    const prevCli = snapshot.cliConnected.get(sessionId);
+    const prevStatus = snapshot.sessionStatus.get(sessionId);
+    const prevStreaming = snapshot.streaming.get(sessionId);
+    const prevStreamingStartedAt = snapshot.streamingStartedAt.get(sessionId);
+    const prevStreamingOutputTokens = snapshot.streamingOutputTokens.get(sessionId);
+
+    const session: SessionState = {
+      session_id: sessionId,
+      backend_type: "claude",
+      model: "claude-sonnet-4-5",
+      cwd: "/Users/stan/Dev/project",
+      tools: ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebSearch"],
+      permissionMode: "default",
+      claude_code_version: "1.0.0",
+      mcp_servers: [],
+      agents: [],
+      slash_commands: ["explain", "review", "fix"],
+      skills: ["doc-coauthoring", "frontend-design"],
+      total_cost_usd: 0.1847,
+      num_turns: 14,
+      context_used_percent: 62,
+      is_compacting: false,
+      git_branch: "feat/jwt-auth",
+      is_worktree: true,
+      repo_root: "/Users/stan/Dev/project",
+      git_ahead: 3,
+      git_behind: 0,
+      total_lines_added: 142,
+      total_lines_removed: 38,
+    };
+
+    store.addSession(session);
+    store.setConnectionStatus(sessionId, "connected");
+    store.setCliConnected(sessionId, true);
+    store.setSessionStatus(sessionId, "running");
+    store.setMessages(sessionId, [
+      MSG_USER,
+      MSG_ASSISTANT,
+      MSG_ASSISTANT_TOOLS,
+      MSG_TOOL_ERROR,
+    ]);
+    store.setStreaming(sessionId, "I'm updating tests and then I'll run the full suite.");
+    store.setStreamingStats(sessionId, { startedAt: Date.now() - 12000, outputTokens: 1200 });
+    store.addPermission(sessionId, PERM_BASH);
+    store.addPermission(sessionId, PERM_DYNAMIC);
+
+    return () => {
+      useStore.setState((s) => {
+        const sessions = new Map(s.sessions);
+        const messages = new Map(s.messages);
+        const pendingPermissions = new Map(s.pendingPermissions);
+        const connectionStatus = new Map(s.connectionStatus);
+        const cliConnected = new Map(s.cliConnected);
+        const sessionStatus = new Map(s.sessionStatus);
+        const streaming = new Map(s.streaming);
+        const streamingStartedAt = new Map(s.streamingStartedAt);
+        const streamingOutputTokens = new Map(s.streamingOutputTokens);
+
+        if (prevSession) sessions.set(sessionId, prevSession); else sessions.delete(sessionId);
+        if (prevMessages) messages.set(sessionId, prevMessages); else messages.delete(sessionId);
+        if (prevPerms) pendingPermissions.set(sessionId, prevPerms); else pendingPermissions.delete(sessionId);
+        if (prevConn) connectionStatus.set(sessionId, prevConn); else connectionStatus.delete(sessionId);
+        if (typeof prevCli === "boolean") cliConnected.set(sessionId, prevCli); else cliConnected.delete(sessionId);
+        if (prevStatus) sessionStatus.set(sessionId, prevStatus); else sessionStatus.delete(sessionId);
+        if (typeof prevStreaming === "string") streaming.set(sessionId, prevStreaming); else streaming.delete(sessionId);
+        if (typeof prevStreamingStartedAt === "number") streamingStartedAt.set(sessionId, prevStreamingStartedAt); else streamingStartedAt.delete(sessionId);
+        if (typeof prevStreamingOutputTokens === "number") streamingOutputTokens.set(sessionId, prevStreamingOutputTokens); else streamingOutputTokens.delete(sessionId);
+
+        return {
+          sessions,
+          messages,
+          pendingPermissions,
+          connectionStatus,
+          cliConnected,
+          sessionStatus,
+          streaming,
+          streamingStartedAt,
+          streamingOutputTokens,
+        };
+      });
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-cc-bg text-cc-fg font-sans-ui">
       {/* Header */}
@@ -468,6 +567,14 @@ export function Playground() {
             <PermissionBanner permission={PERM_GLOB} sessionId={MOCK_SESSION_ID} />
             <PermissionBanner permission={PERM_GREP} sessionId={MOCK_SESSION_ID} />
             <PermissionBanner permission={PERM_GENERIC} sessionId={MOCK_SESSION_ID} />
+            <PermissionBanner permission={PERM_DYNAMIC} sessionId={MOCK_SESSION_ID} />
+          </div>
+        </Section>
+
+        {/* ─── Real Chat Stack ──────────────────────────────── */}
+        <Section title="Real Chat Stack" description="Integrated ChatView using real MessageFeed + PermissionBanner + Composer components">
+          <div data-testid="playground-real-chat-stack" className="max-w-3xl border border-cc-border rounded-xl overflow-hidden bg-cc-card h-[620px]">
+            <ChatView sessionId={MOCK_SESSION_ID} />
           </div>
         </Section>
 

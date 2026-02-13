@@ -448,6 +448,31 @@ describe("Browser handlers", () => {
     expect(firstMsg.session.session_id).toBe("s1");
   });
 
+  it("handleBrowserOpen: refreshes git branch before sending session snapshot", () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("--abbrev-ref HEAD")) return "feat/dynamic-branch\n";
+      if (cmd.includes("--git-dir")) return ".git\n";
+      if (cmd.includes("--show-toplevel")) return "/repo\n";
+      if (cmd.includes("--left-right --count")) return "0\t0\n";
+      throw new Error("unknown git cmd");
+    });
+
+    const session = bridge.getOrCreateSession("s1");
+    session.state.cwd = "/repo";
+    session.state.git_branch = "main";
+
+    const gitInfoCb = vi.fn();
+    bridge.onSessionGitInfoReadyCallback(gitInfoCb);
+
+    const browser = makeBrowserSocket("s1");
+    bridge.handleBrowserOpen(browser, "s1");
+
+    const firstMsg = JSON.parse(browser.send.mock.calls[0][0]);
+    expect(firstMsg.type).toBe("session_init");
+    expect(firstMsg.session.git_branch).toBe("feat/dynamic-branch");
+    expect(gitInfoCb).toHaveBeenCalledWith("s1", "/repo", "feat/dynamic-branch");
+  });
+
   it("handleBrowserOpen: replays message history", () => {
     // First populate some history
     mockExecSync.mockImplementation(() => {
@@ -634,6 +659,44 @@ describe("CLI message routing", () => {
     const resultBroadcast = calls.find((c: any) => c.type === "result");
     expect(resultBroadcast).toBeDefined();
     expect(resultBroadcast.data.total_cost_usd).toBe(0.05);
+  });
+
+  it("result: refreshes git branch and broadcasts session_update when branch changes", () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("--abbrev-ref HEAD")) return "feat/new-branch\n";
+      if (cmd.includes("--git-dir")) return ".git\n";
+      if (cmd.includes("--show-toplevel")) return "/test\n";
+      if (cmd.includes("--left-right --count")) return "0\t1\n";
+      throw new Error("unknown git cmd");
+    });
+
+    const session = bridge.getSession("s1")!;
+    session.state.cwd = "/test";
+    session.state.git_branch = "main";
+
+    const msg = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      result: "Done!",
+      duration_ms: 5000,
+      duration_api_ms: 4000,
+      num_turns: 1,
+      total_cost_usd: 0.01,
+      stop_reason: "end_turn",
+      usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      uuid: "uuid-refresh-git",
+      session_id: "s1",
+    });
+
+    bridge.handleCLIMessage(cli, msg);
+
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    const updateMsg = calls.find((c: any) => c.type === "session_update");
+    expect(updateMsg).toBeDefined();
+    expect(updateMsg.session.git_branch).toBe("feat/new-branch");
+    expect(updateMsg.session.git_ahead).toBe(1);
+    expect(bridge.getSession("s1")!.state.git_branch).toBe("feat/new-branch");
   });
 
   it("result: computes context_used_percent from modelUsage", () => {

@@ -67,6 +67,8 @@ interface Session {
   pendingMessages: string[];
 }
 
+type GitSessionKey = "git_branch" | "is_worktree" | "repo_root" | "git_ahead" | "git_behind";
+
 function makeDefaultState(sessionId: string, backendType: BackendType = "claude"): SessionState {
   return {
     session_id: sessionId,
@@ -139,6 +141,11 @@ function resolveGitInfo(state: SessionState): void {
     }
   } catch {
     // Not a git repo or git not available
+    state.git_branch = "";
+    state.is_worktree = false;
+    state.repo_root = "";
+    state.git_ahead = 0;
+    state.git_behind = 0;
   }
 }
 
@@ -153,6 +160,13 @@ export class WsBridge {
   private autoNamingAttempted = new Set<string>();
   private userMsgCounter = 0;
   private onGitInfoReady: ((sessionId: string, cwd: string, branch: string) => void) | null = null;
+  private static readonly GIT_SESSION_KEYS: GitSessionKey[] = [
+    "git_branch",
+    "is_worktree",
+    "repo_root",
+    "git_ahead",
+    "git_behind",
+  ];
 
   /** Register a callback for when we learn the CLI's internal session ID. */
   onCLISessionIdReceived(cb: (sessionId: string, cliSessionId: string) => void): void {
@@ -231,6 +245,49 @@ export class WsBridge {
       pendingMessages: session.pendingMessages,
       pendingPermissions: Array.from(session.pendingPermissions.entries()),
     });
+  }
+
+  private refreshGitInfo(
+    session: Session,
+    options: { broadcastUpdate?: boolean; notifyPoller?: boolean } = {},
+  ): void {
+    const before = {
+      git_branch: session.state.git_branch,
+      is_worktree: session.state.is_worktree,
+      repo_root: session.state.repo_root,
+      git_ahead: session.state.git_ahead,
+      git_behind: session.state.git_behind,
+    };
+
+    resolveGitInfo(session.state);
+
+    let changed = false;
+    for (const key of WsBridge.GIT_SESSION_KEYS) {
+      if (session.state[key] !== before[key]) {
+        changed = true;
+        break;
+      }
+    }
+
+    if (changed) {
+      if (options.broadcastUpdate) {
+        this.broadcastToBrowsers(session, {
+          type: "session_update",
+          session: {
+            git_branch: session.state.git_branch,
+            is_worktree: session.state.is_worktree,
+            repo_root: session.state.repo_root,
+            git_ahead: session.state.git_ahead,
+            git_behind: session.state.git_behind,
+          },
+        });
+      }
+      this.persistSession(session);
+    }
+
+    if (options.notifyPoller && session.state.git_branch && session.state.cwd && this.onGitInfoReady) {
+      this.onGitInfoReady(session.id, session.state.cwd, session.state.git_branch);
+    }
   }
 
   // ── Session management ──────────────────────────────────────────────────
@@ -336,10 +393,11 @@ export class WsBridge {
     adapter.onBrowserMessage((msg) => {
       if (msg.type === "session_init") {
         session.state = { ...session.state, ...msg.session, backend_type: "codex" };
-        resolveGitInfo(session.state);
+        this.refreshGitInfo(session, { notifyPoller: true });
         this.persistSession(session);
       } else if (msg.type === "session_update") {
         session.state = { ...session.state, ...msg.session, backend_type: "codex" };
+        this.refreshGitInfo(session, { notifyPoller: true });
         this.persistSession(session);
       } else if (msg.type === "status_change") {
         session.state.is_compacting = msg.status === "compacting";
@@ -395,6 +453,7 @@ export class WsBridge {
       if (meta.model) session.state.model = meta.model;
       if (meta.cwd) session.state.cwd = meta.cwd;
       session.state.backend_type = "codex";
+      this.refreshGitInfo(session, { broadcastUpdate: true, notifyPoller: true });
       this.persistSession(session);
     });
 
@@ -490,6 +549,9 @@ export class WsBridge {
     session.browserSockets.add(ws);
     console.log(`[ws-bridge] Browser connected for session ${sessionId} (${session.browserSockets.size} browsers)`);
 
+    // Refresh git state on browser connect so branch changes made mid-session are reflected.
+    this.refreshGitInfo(session, { notifyPoller: true });
+
     // Send current session state as snapshot
     const snapshot: BrowserIncomingMessage = {
       type: "session_init",
@@ -508,11 +570,6 @@ export class WsBridge {
     // Send any pending permission requests
     for (const perm of session.pendingPermissions.values()) {
       this.sendToBrowser(ws, { type: "permission_request", request: perm });
-    }
-
-    // Notify PR poller when a browser connects to a session with known git info
-    if (session.state.git_branch && session.state.cwd && this.onGitInfoReady) {
-      this.onGitInfoReady(session.id, session.state.cwd, session.state.git_branch);
     }
 
     // Notify if backend is not connected and request relaunch
@@ -629,13 +686,8 @@ export class WsBridge {
       session.state.slash_commands = msg.slash_commands ?? [];
       session.state.skills = msg.skills ?? [];
 
-      // Resolve git info from session cwd
-      resolveGitInfo(session.state);
-
-      // Notify PR poller when git branch is known
-      if (session.state.git_branch && this.onGitInfoReady) {
-        this.onGitInfoReady(session.id, session.state.cwd, session.state.git_branch);
-      }
+      // Resolve and publish git info
+      this.refreshGitInfo(session, { notifyPoller: true });
 
       this.broadcastToBrowsers(session, {
         type: "session_init",
@@ -693,6 +745,9 @@ export class WsBridge {
         }
       }
     }
+
+    // Re-check git state after each turn in case branch moved during the session.
+    this.refreshGitInfo(session, { broadcastUpdate: true, notifyPoller: true });
 
     const browserMsg: BrowserIncomingMessage = {
       type: "result",

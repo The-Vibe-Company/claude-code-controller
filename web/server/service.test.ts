@@ -544,7 +544,7 @@ describe("uninstall (linux)", () => {
 // stop (macOS)
 // ===========================================================================
 describe("stop", () => {
-  it("calls launchctl stop when installed", async () => {
+  it("calls launchctl bootout when installed", async () => {
     // Install first
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
@@ -561,12 +561,12 @@ describe("stop", () => {
     await service.stop();
 
     const stopCall = mockExecSync.mock.calls.find(
-      ([cmd]) => typeof cmd === "string" && cmd.startsWith("launchctl stop"),
+      ([cmd]) => typeof cmd === "string" && cmd.startsWith("launchctl bootout"),
     );
     expect(stopCall).toBeDefined();
   });
 
-  it("falls back to launchctl unload when stop fails", async () => {
+  it("falls back to launchctl unload when bootout fails", async () => {
     // Install first
     mockExecSync.mockImplementation((cmd: string) => {
       if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
@@ -579,7 +579,7 @@ describe("stop", () => {
     service = await import("./service.js");
     mockExecSync.mockReset();
     mockExecSync.mockImplementation((cmd: string) => {
-      if (cmd.startsWith("launchctl stop")) throw new Error("stop failed");
+      if (cmd.startsWith("launchctl bootout")) throw new Error("bootout failed");
       if (cmd.startsWith("launchctl unload")) return "";
       return "";
     });

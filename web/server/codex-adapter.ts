@@ -233,10 +233,15 @@ class JsonRpcTransport {
   /** Send a request and wait for the matching response. */
   async call(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     const id = this.nextId++;
-    const request = JSON.stringify({ method, id, params });
-    await this.writeRaw(request + "\n");
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       this.pending.set(id, { resolve, reject });
+      const request = JSON.stringify({ method, id, params });
+      try {
+        await this.writeRaw(request + "\n");
+      } catch (err) {
+        this.pending.delete(id);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
     });
   }
 
@@ -267,6 +272,9 @@ class JsonRpcTransport {
   }
 
   private async writeRaw(data: string): Promise<void> {
+    if (!this.connected) {
+      throw new Error("Transport closed");
+    }
     await this.writer.write(new TextEncoder().encode(data));
   }
 }
@@ -311,12 +319,19 @@ export class CodexAdapter {
   // Track request types that need different response formats
   private pendingUserInputQuestionIds = new Map<string, string[]>(); // request_id -> ordered Codex question IDs
   private pendingReviewDecisions = new Set<string>(); // request_ids that need ReviewDecision format
+  private pendingDynamicToolCalls = new Map<string, {
+    jsonRpcId: number;
+    callId: string;
+    toolName: string;
+    timeout: ReturnType<typeof setTimeout>;
+  }>(); // request_id -> pending dynamic tool call metadata
 
   // Codex account rate limits (fetched after init, updated via notification)
   private _rateLimits: {
     primary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
     secondary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
   } | null = null;
+  private static readonly DYNAMIC_TOOL_CALL_TIMEOUT_MS = 120_000;
 
   constructor(proc: Subprocess, sessionId: string, options: CodexAdapterOptions = {}) {
     this.proc = proc;
@@ -339,6 +354,10 @@ export class CodexAdapter {
     // Monitor process exit
     proc.exited.then(() => {
       this.connected = false;
+      for (const pending of this.pendingDynamicToolCalls.values()) {
+        clearTimeout(pending.timeout);
+      }
+      this.pendingDynamicToolCalls.clear();
       this.disconnectCb?.();
     });
 
@@ -588,6 +607,18 @@ export class CodexAdapter {
     const jsonRpcId = this.pendingApprovals.get(msg.request_id);
     if (jsonRpcId === undefined) {
       console.warn(`[codex-adapter] No pending approval for request_id=${msg.request_id}`);
+      return;
+    }
+
+    // Dynamic tool calls (item/tool/call) require a DynamicToolCallResponse payload.
+    const pendingDynamic = this.pendingDynamicToolCalls.get(msg.request_id);
+    if (pendingDynamic) {
+      this.pendingDynamicToolCalls.delete(msg.request_id);
+      this.pendingApprovals.delete(msg.request_id);
+      clearTimeout(pendingDynamic.timeout);
+
+      const result = this.buildDynamicToolCallResponse(msg, pendingDynamic.toolName);
+      await this.transport.respond(jsonRpcId, result);
       return;
     }
 
@@ -956,22 +987,90 @@ export class CodexAdapter {
     const callId = params.callId as string || `dynamic-${randomUUID()}`;
     const toolName = params.tool as string || "unknown_dynamic_tool";
     const toolArgs = params.arguments as Record<string, unknown> || {};
+    const requestId = `codex-dynamic-${randomUUID()}`;
 
     console.log(`[codex-adapter] Dynamic tool call received: ${toolName} (callId=${callId})`);
 
-    // Emit tool_use + tool_result to browser so the user sees what was attempted
+    // Emit tool_use so the browser sees this custom tool invocation.
     this.emitToolUseTracked(callId, `dynamic:${toolName}`, toolArgs);
-    this.emitToolResult(
+
+    this.pendingApprovals.set(requestId, jsonRpcId);
+    const timeout = setTimeout(() => {
+      this.resolveDynamicToolCallTimeout(requestId);
+    }, CodexAdapter.DYNAMIC_TOOL_CALL_TIMEOUT_MS);
+
+    this.pendingDynamicToolCalls.set(requestId, {
+      jsonRpcId,
       callId,
-      `Dynamic tool "${toolName}" is not supported by this client.`,
+      toolName,
+      timeout,
+    });
+
+    const perm: PermissionRequest = {
+      request_id: requestId,
+      tool_name: `dynamic:${toolName}`,
+      input: {
+        ...toolArgs,
+        call_id: callId,
+      },
+      description: `Custom tool call: ${toolName}`,
+      tool_use_id: callId,
+      timestamp: Date.now(),
+    };
+
+    this.emit({ type: "permission_request", request: perm });
+  }
+
+  private async resolveDynamicToolCallTimeout(requestId: string): Promise<void> {
+    const pending = this.pendingDynamicToolCalls.get(requestId);
+    if (!pending) return;
+
+    this.pendingDynamicToolCalls.delete(requestId);
+    this.pendingApprovals.delete(requestId);
+
+    this.emitToolResult(
+      pending.callId,
+      `Dynamic tool "${pending.toolName}" timed out waiting for output.`,
       true,
     );
 
-    // Respond to Codex with a valid DynamicToolCallResponse
-    this.transport.respond(jsonRpcId, {
-      contentItems: [{ type: "inputText", text: "Dynamic tool execution is not supported by this client" }],
-      success: false,
-    });
+    try {
+      await this.transport.respond(pending.jsonRpcId, {
+        contentItems: [{ type: "inputText", text: `Timed out waiting for dynamic tool output: ${pending.toolName}` }],
+        success: false,
+      });
+    } catch (err) {
+      console.warn(`[codex-adapter] Failed to send dynamic tool timeout response: ${err}`);
+    }
+  }
+
+  private buildDynamicToolCallResponse(
+    msg: { behavior: "allow" | "deny"; updated_input?: Record<string, unknown> },
+    toolName: string,
+  ): { contentItems: unknown[]; success: boolean; structuredContent?: unknown } {
+    if (msg.behavior === "deny") {
+      return {
+        contentItems: [{ type: "inputText", text: `Dynamic tool "${toolName}" was denied by user` }],
+        success: false,
+      };
+    }
+
+    const rawContentItems = msg.updated_input?.contentItems;
+    const contentItems = Array.isArray(rawContentItems) && rawContentItems.length > 0
+      ? rawContentItems
+      : [{ type: "inputText", text: String(msg.updated_input?.text || "Dynamic tool call completed") }];
+
+    const success = typeof msg.updated_input?.success === "boolean"
+      ? msg.updated_input.success
+      : true;
+
+    const structuredContent = msg.updated_input?.structuredContent;
+
+    return {
+      contentItems,
+      success,
+      ...(structuredContent !== undefined ? { structuredContent } : {}),
+    };
   }
 
   private handleUserInputRequest(jsonRpcId: number, params: Record<string, unknown>): void {

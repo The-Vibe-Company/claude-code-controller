@@ -379,9 +379,15 @@ async function stopDarwin(): Promise<void> {
   }
 
   try {
-    execSync(`launchctl stop "${installedService.label}"`, { stdio: "pipe" });
+    const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+    const domainTarget = uid !== undefined
+      ? `gui/${uid}/${installedService.label}`
+      : installedService.label;
+    // `stop` is not enough with KeepAlive=true: launchd can immediately restart it.
+    // Booting out unloads the job from launchd while keeping the plist installed.
+    execSync(`launchctl bootout "${domainTarget}"`, { stdio: "pipe" });
   } catch {
-    // If stop is unavailable or service is unloaded, best-effort unload.
+    // Fallback for environments where bootout/domain targeting is unavailable.
     unloadLaunchdService(installedService.plistPath);
   }
 

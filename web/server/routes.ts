@@ -22,6 +22,8 @@ import {
   setUpdateInProgress,
 } from "./update-checker.js";
 
+const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
+
 function execCaptureStdout(
   command: string,
   options: { cwd: string; encoding: "utf-8"; timeout: number },
@@ -825,7 +827,15 @@ export function createRoutes(
 
   // ─── Update checking ─────────────────────────────────────────────────
 
-  api.get("/update-check", (c) => {
+  api.get("/update-check", async (c) => {
+    const initialState = getUpdateState();
+    const needsRefresh =
+      initialState.lastChecked === 0
+      || Date.now() - initialState.lastChecked > UPDATE_CHECK_STALE_MS;
+    if (needsRefresh) {
+      await checkForUpdate();
+    }
+
     const state = getUpdateState();
     return c.json({
       currentVersion: state.currentVersion,

@@ -1329,7 +1329,7 @@ describe("CodexAdapter", () => {
     expect(allWritten).not.toContain('"method":"thread/resume"');
   });
 
-  it("responds to item/tool/call with DynamicToolCallResponse (success: false)", async () => {
+  it("routes item/tool/call to permission_request instead of auto-responding", async () => {
     const messages: BrowserIncomingMessage[] = [];
     const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
     adapter.onBrowserMessage((msg) => messages.push(msg));
@@ -1352,17 +1352,18 @@ describe("CodexAdapter", () => {
     }) + "\n");
     await new Promise((r) => setTimeout(r, 50));
 
-    // Should respond with a valid DynamicToolCallResponse, not { decision: "accept" }
-    const allWritten = stdin.chunks.join("");
-    const responseLines = allWritten.split("\n").filter((l) => l.includes('"id":600'));
-    expect(responseLines.length).toBeGreaterThanOrEqual(1);
-    const responseLine = responseLines[0];
-    expect(responseLine).toContain('"success":false');
-    expect(responseLine).toContain('"contentItems"');
-    expect(responseLine).not.toContain('"decision"');
+    const permRequests = messages.filter((m) => m.type === "permission_request");
+    expect(permRequests.length).toBe(1);
+    const perm = permRequests[0] as { request: { request_id: string; tool_name: string; tool_use_id: string; input: Record<string, unknown> } };
+
+    expect(perm.request.request_id).toContain("codex-dynamic-");
+    expect(perm.request.tool_name).toBe("dynamic:my_custom_tool");
+    expect(perm.request.tool_use_id).toBe("call_abc123");
+    expect(perm.request.input.query).toBe("test input");
+    expect(perm.request.input.call_id).toBe("call_abc123");
   });
 
-  it("emits tool_use and error tool_result to browser for item/tool/call", async () => {
+  it("responds to item/tool/call with DynamicToolCallResponse after allow", async () => {
     const messages: BrowserIncomingMessage[] = [];
     const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
     adapter.onBrowserMessage((msg) => messages.push(msg));
@@ -1384,21 +1385,81 @@ describe("CodexAdapter", () => {
     }) + "\n");
     await new Promise((r) => setTimeout(r, 50));
 
-    // Should emit a tool_use for the dynamic tool
-    const toolUseMsg = messages.find((m) => {
-      if (m.type !== "assistant") return false;
-      const content = (m as { message: { content: Array<{ type: string; name?: string }> } }).message.content;
-      return content.some((b) => b.type === "tool_use" && b.name === "dynamic:code_interpreter");
-    });
-    expect(toolUseMsg).toBeDefined();
+    const perm = messages.find((m) => m.type === "permission_request") as {
+      request: { request_id: string };
+    };
+    expect(perm).toBeDefined();
 
-    // Should emit a tool_result with is_error=true
-    const toolResultMsg = messages.find((m) => {
-      if (m.type !== "assistant") return false;
-      const content = (m as { message: { content: Array<{ type: string; is_error?: boolean }> } }).message.content;
-      return content.some((b) => b.type === "tool_result" && b.is_error === true);
+    stdin.chunks = [];
+    adapter.sendBrowserMessage({
+      type: "permission_response",
+      request_id: perm.request.request_id,
+      behavior: "allow",
+      updated_input: {
+        success: true,
+        contentItems: [{ type: "inputText", text: "custom tool output" }],
+      },
     });
-    expect(toolResultMsg).toBeDefined();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = stdin.chunks.join("");
+    const responseLines = allWritten.split("\n").filter((l) => l.includes('"id":601'));
+    expect(responseLines.length).toBeGreaterThanOrEqual(1);
+    const responseLine = responseLines[0];
+    expect(responseLine).toContain('"success":true');
+    expect(responseLine).toContain('"contentItems"');
+    expect(responseLine).toContain("custom tool output");
+    expect(responseLine).not.toContain('"decision"');
+  });
+
+  it("emits tool_use and deferred error tool_result for item/tool/call timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const messages: BrowserIncomingMessage[] = [];
+      const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+      adapter.onBrowserMessage((msg) => messages.push(msg));
+
+      await vi.advanceTimersByTimeAsync(50);
+      stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+      await vi.advanceTimersByTimeAsync(20);
+      stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+      await vi.advanceTimersByTimeAsync(50);
+
+      stdout.push(JSON.stringify({
+        method: "item/tool/call",
+        id: 602,
+        params: {
+          callId: "call_timeout_1",
+          tool: "slow_tool",
+          arguments: { input: "x" },
+        },
+      }) + "\n");
+      await vi.advanceTimersByTimeAsync(50);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      await vi.advanceTimersByTimeAsync(20);
+
+      const toolUseMsg = messages.find((m) => {
+        if (m.type !== "assistant") return false;
+        const content = (m as { message: { content: Array<{ type: string; name?: string }> } }).message.content;
+        return content.some((b) => b.type === "tool_use" && b.name === "dynamic:slow_tool");
+      });
+      expect(toolUseMsg).toBeDefined();
+
+      const toolResultMsg = messages.find((m) => {
+        if (m.type !== "assistant") return false;
+        const content = (m as { message: { content: Array<{ type: string; is_error?: boolean }> } }).message.content;
+        return content.some((b) => b.type === "tool_result" && b.is_error === true);
+      });
+      expect(toolResultMsg).toBeDefined();
+
+      const allWritten = stdin.chunks.join("");
+      const responseLines = allWritten.split("\n").filter((l) => l.includes('"id":602'));
+      expect(responseLines.length).toBeGreaterThanOrEqual(1);
+      expect(responseLines[0]).toContain('"success":false');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not emit tool_result for successful command with no output", async () => {

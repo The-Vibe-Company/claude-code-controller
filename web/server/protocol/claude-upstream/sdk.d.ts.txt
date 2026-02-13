@@ -1,0 +1,1943 @@
+import type { BetaMessage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';
+import type { BetaRawMessageStreamEvent } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';
+import type { BetaUsage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { MessageParam } from '@anthropic-ai/sdk/resources';
+import type { Readable } from 'stream';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { UUID } from 'crypto';
+import type { Writable } from 'stream';
+import { z } from 'zod/v4';
+import type { ZodRawShape } from 'zod';
+import type { ZodRawShape as ZodRawShape_2 } from 'zod/v4';
+
+export declare class AbortError extends Error {
+}
+
+/**
+ * Information about the logged in user's account.
+ */
+export declare type AccountInfo = {
+    email?: string;
+    organization?: string;
+    subscriptionType?: string;
+    tokenSource?: string;
+    apiKeySource?: string;
+};
+
+/**
+ * Definition for a custom subagent that can be invoked via the Task tool.
+ */
+export declare type AgentDefinition = {
+    /**
+     * Natural language description of when to use this agent
+     */
+    description: string;
+    /**
+     * Array of allowed tool names. If omitted, inherits all tools from parent
+     */
+    tools?: string[];
+    /**
+     * Array of tool names to explicitly disallow for this agent
+     */
+    disallowedTools?: string[];
+    /**
+     * The agent's system prompt
+     */
+    prompt: string;
+    /**
+     * Model to use for this agent. If omitted or 'inherit', uses the main model
+     */
+    model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+    mcpServers?: AgentMcpServerSpec[];
+    /**
+     * Experimental: Critical reminder added to system prompt
+     */
+    criticalSystemReminder_EXPERIMENTAL?: string;
+    /**
+     * Array of skill names to preload into the agent context
+     */
+    skills?: string[];
+    /**
+     * Maximum number of agentic turns (API round-trips) before stopping
+     */
+    maxTurns?: number;
+};
+
+export declare type AgentMcpServerSpec = string | Record<string, McpServerConfigForProcessTransport>;
+
+export declare type AnyZodRawShape = ZodRawShape | ZodRawShape_2;
+
+export declare type ApiKeySource = 'user' | 'project' | 'org' | 'temporary';
+
+export declare type AsyncHookJSONOutput = {
+    async: true;
+    asyncTimeout?: number;
+};
+
+export declare type BaseHookInput = {
+    session_id: string;
+    transcript_path: string;
+    cwd: string;
+    permission_mode?: string;
+};
+
+export declare type BaseOutputFormat = {
+    type: OutputFormatType;
+};
+
+/**
+ * Permission callback function for controlling tool usage.
+ * Called before each tool execution to determine if it should be allowed.
+ */
+export declare type CanUseTool = (toolName: string, input: Record<string, unknown>, options: {
+    /** Signaled if the operation should be aborted. */
+    signal: AbortSignal;
+    /**
+     * Suggestions for updating permissions so that the user will not be
+     * prompted again for this tool during this session.
+     *
+     * Typically if presenting the user an option 'always allow' or similar,
+     * then this full set of suggestions should be returned as the
+     * `updatedPermissions` in the PermissionResult.
+     */
+    suggestions?: PermissionUpdate[];
+    /**
+     * The file path that triggered the permission request, if applicable.
+     * For example, when a Bash command tries to access a path outside allowed directories.
+     */
+    blockedPath?: string;
+    /** Explains why this permission request was triggered. */
+    decisionReason?: string;
+    /**
+     * Unique identifier for this specific tool call within the assistant message.
+     * Multiple tool calls in the same assistant message will have different toolUseIDs.
+     */
+    toolUseID: string;
+    /** If running within the context of a sub-agent, the sub-agent's ID. */
+    agentID?: string;
+}) => Promise<PermissionResult>;
+
+/**
+ * Config scope for settings.
+ */
+export declare type ConfigScope = 'local' | 'user' | 'project';
+
+declare type ControlErrorResponse = {
+    subtype: 'error';
+    request_id: string;
+    error: string;
+    pending_permission_requests?: SDKControlRequest[];
+};
+
+declare type ControlResponse = {
+    subtype: 'success';
+    request_id: string;
+    response?: Record<string, unknown>;
+};
+
+declare namespace coreTypes {
+    export {
+        SandboxSettings,
+        SandboxNetworkConfig,
+        SandboxIgnoreViolations,
+        NonNullableUsage,
+        HOOK_EVENTS,
+        EXIT_REASONS,
+        AccountInfo,
+        AgentDefinition,
+        AgentMcpServerSpec,
+        ApiKeySource,
+        AsyncHookJSONOutput,
+        BaseHookInput,
+        BaseOutputFormat,
+        ConfigScope,
+        ExitReason,
+        HookEvent,
+        HookInput,
+        HookJSONOutput,
+        JsonSchemaOutputFormat,
+        McpClaudeAIProxyServerConfig,
+        McpHttpServerConfig,
+        McpSSEServerConfig,
+        McpSdkServerConfig,
+        McpServerConfigForProcessTransport,
+        McpServerStatusConfig,
+        McpServerStatus,
+        McpSetServersResult,
+        McpStdioServerConfig,
+        ModelInfo,
+        ModelUsage,
+        NotificationHookInput,
+        NotificationHookSpecificOutput,
+        OutputFormat,
+        OutputFormatType,
+        PermissionBehavior,
+        PermissionMode,
+        PermissionRequestHookInput,
+        PermissionRequestHookSpecificOutput,
+        PermissionResult,
+        PermissionRuleValue,
+        PermissionUpdateDestination,
+        PermissionUpdate,
+        PostToolUseFailureHookInput,
+        PostToolUseFailureHookSpecificOutput,
+        PostToolUseHookInput,
+        PostToolUseHookSpecificOutput,
+        PreCompactHookInput,
+        PreToolUseHookInput,
+        PreToolUseHookSpecificOutput,
+        RewindFilesResult,
+        SDKAssistantMessageError,
+        SDKAssistantMessage,
+        SDKAuthStatusMessage,
+        SDKCompactBoundaryMessage,
+        SDKFilesPersistedEvent,
+        SDKHookProgressMessage,
+        SDKHookResponseMessage,
+        SDKHookStartedMessage,
+        SDKMessage,
+        SDKPartialAssistantMessage,
+        SDKPermissionDenial,
+        SDKResultError,
+        SDKResultMessage,
+        SDKResultSuccess,
+        SDKStatusMessage,
+        SDKStatus,
+        SDKSystemMessage,
+        SDKTaskNotificationMessage,
+        SDKToolProgressMessage,
+        SDKToolUseSummaryMessage,
+        SDKUserMessageReplay,
+        SDKUserMessage,
+        SdkBeta,
+        SdkPluginConfig,
+        SessionEndHookInput,
+        SessionStartHookInput,
+        SessionStartHookSpecificOutput,
+        SettingSource,
+        SetupHookInput,
+        SetupHookSpecificOutput,
+        SlashCommand,
+        StopHookInput,
+        SubagentStartHookInput,
+        SubagentStartHookSpecificOutput,
+        SubagentStopHookInput,
+        SyncHookJSONOutput,
+        TaskCompletedHookInput,
+        TeammateIdleHookInput,
+        UserPromptSubmitHookInput,
+        UserPromptSubmitHookSpecificOutput
+    }
+}
+
+/**
+ * Creates an MCP server instance that can be used with the SDK transport.
+ * This allows SDK users to define custom tools that run in the same process.
+ *
+ * If your SDK MCP calls will run longer than 60s, override CLAUDE_CODE_STREAM_CLOSE_TIMEOUT
+ */
+export declare function createSdkMcpServer(_options: CreateSdkMcpServerOptions): McpSdkServerConfigWithInstance;
+
+declare type CreateSdkMcpServerOptions = {
+    name: string;
+    version?: string;
+    tools?: Array<SdkMcpToolDefinition<any>>;
+};
+
+export declare const EXIT_REASONS: readonly ["clear", "logout", "prompt_input_exit", "other", "bypass_permissions_disabled"];
+
+export declare type ExitReason = 'clear' | 'logout' | 'prompt_input_exit' | 'other' | 'bypass_permissions_disabled';
+
+export declare const HOOK_EVENTS: readonly ["PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "SubagentStart", "SubagentStop", "PreCompact", "PermissionRequest", "Setup", "TeammateIdle", "TaskCompleted"];
+
+/**
+ * Hook callback function for responding to events during execution.
+ */
+export declare type HookCallback = (input: HookInput, toolUseID: string | undefined, options: {
+    signal: AbortSignal;
+}) => Promise<HookJSONOutput>;
+
+/**
+ * Hook callback matcher containing hook callbacks and optional pattern matching.
+ */
+export declare interface HookCallbackMatcher {
+    matcher?: string;
+    hooks: HookCallback[];
+    /** Timeout in seconds for all hooks in this matcher */
+    timeout?: number;
+}
+
+export declare type HookEvent = 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure' | 'Notification' | 'UserPromptSubmit' | 'SessionStart' | 'SessionEnd' | 'Stop' | 'SubagentStart' | 'SubagentStop' | 'PreCompact' | 'PermissionRequest' | 'Setup' | 'TeammateIdle' | 'TaskCompleted';
+
+export declare type HookInput = PreToolUseHookInput | PostToolUseHookInput | PostToolUseFailureHookInput | NotificationHookInput | UserPromptSubmitHookInput | SessionStartHookInput | SessionEndHookInput | StopHookInput | SubagentStartHookInput | SubagentStopHookInput | PreCompactHookInput | PermissionRequestHookInput | SetupHookInput | TeammateIdleHookInput | TaskCompletedHookInput;
+
+export declare type HookJSONOutput = AsyncHookJSONOutput | SyncHookJSONOutput;
+
+export declare type InferShape<T extends AnyZodRawShape> = {
+    [K in keyof T]: T[K] extends {
+        _output: infer O;
+    } ? O : never;
+} & {};
+
+export declare type JsonSchemaOutputFormat = {
+    type: 'json_schema';
+    schema: Record<string, unknown>;
+};
+
+export declare type McpClaudeAIProxyServerConfig = {
+    type: 'claudeai-proxy';
+    url: string;
+    id: string;
+};
+
+export declare type McpHttpServerConfig = {
+    type: 'http';
+    url: string;
+    headers?: Record<string, string>;
+};
+
+export declare type McpSdkServerConfig = {
+    type: 'sdk';
+    name: string;
+};
+
+/**
+ * MCP SDK server config with an actual McpServer instance.
+ * Not serializable - contains a live McpServer object.
+ */
+export declare type McpSdkServerConfigWithInstance = McpSdkServerConfig & {
+    instance: McpServer;
+};
+
+/**
+ * Union of all MCP server config types, including those with non-serializable instances.
+ */
+export declare type McpServerConfig = McpStdioServerConfig | McpSSEServerConfig | McpHttpServerConfig | McpSdkServerConfigWithInstance;
+
+export declare type McpServerConfigForProcessTransport = McpStdioServerConfig | McpSSEServerConfig | McpHttpServerConfig | McpSdkServerConfig;
+
+/**
+ * Status information for an MCP server connection.
+ */
+export declare type McpServerStatus = {
+    /**
+     * Server name as configured
+     */
+    name: string;
+    /**
+     * Current connection status
+     */
+    status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+    /**
+     * Server information (available when connected)
+     */
+    serverInfo?: {
+        name: string;
+        version: string;
+    };
+    /**
+     * Error message (available when status is 'failed')
+     */
+    error?: string;
+    /**
+     * Server configuration (includes URL for HTTP/SSE servers)
+     */
+    config?: McpServerStatusConfig;
+    /**
+     * Configuration scope (e.g., project, user, local, claudeai, managed)
+     */
+    scope?: string;
+    /**
+     * Tools provided by this server (available when connected)
+     */
+    tools?: {
+        name: string;
+        description?: string;
+        annotations?: {
+            readOnly?: boolean;
+            destructive?: boolean;
+            openWorld?: boolean;
+        };
+    }[];
+};
+
+export declare type McpServerStatusConfig = McpServerConfigForProcessTransport | McpClaudeAIProxyServerConfig;
+
+/**
+ * Result of a setMcpServers operation.
+ */
+export declare type McpSetServersResult = {
+    /**
+     * Names of servers that were added
+     */
+    added: string[];
+    /**
+     * Names of servers that were removed
+     */
+    removed: string[];
+    /**
+     * Map of server names to error messages for servers that failed to connect
+     */
+    errors: Record<string, string>;
+};
+
+export declare type McpSSEServerConfig = {
+    type: 'sse';
+    url: string;
+    headers?: Record<string, string>;
+};
+
+export declare type McpStdioServerConfig = {
+    type?: 'stdio';
+    command: string;
+    args?: string[];
+    env?: Record<string, string>;
+};
+
+/**
+ * Information about an available model.
+ */
+export declare type ModelInfo = {
+    /**
+     * Model identifier to use in API calls
+     */
+    value: string;
+    /**
+     * Human-readable display name
+     */
+    displayName: string;
+    /**
+     * Description of the model's capabilities
+     */
+    description: string;
+};
+
+export declare type ModelUsage = {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    webSearchRequests: number;
+    costUSD: number;
+    contextWindow: number;
+    maxOutputTokens: number;
+};
+
+export declare type NonNullableUsage = {
+    [K in keyof BetaUsage]: NonNullable<BetaUsage[K]>;
+};
+
+export declare type NotificationHookInput = BaseHookInput & {
+    hook_event_name: 'Notification';
+    message: string;
+    title?: string;
+    notification_type: string;
+};
+
+export declare type NotificationHookSpecificOutput = {
+    hookEventName: 'Notification';
+    additionalContext?: string;
+};
+
+/**
+ * Options for the query function.
+ * Contains callbacks and other non-serializable fields.
+ */
+export declare type Options = {
+    /**
+     * Controller for cancelling the query. When aborted, the query will stop
+     * and clean up resources.
+     */
+    abortController?: AbortController;
+    /**
+     * Additional directories Claude can access beyond the current working directory.
+     * Paths should be absolute.
+     */
+    additionalDirectories?: string[];
+    /**
+     * Agent name for the main thread. When specified, the agent's system prompt,
+     * tool restrictions, and model will be applied to the main conversation.
+     * The agent must be defined either in the `agents` option or in settings.
+     *
+     * This is equivalent to the `--agent` CLI flag.
+     *
+     * @example
+     * ```typescript
+     * agent: 'code-reviewer',
+     * agents: {
+     *   'code-reviewer': {
+     *     description: 'Reviews code for best practices',
+     *     prompt: 'You are a code reviewer...'
+     *   }
+     * }
+     * ```
+     */
+    agent?: string;
+    /**
+     * Programmatically define custom subagents that can be invoked via the Task tool.
+     * Keys are agent names, values are agent definitions.
+     *
+     * @example
+     * ```typescript
+     * agents: {
+     *   'test-runner': {
+     *     description: 'Runs tests and reports results',
+     *     prompt: 'You are a test runner...',
+     *     tools: ['Read', 'Grep', 'Glob', 'Bash']
+     *   }
+     * }
+     * ```
+     */
+    agents?: Record<string, AgentDefinition>;
+    /**
+     * List of tool names that are auto-allowed without prompting for permission.
+     * These tools will execute automatically without asking the user for approval.
+     * To restrict which tools are available, use the `tools` option instead.
+     */
+    allowedTools?: string[];
+    /**
+     * Custom permission handler for controlling tool usage. Called before each
+     * tool execution to determine if it should be allowed, denied, or prompt the user.
+     */
+    canUseTool?: CanUseTool;
+    /**
+     * Continue the most recent conversation in the current directory instead of starting a new one.
+     * Mutually exclusive with `resume`.
+     */
+    continue?: boolean;
+    /**
+     * Current working directory for the session. Defaults to `process.cwd()`.
+     */
+    cwd?: string;
+    /**
+     * List of tool names that are disallowed. These tools will be removed
+     * from the model's context and cannot be used, even if they would
+     * otherwise be allowed.
+     */
+    disallowedTools?: string[];
+    /**
+     * Specify the base set of available built-in tools.
+     * - `string[]` - Array of specific tool names (e.g., `['Bash', 'Read', 'Edit']`)
+     * - `[]` (empty array) - Disable all built-in tools
+     * - `{ type: 'preset'; preset: 'claude_code' }` - Use all default Claude Code tools
+     */
+    tools?: string[] | {
+        type: 'preset';
+        preset: 'claude_code';
+    };
+    /**
+     * Environment variables to pass to the Claude Code process.
+     * Defaults to `process.env`.
+     *
+     * SDK consumers can identify their app/library to include in the User-Agent header by setting:
+     * - `CLAUDE_AGENT_SDK_CLIENT_APP` - Your app/library identifier (e.g., "my-app/1.0.0", "my-library/2.1")
+     *
+     * @example
+     * ```typescript
+     * env: { CLAUDE_AGENT_SDK_CLIENT_APP: 'my-app/1.0.0' }
+     * ```
+     */
+    env?: {
+        [envVar: string]: string | undefined;
+    };
+    /**
+     * JavaScript runtime to use for executing Claude Code.
+     * Auto-detected if not specified.
+     */
+    executable?: 'bun' | 'deno' | 'node';
+    /**
+     * Additional arguments to pass to the JavaScript runtime executable.
+     */
+    executableArgs?: string[];
+    /**
+     * Additional CLI arguments to pass to Claude Code.
+     * Keys are argument names (without --), values are argument values.
+     * Use `null` for boolean flags.
+     */
+    extraArgs?: Record<string, string | null>;
+    /**
+     * Fallback model to use if the primary model fails or is unavailable.
+     */
+    fallbackModel?: string;
+    /**
+     * Enable file checkpointing to track file changes during the session.
+     * When enabled, files can be rewound to their state at any user message
+     * using `Query.rewindFiles()`.
+     *
+     * File checkpointing creates backups of files before they are modified,
+     * allowing you to restore them to previous states.
+     */
+    enableFileCheckpointing?: boolean;
+    /**
+     * When true, resumed sessions will fork to a new session ID rather than
+     * continuing the previous session. Use with `resume`.
+     */
+    forkSession?: boolean;
+    /**
+     * Enable beta features. Currently supported:
+     * - `'context-1m-2025-08-07'` - Enable 1M token context window (Sonnet 4/4.5 only)
+     *
+     * @see https://docs.anthropic.com/en/api/beta-headers
+     */
+    betas?: SdkBeta[];
+    /**
+     * Hook callbacks for responding to various events during execution.
+     * Hooks can modify behavior, add context, or implement custom logic.
+     *
+     * @example
+     * ```typescript
+     * hooks: {
+     *   PreToolUse: [{
+     *     hooks: [async (input) => ({ continue: true })]
+     *   }]
+     * }
+     * ```
+     */
+    hooks?: Partial<Record<HookEvent, HookCallbackMatcher[]>>;
+    /**
+     * When false, disables session persistence to disk. Sessions will not be
+     * saved to ~/.claude/projects/ and cannot be resumed later. Useful for
+     * ephemeral or automated workflows where session history is not needed.
+     *
+     * @default true
+     */
+    persistSession?: boolean;
+    /**
+     * Include partial/streaming message events in the output.
+     * When true, `SDKPartialAssistantMessage` events will be emitted during streaming.
+     */
+    includePartialMessages?: boolean;
+    /**
+     * Controls Claude's thinking/reasoning behavior.
+     *
+     * - `{ type: 'adaptive' }` — Claude decides when and how much to think (Opus 4.6+).
+     *   This is the default for models that support it.
+     * - `{ type: 'enabled', budgetTokens: number }` — Fixed thinking token budget (older models)
+     * - `{ type: 'disabled' }` — No extended thinking
+     *
+     * When set, takes precedence over the deprecated `maxThinkingTokens`.
+     *
+     * @see https://docs.anthropic.com/en/docs/build-with-claude/adaptive-thinking
+     */
+    thinking?: {
+        type: 'adaptive';
+    } | {
+        type: 'enabled';
+        budgetTokens: number;
+    } | {
+        type: 'disabled';
+    };
+    /**
+     * Controls how much effort Claude puts into its response.
+     * Works with adaptive thinking to guide thinking depth.
+     *
+     * - `'low'` — Minimal thinking, fastest responses
+     * - `'medium'` — Moderate thinking
+     * - `'high'` — Deep reasoning (default)
+     * - `'max'` — Maximum effort (Opus 4.6 only)
+     *
+     * @see https://docs.anthropic.com/en/docs/build-with-claude/effort
+     */
+    effort?: 'low' | 'medium' | 'high' | 'max';
+    /**
+     * Maximum number of tokens the model can use for its thinking/reasoning process.
+     * Helps control cost and latency for complex tasks.
+     *
+     * @deprecated Use `thinking` instead. On Opus 4.6, this is treated as on/off
+     * (0 = disabled, any other value = adaptive). For explicit control, use
+     * `thinking: { type: 'adaptive' }` or `thinking: { type: 'enabled', budgetTokens: N }`.
+     */
+    maxThinkingTokens?: number;
+    /**
+     * Maximum number of conversation turns before the query stops.
+     * A turn consists of a user message and assistant response.
+     */
+    maxTurns?: number;
+    /**
+     * Maximum budget in USD for the query. The query will stop if this
+     * budget is exceeded, returning an `error_max_budget_usd` result.
+     */
+    maxBudgetUsd?: number;
+    /**
+     * MCP (Model Context Protocol) server configurations.
+     * Keys are server names, values are server configurations.
+     *
+     * @example
+     * ```typescript
+     * mcpServers: {
+     *   'my-server': {
+     *     command: 'node',
+     *     args: ['./my-mcp-server.js']
+     *   }
+     * }
+     * ```
+     */
+    mcpServers?: Record<string, McpServerConfig>;
+    /**
+     * Claude model to use. Defaults to the CLI default model.
+     * Examples: 'claude-sonnet-4-5-20250929', 'claude-opus-4-20250514'
+     */
+    model?: string;
+    /**
+     * Output format configuration for structured responses.
+     * When specified, the agent will return structured data matching the schema.
+     *
+     * @example
+     * ```typescript
+     * outputFormat: {
+     *   type: 'json_schema',
+     *   schema: { type: 'object', properties: { result: { type: 'string' } } }
+     * }
+     * ```
+     */
+    outputFormat?: OutputFormat;
+    /**
+     * Path to the Claude Code executable. Uses the built-in executable if not specified.
+     */
+    pathToClaudeCodeExecutable?: string;
+    /**
+     * Permission mode for the session.
+     * - `'default'` - Standard permission behavior, prompts for dangerous operations
+     * - `'acceptEdits'` - Auto-accept file edit operations
+     * - `'bypassPermissions'` - Bypass all permission checks (requires `allowDangerouslySkipPermissions`)
+     * - `'plan'` - Planning mode, no execution of tools
+     * - `'dontAsk'` - Don't prompt for permissions, deny if not pre-approved
+     */
+    permissionMode?: PermissionMode;
+    /**
+     * Must be set to `true` when using `permissionMode: 'bypassPermissions'`.
+     * This is a safety measure to ensure intentional bypassing of permissions.
+     */
+    allowDangerouslySkipPermissions?: boolean;
+    /**
+     * MCP tool name to use for permission prompts. When set, permission requests
+     * will be routed through this MCP tool instead of the default handler.
+     */
+    permissionPromptToolName?: string;
+    /**
+     * Load plugins for this session. Plugins provide custom commands, agents,
+     * skills, and hooks that extend Claude Code's capabilities.
+     *
+     * Currently only local plugins are supported via the 'local' type.
+     *
+     * @example
+     * ```typescript
+     * plugins: [
+     *   { type: 'local', path: './my-plugin' },
+     *   { type: 'local', path: '/absolute/path/to/plugin' }
+     * ]
+     * ```
+     */
+    plugins?: SdkPluginConfig[];
+    /**
+     * Session ID to resume. Loads the conversation history from the specified session.
+     */
+    resume?: string;
+    /**
+     * Use a specific session ID for the conversation instead of an auto-generated one.
+     * Must be a valid UUID. Cannot be used with `continue` or `resume` unless
+     * `forkSession` is also set (to specify a custom ID for the forked session).
+     */
+    sessionId?: string;
+    /**
+     * When resuming, only resume messages up to and including the message with this UUID.
+     * Use with `resume`. This allows you to resume from a specific point in the conversation.
+     * The message ID should be from `SDKAssistantMessage.uuid`.
+     */
+    resumeSessionAt?: string;
+    /**
+     * Sandbox settings for command execution isolation.
+     *
+     * When enabled, commands are executed in a sandboxed environment that restricts
+     * filesystem and network access. This provides an additional security layer.
+     *
+     * **Important:** Filesystem and network restrictions are configured via permission
+     * rules, not via these sandbox settings:
+     * - Filesystem access: Use `Read` and `Edit` permission rules
+     * - Network access: Use `WebFetch` permission rules
+     *
+     * These sandbox settings control sandbox behavior (enabled, auto-allow, etc.),
+     * while the actual access restrictions come from your permission configuration.
+     *
+     * @example Enable sandboxing with auto-allow
+     * ```typescript
+     * sandbox: {
+     *   enabled: true,
+     *   autoAllowBashIfSandboxed: true
+     * }
+     * ```
+     *
+     * @example Configure network options (not restrictions)
+     * ```typescript
+     * sandbox: {
+     *   enabled: true,
+     *   network: {
+     *     allowLocalBinding: true,
+     *     allowUnixSockets: ['/var/run/docker.sock']
+     *   }
+     * }
+     * ```
+     *
+     * @see https://docs.anthropic.com/en/docs/claude-code/settings#sandbox-settings
+     */
+    sandbox?: SandboxSettings;
+    /**
+     * Control which filesystem settings to load.
+     * - `'user'` - Global user settings (`~/.claude/settings.json`)
+     * - `'project'` - Project settings (`.claude/settings.json`)
+     * - `'local'` - Local settings (`.claude/settings.local.json`)
+     *
+     * When omitted or empty, no filesystem settings are loaded (SDK isolation mode).
+     * Must include `'project'` to load CLAUDE.md files.
+     */
+    settingSources?: SettingSource[];
+    /**
+     * Enable debug mode for the Claude Code process.
+     * When true, enables verbose debug logging (equivalent to `--debug` CLI flag).
+     * Debug logs are written to a file (see `debugFile` option) or to stderr.
+     *
+     * You can also capture debug output via the `stderr` callback.
+     */
+    debug?: boolean;
+    /**
+     * Write debug logs to a specific file path.
+     * Implicitly enables debug mode. Equivalent to `--debug-file <path>` CLI flag.
+     */
+    debugFile?: string;
+    /**
+     * Callback for stderr output from the Claude Code process.
+     * Useful for debugging and logging.
+     */
+    stderr?: (data: string) => void;
+    /**
+     * Enforce strict validation of MCP server configurations.
+     * When true, invalid configurations will cause errors instead of warnings.
+     */
+    strictMcpConfig?: boolean;
+    /**
+     * System prompt configuration.
+     * - `string` - Use a custom system prompt
+     * - `{ type: 'preset', preset: 'claude_code' }` - Use Claude Code's default system prompt
+     * - `{ type: 'preset', preset: 'claude_code', append: '...' }` - Use default prompt with appended instructions
+     *
+     * @example Custom prompt
+     * ```typescript
+     * systemPrompt: 'You are a helpful coding assistant.'
+     * ```
+     *
+     * @example Default with additions
+     * ```typescript
+     * systemPrompt: {
+     *   type: 'preset',
+     *   preset: 'claude_code',
+     *   append: 'Always explain your reasoning.'
+     * }
+     * ```
+     */
+    systemPrompt?: string | {
+        type: 'preset';
+        preset: 'claude_code';
+        append?: string;
+    };
+    /**
+     * Custom function to spawn the Claude Code process.
+     * Use this to run Claude Code in VMs, containers, or remote environments.
+     *
+     * When provided, this function is called instead of the default local spawn.
+     * The default behavior checks if the executable exists before spawning.
+     *
+     * @example
+     * ```typescript
+     * spawnClaudeCodeProcess: (options) => {
+     *   // Custom spawn logic for VM execution
+     *   // options contains: command, args, cwd, env, signal
+     *   return myVMProcess; // Must satisfy SpawnedProcess interface
+     * }
+     * ```
+     */
+    spawnClaudeCodeProcess?: (options: SpawnOptions) => SpawnedProcess;
+};
+
+export declare type OutputFormat = JsonSchemaOutputFormat;
+
+export declare type OutputFormatType = 'json_schema';
+
+export declare type PermissionBehavior = 'allow' | 'deny' | 'ask';
+
+/**
+ * Permission mode for controlling how tool executions are handled. 'default' - Standard behavior, prompts for dangerous operations. 'acceptEdits' - Auto-accept file edit operations. 'bypassPermissions' - Bypass all permission checks (requires allowDangerouslySkipPermissions). 'plan' - Planning mode, no actual tool execution. 'delegate' - Delegate mode, restricts team leader to only Teammate and Task tools. 'dontAsk' - Don't prompt for permissions, deny if not pre-approved.
+ */
+export declare type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'delegate' | 'dontAsk';
+
+export declare type PermissionRequestHookInput = BaseHookInput & {
+    hook_event_name: 'PermissionRequest';
+    tool_name: string;
+    tool_input: unknown;
+    permission_suggestions?: PermissionUpdate[];
+};
+
+export declare type PermissionRequestHookSpecificOutput = {
+    hookEventName: 'PermissionRequest';
+    decision: {
+        behavior: 'allow';
+        updatedInput?: Record<string, unknown>;
+        updatedPermissions?: PermissionUpdate[];
+    } | {
+        behavior: 'deny';
+        message?: string;
+        interrupt?: boolean;
+    };
+};
+
+export declare type PermissionResult = {
+    behavior: 'allow';
+    updatedInput?: Record<string, unknown>;
+    updatedPermissions?: PermissionUpdate[];
+    toolUseID?: string;
+} | {
+    behavior: 'deny';
+    message: string;
+    interrupt?: boolean;
+    toolUseID?: string;
+};
+
+export declare type PermissionRuleValue = {
+    toolName: string;
+    ruleContent?: string;
+};
+
+export declare type PermissionUpdate = {
+    type: 'addRules';
+    rules: PermissionRuleValue[];
+    behavior: PermissionBehavior;
+    destination: PermissionUpdateDestination;
+} | {
+    type: 'replaceRules';
+    rules: PermissionRuleValue[];
+    behavior: PermissionBehavior;
+    destination: PermissionUpdateDestination;
+} | {
+    type: 'removeRules';
+    rules: PermissionRuleValue[];
+    behavior: PermissionBehavior;
+    destination: PermissionUpdateDestination;
+} | {
+    type: 'setMode';
+    mode: PermissionMode;
+    destination: PermissionUpdateDestination;
+} | {
+    type: 'addDirectories';
+    directories: string[];
+    destination: PermissionUpdateDestination;
+} | {
+    type: 'removeDirectories';
+    directories: string[];
+    destination: PermissionUpdateDestination;
+};
+
+export declare type PermissionUpdateDestination = 'userSettings' | 'projectSettings' | 'localSettings' | 'session' | 'cliArg';
+
+export declare type PostToolUseFailureHookInput = BaseHookInput & {
+    hook_event_name: 'PostToolUseFailure';
+    tool_name: string;
+    tool_input: unknown;
+    tool_use_id: string;
+    error: string;
+    is_interrupt?: boolean;
+};
+
+export declare type PostToolUseFailureHookSpecificOutput = {
+    hookEventName: 'PostToolUseFailure';
+    additionalContext?: string;
+};
+
+export declare type PostToolUseHookInput = BaseHookInput & {
+    hook_event_name: 'PostToolUse';
+    tool_name: string;
+    tool_input: unknown;
+    tool_response: unknown;
+    tool_use_id: string;
+};
+
+export declare type PostToolUseHookSpecificOutput = {
+    hookEventName: 'PostToolUse';
+    additionalContext?: string;
+    updatedMCPToolOutput?: unknown;
+};
+
+export declare type PreCompactHookInput = BaseHookInput & {
+    hook_event_name: 'PreCompact';
+    trigger: 'manual' | 'auto';
+    custom_instructions: string | null;
+};
+
+export declare type PreToolUseHookInput = BaseHookInput & {
+    hook_event_name: 'PreToolUse';
+    tool_name: string;
+    tool_input: unknown;
+    tool_use_id: string;
+};
+
+export declare type PreToolUseHookSpecificOutput = {
+    hookEventName: 'PreToolUse';
+    permissionDecision?: 'allow' | 'deny' | 'ask';
+    permissionDecisionReason?: string;
+    updatedInput?: Record<string, unknown>;
+    additionalContext?: string;
+};
+
+/**
+ * Query interface with methods for controlling query execution.
+ * Extends AsyncGenerator and has methods, so not serializable.
+ */
+export declare interface Query extends AsyncGenerator<SDKMessage, void> {
+    /**
+     * Control Requests
+     * The following methods are control requests, and are only supported when
+     * streaming input/output is used.
+     */
+    /**
+     * Interrupt the current query execution. The query will stop processing
+     * and return control to the caller.
+     */
+    interrupt(): Promise<void>;
+    /**
+     * Change the permission mode for the current session.
+     * Only available in streaming input mode.
+     *
+     * @param mode - The new permission mode to set
+     */
+    setPermissionMode(mode: PermissionMode): Promise<void>;
+    /**
+     * Change the model used for subsequent responses.
+     * Only available in streaming input mode.
+     *
+     * @param model - The model identifier to use, or undefined to use the default
+     */
+    setModel(model?: string): Promise<void>;
+    /**
+     * Set the maximum number of thinking tokens the model is allowed to use
+     * when generating its response. This can be used to limit the amount of
+     * tokens the model uses for its response, which can help control cost and
+     * latency.
+     *
+     * Use `null` to clear any previously set limit and allow the model to
+     * use the default maximum thinking tokens.
+     *
+     * @deprecated Use the `thinking` option in `query()` instead. On Opus 4.6,
+     * this is treated as on/off (0 = disabled, any other value = adaptive).
+     * For explicit control, use `thinking: { type: 'adaptive' }` or
+     * `thinking: { type: 'enabled', budgetTokens: N }`.
+     *
+     * @param maxThinkingTokens - Maximum tokens for thinking, or null to clear the limit
+     */
+    setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
+    /**
+     * Get the full initialization result, including supported commands, models,
+     * account info, and output style configuration.
+     *
+     * @returns The complete initialization response
+     */
+    initializationResult(): Promise<SDKControlInitializeResponse>;
+    /**
+     * Get the list of available skills for the current session.
+     *
+     * @returns Array of available skills with their names and descriptions
+     */
+    supportedCommands(): Promise<SlashCommand[]>;
+    /**
+     * Get the list of available models.
+     *
+     * @returns Array of model information including display names and descriptions
+     */
+    supportedModels(): Promise<ModelInfo[]>;
+    /**
+     * Get the current status of all configured MCP servers.
+     *
+     * @returns Array of MCP server statuses (connected, failed, needs-auth, pending)
+     */
+    mcpServerStatus(): Promise<McpServerStatus[]>;
+    /**
+     * Get information about the authenticated account.
+     *
+     * @returns Account information including email, organization, and subscription type
+     */
+    accountInfo(): Promise<AccountInfo>;
+    /**
+     * Rewind tracked files to their state at a specific user message.
+     * Requires file checkpointing to be enabled via the `enableFileCheckpointing` option.
+     *
+     * @param userMessageId - UUID of the user message to rewind to
+     * @param options - Options object with optional `dryRun` boolean to preview changes without modifying files
+     * @returns Object with canRewind boolean, optional error message, and file change statistics
+     */
+    rewindFiles(userMessageId: string, options?: {
+        dryRun?: boolean;
+    }): Promise<RewindFilesResult>;
+    /**
+     * Reconnect an MCP server by name.
+     * Throws on failure.
+     *
+     * @param serverName - The name of the MCP server to reconnect
+     */
+    reconnectMcpServer(serverName: string): Promise<void>;
+    /**
+     * Enable or disable an MCP server by name.
+     * Throws on failure.
+     *
+     * @param serverName - The name of the MCP server to toggle
+     * @param enabled - Whether the server should be enabled
+     */
+    toggleMcpServer(serverName: string, enabled: boolean): Promise<void>;
+    /**
+     * Dynamically set the MCP servers for this session.
+     * This replaces the current set of dynamically-added MCP servers with the provided set.
+     * Servers that are removed will be disconnected, and new servers will be connected.
+     *
+     * Supports both process-based servers (stdio, sse, http) and SDK servers (in-process).
+     * SDK servers are handled locally in the SDK process, while process-based servers
+     * are managed by the CLI subprocess.
+     *
+     * Note: This only affects servers added dynamically via this method or the SDK.
+     * Servers configured via settings files are not affected.
+     *
+     * @param servers - Record of server name to configuration. Pass an empty object to remove all dynamic servers.
+     * @returns Information about which servers were added, removed, and any connection errors
+     */
+    setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult>;
+    /**
+     * Stream input messages to the query.
+     * Used internally for multi-turn conversations.
+     *
+     * @param stream - Async iterable of user messages to send
+     */
+    streamInput(stream: AsyncIterable<SDKUserMessage>): Promise<void>;
+    /**
+     * Stop a running task. A task_notification with status 'stopped' will be emitted.
+     * @param taskId - The task ID from task_notification events
+     */
+    stopTask(taskId: string): Promise<void>;
+    /**
+     * Close the query and terminate the underlying process.
+     * This forcefully ends the query, cleaning up all resources including
+     * pending requests, MCP transports, and the CLI subprocess.
+     *
+     * Use this when you need to abort a query that is still running.
+     * After calling close(), no further messages will be received.
+     */
+    close(): void;
+}
+
+export declare function query(_params: {
+    prompt: string | AsyncIterable<SDKUserMessage>;
+    options?: Options;
+}): Query;
+
+/**
+ * Result of a rewindFiles operation.
+ */
+export declare type RewindFilesResult = {
+    canRewind: boolean;
+    error?: string;
+    filesChanged?: string[];
+    insertions?: number;
+    deletions?: number;
+};
+
+export declare type SandboxIgnoreViolations = NonNullable<SandboxSettings['ignoreViolations']>;
+
+export declare type SandboxNetworkConfig = NonNullable<z.infer<typeof SandboxNetworkConfigSchema>>;
+
+/**
+ * Network configuration schema for sandbox.
+ */
+declare const SandboxNetworkConfigSchema: z.ZodOptional<z.ZodObject<{
+    allowedDomains: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    allowManagedDomainsOnly: z.ZodOptional<z.ZodBoolean>;
+    allowUnixSockets: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    allowAllUnixSockets: z.ZodOptional<z.ZodBoolean>;
+    allowLocalBinding: z.ZodOptional<z.ZodBoolean>;
+    httpProxyPort: z.ZodOptional<z.ZodNumber>;
+    socksProxyPort: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>>;
+
+export declare type SandboxSettings = z.infer<typeof SandboxSettingsSchema>;
+
+/**
+ * Sandbox settings schema.
+ */
+declare const SandboxSettingsSchema: z.ZodObject<{
+    enabled: z.ZodOptional<z.ZodBoolean>;
+    autoAllowBashIfSandboxed: z.ZodOptional<z.ZodBoolean>;
+    allowUnsandboxedCommands: z.ZodOptional<z.ZodBoolean>;
+    network: z.ZodOptional<z.ZodObject<{
+        allowedDomains: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        allowManagedDomainsOnly: z.ZodOptional<z.ZodBoolean>;
+        allowUnixSockets: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        allowAllUnixSockets: z.ZodOptional<z.ZodBoolean>;
+        allowLocalBinding: z.ZodOptional<z.ZodBoolean>;
+        httpProxyPort: z.ZodOptional<z.ZodNumber>;
+        socksProxyPort: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    ignoreViolations: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodArray<z.ZodString>>>;
+    enableWeakerNestedSandbox: z.ZodOptional<z.ZodBoolean>;
+    excludedCommands: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    ripgrep: z.ZodOptional<z.ZodObject<{
+        command: z.ZodString;
+        args: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>;
+}, z.core.$loose>;
+
+export declare type SDKAssistantMessage = {
+    type: 'assistant';
+    message: BetaMessage;
+    parent_tool_use_id: string | null;
+    error?: SDKAssistantMessageError;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKAssistantMessageError = 'authentication_failed' | 'billing_error' | 'rate_limit' | 'invalid_request' | 'server_error' | 'unknown' | 'max_output_tokens';
+
+export declare type SDKAuthStatusMessage = {
+    type: 'auth_status';
+    isAuthenticating: boolean;
+    output: string[];
+    error?: string;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SdkBeta = 'context-1m-2025-08-07';
+
+export declare type SDKCompactBoundaryMessage = {
+    type: 'system';
+    subtype: 'compact_boundary';
+    compact_metadata: {
+        trigger: 'manual' | 'auto';
+        pre_tokens: number;
+    };
+    uuid: UUID;
+    session_id: string;
+};
+
+/**
+ * Cancels a currently open control request.
+ */
+declare type SDKControlCancelRequest = {
+    type: 'control_cancel_request';
+    request_id: string;
+};
+
+/**
+ * Initializes the SDK session with hooks, MCP servers, and agent configuration.
+ */
+declare type SDKControlInitializeRequest = {
+    subtype: 'initialize';
+    hooks?: Partial<Record<coreTypes.HookEvent, SDKHookCallbackMatcher[]>>;
+    sdkMcpServers?: string[];
+    jsonSchema?: Record<string, unknown>;
+    systemPrompt?: string;
+    appendSystemPrompt?: string;
+    agents?: Record<string, coreTypes.AgentDefinition>;
+};
+
+/**
+ * Response from session initialization with available commands, models, and account info.
+ */
+declare type SDKControlInitializeResponse = {
+    commands: coreTypes.SlashCommand[];
+    output_style: string;
+    available_output_styles: string[];
+    models: coreTypes.ModelInfo[];
+    /**
+     * Information about the logged in user's account.
+     */
+    account: coreTypes.AccountInfo;
+
+};
+
+/**
+ * Interrupts the currently running conversation turn.
+ */
+declare type SDKControlInterruptRequest = {
+    subtype: 'interrupt';
+};
+
+/**
+ * Sends a JSON-RPC message to a specific MCP server.
+ */
+declare type SDKControlMcpMessageRequest = {
+    subtype: 'mcp_message';
+    server_name: string;
+    message: JSONRPCMessage;
+};
+
+/**
+ * Reconnects a disconnected or failed MCP server.
+ */
+declare type SDKControlMcpReconnectRequest = {
+    subtype: 'mcp_reconnect';
+    serverName: string;
+};
+
+/**
+ * Replaces the set of dynamically managed MCP servers.
+ */
+declare type SDKControlMcpSetServersRequest = {
+    subtype: 'mcp_set_servers';
+    servers: Record<string, coreTypes.McpServerConfigForProcessTransport>;
+};
+
+/**
+ * Requests the current status of all MCP server connections.
+ */
+declare type SDKControlMcpStatusRequest = {
+    subtype: 'mcp_status';
+};
+
+/**
+ * Enables or disables an MCP server.
+ */
+declare type SDKControlMcpToggleRequest = {
+    subtype: 'mcp_toggle';
+    serverName: string;
+    enabled: boolean;
+};
+
+/**
+ * Requests permission to use a tool with the given input.
+ */
+declare type SDKControlPermissionRequest = {
+    subtype: 'can_use_tool';
+    tool_name: string;
+    input: Record<string, unknown>;
+    permission_suggestions?: coreTypes.PermissionUpdate[];
+    blocked_path?: string;
+    decision_reason?: string;
+    tool_use_id: string;
+    agent_id?: string;
+    description?: string;
+};
+
+declare type SDKControlRequest = {
+    type: 'control_request';
+    request_id: string;
+    request: SDKControlRequestInner;
+};
+
+declare type SDKControlRequestInner = SDKControlInterruptRequest | SDKControlPermissionRequest | SDKControlInitializeRequest | SDKControlSetPermissionModeRequest | SDKControlSetModelRequest | SDKControlSetMaxThinkingTokensRequest | SDKControlMcpStatusRequest | SDKHookCallbackRequest | SDKControlMcpMessageRequest | SDKControlRewindFilesRequest | SDKControlMcpSetServersRequest | SDKControlMcpReconnectRequest | SDKControlMcpToggleRequest | SDKControlStopTaskRequest;
+
+declare type SDKControlResponse = {
+    type: 'control_response';
+    response: ControlResponse | ControlErrorResponse;
+};
+
+/**
+ * Rewinds file changes made since a specific user message.
+ */
+declare type SDKControlRewindFilesRequest = {
+    subtype: 'rewind_files';
+    user_message_id: string;
+    dry_run?: boolean;
+};
+
+/**
+ * Sets the maximum number of thinking tokens for extended thinking.
+ */
+declare type SDKControlSetMaxThinkingTokensRequest = {
+    subtype: 'set_max_thinking_tokens';
+    max_thinking_tokens: number | null;
+};
+
+/**
+ * Sets the model to use for subsequent conversation turns.
+ */
+declare type SDKControlSetModelRequest = {
+    subtype: 'set_model';
+    model?: string;
+};
+
+/**
+ * Sets the permission mode for tool execution handling.
+ */
+declare type SDKControlSetPermissionModeRequest = {
+    subtype: 'set_permission_mode';
+    /**
+     * Permission mode for controlling how tool executions are handled. 'default' - Standard behavior, prompts for dangerous operations. 'acceptEdits' - Auto-accept file edit operations. 'bypassPermissions' - Bypass all permission checks (requires allowDangerouslySkipPermissions). 'plan' - Planning mode, no actual tool execution. 'delegate' - Delegate mode, restricts team leader to only Teammate and Task tools. 'dontAsk' - Don't prompt for permissions, deny if not pre-approved.
+     */
+    mode: coreTypes.PermissionMode;
+};
+
+/**
+ * Stops a running task.
+ */
+declare type SDKControlStopTaskRequest = {
+    subtype: 'stop_task';
+    task_id: string;
+};
+
+export declare type SDKFilesPersistedEvent = {
+    type: 'system';
+    subtype: 'files_persisted';
+    files: {
+        filename: string;
+        file_id: string;
+    }[];
+    failed: {
+        filename: string;
+        error: string;
+    }[];
+    processed_at: string;
+    uuid: UUID;
+    session_id: string;
+};
+
+/**
+ * Configuration for matching and routing hook callbacks.
+ */
+declare type SDKHookCallbackMatcher = {
+    matcher?: string;
+    hookCallbackIds: string[];
+    timeout?: number;
+};
+
+/**
+ * Delivers a hook callback with its input data.
+ */
+declare type SDKHookCallbackRequest = {
+    subtype: 'hook_callback';
+    callback_id: string;
+    input: coreTypes.HookInput;
+    tool_use_id?: string;
+};
+
+export declare type SDKHookProgressMessage = {
+    type: 'system';
+    subtype: 'hook_progress';
+    hook_id: string;
+    hook_name: string;
+    hook_event: string;
+    stdout: string;
+    stderr: string;
+    output: string;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKHookResponseMessage = {
+    type: 'system';
+    subtype: 'hook_response';
+    hook_id: string;
+    hook_name: string;
+    hook_event: string;
+    output: string;
+    stdout: string;
+    stderr: string;
+    exit_code?: number;
+    outcome: 'success' | 'error' | 'cancelled';
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKHookStartedMessage = {
+    type: 'system';
+    subtype: 'hook_started';
+    hook_id: string;
+    hook_name: string;
+    hook_event: string;
+    uuid: UUID;
+    session_id: string;
+};
+
+/**
+ * Keep-alive message to maintain WebSocket connection.
+ */
+declare type SDKKeepAliveMessage = {
+    type: 'keep_alive';
+};
+
+/**
+ * MCP tool definition for SDK servers.
+ * Contains a handler function, so not serializable.
+ * Supports both Zod 3 and Zod 4 schemas.
+ */
+export declare type SdkMcpToolDefinition<Schema extends AnyZodRawShape = AnyZodRawShape> = {
+    name: string;
+    description: string;
+    inputSchema: Schema;
+    annotations?: ToolAnnotations;
+    handler: (args: InferShape<Schema>, extra: unknown) => Promise<CallToolResult>;
+};
+
+export declare type SDKMessage = SDKAssistantMessage | SDKUserMessage | SDKUserMessageReplay | SDKResultMessage | SDKSystemMessage | SDKPartialAssistantMessage | SDKCompactBoundaryMessage | SDKStatusMessage | SDKHookStartedMessage | SDKHookProgressMessage | SDKHookResponseMessage | SDKToolProgressMessage | SDKAuthStatusMessage | SDKTaskNotificationMessage | SDKFilesPersistedEvent | SDKToolUseSummaryMessage;
+
+export declare type SDKPartialAssistantMessage = {
+    type: 'stream_event';
+    event: BetaRawMessageStreamEvent;
+    parent_tool_use_id: string | null;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKPermissionDenial = {
+    tool_name: string;
+    tool_use_id: string;
+    tool_input: Record<string, unknown>;
+};
+
+/**
+ * Configuration for loading a plugin.
+ */
+export declare type SdkPluginConfig = {
+    /**
+     * Plugin type. Currently only 'local' is supported
+     */
+    type: 'local';
+    /**
+     * Absolute or relative path to the plugin directory
+     */
+    path: string;
+};
+
+export declare type SDKResultError = {
+    type: 'result';
+    subtype: 'error_during_execution' | 'error_max_turns' | 'error_max_budget_usd' | 'error_max_structured_output_retries';
+    duration_ms: number;
+    duration_api_ms: number;
+    is_error: boolean;
+    num_turns: number;
+    stop_reason: string | null;
+    total_cost_usd: number;
+    usage: NonNullableUsage;
+    modelUsage: Record<string, ModelUsage>;
+    permission_denials: SDKPermissionDenial[];
+    errors: string[];
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKResultMessage = SDKResultSuccess | SDKResultError;
+
+export declare type SDKResultSuccess = {
+    type: 'result';
+    subtype: 'success';
+    duration_ms: number;
+    duration_api_ms: number;
+    is_error: boolean;
+    num_turns: number;
+    result: string;
+    stop_reason: string | null;
+    total_cost_usd: number;
+    usage: NonNullableUsage;
+    modelUsage: Record<string, ModelUsage>;
+    permission_denials: SDKPermissionDenial[];
+    structured_output?: unknown;
+    uuid: UUID;
+    session_id: string;
+};
+
+/**
+ * V2 API - UNSTABLE
+ * Session interface for multi-turn conversations.
+ * Has methods, so not serializable.
+ * @alpha
+ */
+export declare interface SDKSession {
+    /**
+     * The session ID. Available after receiving the first message.
+     * For resumed sessions, available immediately.
+     * Throws if accessed before the session is initialized.
+     */
+    readonly sessionId: string;
+    /** Send a message to the agent */
+    send(message: string | SDKUserMessage): Promise<void>;
+    /** Stream messages from the agent */
+    stream(): AsyncGenerator<SDKMessage, void>;
+    /** Close the session */
+    close(): void;
+    /** Async disposal support (calls close if not already closed) */
+    [Symbol.asyncDispose](): Promise<void>;
+}
+
+/**
+ * V2 API - UNSTABLE
+ * Options for creating a session.
+ * @alpha
+ */
+export declare type SDKSessionOptions = {
+    /** Model to use */
+    model: string;
+    /** Path to Claude Code executable */
+    pathToClaudeCodeExecutable?: string;
+    /** Executable to use (node, bun) */
+    executable?: 'node' | 'bun';
+    /** Arguments to pass to executable */
+    executableArgs?: string[];
+    /**
+     * Environment variables to pass to the Claude Code process.
+     * Defaults to `process.env`.
+     *
+     * SDK consumers can identify their app/library to include in the User-Agent header by setting:
+     * - `CLAUDE_AGENT_SDK_CLIENT_APP` - Your app/library identifier (e.g., "my-app/1.0.0", "my-library/2.1")
+     */
+    env?: {
+        [envVar: string]: string | undefined;
+    };
+    /**
+     * List of tool names that are auto-allowed without prompting for permission.
+     * These tools will execute automatically without asking the user for approval.
+     */
+    allowedTools?: string[];
+    /**
+     * List of tool names that are disallowed. These tools will be removed
+     * from the model's context and cannot be used.
+     */
+    disallowedTools?: string[];
+    /**
+     * Custom permission handler for controlling tool usage. Called before each
+     * tool execution to determine if it should be allowed, denied, or prompt the user.
+     */
+    canUseTool?: CanUseTool;
+    /**
+     * Hook callbacks for responding to various events during execution.
+     */
+    hooks?: Partial<Record<HookEvent, HookCallbackMatcher[]>>;
+    /**
+     * Permission mode for the session.
+     * - `'default'` - Standard permission behavior, prompts for dangerous operations
+     * - `'acceptEdits'` - Auto-accept file edit operations
+     * - `'plan'` - Planning mode, no execution of tools
+     * - `'dontAsk'` - Don't prompt for permissions, deny if not pre-approved
+     */
+    permissionMode?: PermissionMode;
+};
+
+export declare type SDKStatus = 'compacting' | null;
+
+export declare type SDKStatusMessage = {
+    type: 'system';
+    subtype: 'status';
+    status: SDKStatus;
+    permissionMode?: PermissionMode;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKSystemMessage = {
+    type: 'system';
+    subtype: 'init';
+    agents?: string[];
+    apiKeySource: ApiKeySource;
+    betas?: string[];
+    claude_code_version: string;
+    cwd: string;
+    tools: string[];
+    mcp_servers: {
+        name: string;
+        status: string;
+    }[];
+    model: string;
+    /**
+     * Permission mode for controlling how tool executions are handled. 'default' - Standard behavior, prompts for dangerous operations. 'acceptEdits' - Auto-accept file edit operations. 'bypassPermissions' - Bypass all permission checks (requires allowDangerouslySkipPermissions). 'plan' - Planning mode, no actual tool execution. 'delegate' - Delegate mode, restricts team leader to only Teammate and Task tools. 'dontAsk' - Don't prompt for permissions, deny if not pre-approved.
+     */
+    permissionMode: PermissionMode;
+    slash_commands: string[];
+    output_style: string;
+    skills: string[];
+    plugins: {
+        name: string;
+        path: string;
+    }[];
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKTaskNotificationMessage = {
+    type: 'system';
+    subtype: 'task_notification';
+    task_id: string;
+    status: 'completed' | 'failed' | 'stopped';
+    output_file: string;
+    summary: string;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKToolProgressMessage = {
+    type: 'tool_progress';
+    tool_use_id: string;
+    tool_name: string;
+    parent_tool_use_id: string | null;
+    elapsed_time_seconds: number;
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKToolUseSummaryMessage = {
+    type: 'tool_use_summary';
+    summary: string;
+    preceding_tool_use_ids: string[];
+    uuid: UUID;
+    session_id: string;
+};
+
+export declare type SDKUserMessage = {
+    type: 'user';
+    message: MessageParam;
+    parent_tool_use_id: string | null;
+    isSynthetic?: boolean;
+    tool_use_result?: unknown;
+    uuid?: UUID;
+    session_id: string;
+};
+
+export declare type SDKUserMessageReplay = {
+    type: 'user';
+    message: MessageParam;
+    parent_tool_use_id: string | null;
+    isSynthetic?: boolean;
+    tool_use_result?: unknown;
+    uuid: UUID;
+    session_id: string;
+    isReplay: true;
+};
+
+export declare type SessionEndHookInput = BaseHookInput & {
+    hook_event_name: 'SessionEnd';
+    reason: ExitReason;
+};
+
+export declare type SessionStartHookInput = BaseHookInput & {
+    hook_event_name: 'SessionStart';
+    source: 'startup' | 'resume' | 'clear' | 'compact';
+    agent_type?: string;
+    model?: string;
+};
+
+export declare type SessionStartHookSpecificOutput = {
+    hookEventName: 'SessionStart';
+    additionalContext?: string;
+};
+
+/**
+ * Source for loading filesystem-based settings. 'user' - Global user settings (~/.claude/settings.json). 'project' - Project settings (.claude/settings.json). 'local' - Local settings (.claude/settings.local.json).
+ */
+export declare type SettingSource = 'user' | 'project' | 'local';
+
+export declare type SetupHookInput = BaseHookInput & {
+    hook_event_name: 'Setup';
+    trigger: 'init' | 'maintenance';
+};
+
+export declare type SetupHookSpecificOutput = {
+    hookEventName: 'Setup';
+    additionalContext?: string;
+};
+
+/**
+ * Information about an available skill (invoked via /command syntax).
+ */
+export declare type SlashCommand = {
+    /**
+     * Skill name (without the leading slash)
+     */
+    name: string;
+    /**
+     * Description of what the skill does
+     */
+    description: string;
+    /**
+     * Hint for skill arguments (e.g., "<file>")
+     */
+    argumentHint: string;
+};
+
+/**
+ * Represents a spawned process with stdin/stdout streams and lifecycle management.
+ * Implementers provide this interface to abstract the process spawning mechanism.
+ * ChildProcess already satisfies this interface.
+ */
+export declare interface SpawnedProcess {
+    /** Writable stream for sending data to the process stdin */
+    stdin: Writable;
+    /** Readable stream for receiving data from the process stdout */
+    stdout: Readable;
+    /** Whether the process has been killed */
+    readonly killed: boolean;
+    /** Exit code if the process has exited, null otherwise */
+    readonly exitCode: number | null;
+    /**
+     * Kill the process with the given signal
+     * @param signal - The signal to send (e.g., 'SIGTERM', 'SIGKILL')
+     */
+    kill(signal: NodeJS.Signals): boolean;
+    /**
+     * Register a callback for when the process exits
+     * @param event - Must be 'exit'
+     * @param listener - Callback receiving exit code and signal
+     */
+    on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
+    /**
+     * Register a callback for process errors
+     * @param event - Must be 'error'
+     * @param listener - Callback receiving the error
+     */
+    on(event: 'error', listener: (error: Error) => void): void;
+    /**
+     * Register a one-time callback for when the process exits
+     */
+    once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
+    once(event: 'error', listener: (error: Error) => void): void;
+    /**
+     * Remove an event listener
+     */
+    off(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): void;
+    off(event: 'error', listener: (error: Error) => void): void;
+}
+
+/**
+ * Options passed to the spawn function.
+ */
+export declare interface SpawnOptions {
+    /** Command to execute */
+    command: string;
+    /** Arguments to pass to the command */
+    args: string[];
+    /** Working directory */
+    cwd?: string;
+    /** Environment variables */
+    env: {
+        [envVar: string]: string | undefined;
+    };
+    /** Abort signal for cancellation */
+    signal: AbortSignal;
+}
+
+declare type StdoutMessage = coreTypes.SDKMessage | coreTypes.SDKStreamlinedTextMessage | coreTypes.SDKStreamlinedToolUseSummaryMessage | SDKControlResponse | SDKControlRequest | SDKControlCancelRequest | SDKKeepAliveMessage;
+
+export declare type StopHookInput = BaseHookInput & {
+    hook_event_name: 'Stop';
+    stop_hook_active: boolean;
+};
+
+export declare type SubagentStartHookInput = BaseHookInput & {
+    hook_event_name: 'SubagentStart';
+    agent_id: string;
+    agent_type: string;
+};
+
+export declare type SubagentStartHookSpecificOutput = {
+    hookEventName: 'SubagentStart';
+    additionalContext?: string;
+};
+
+export declare type SubagentStopHookInput = BaseHookInput & {
+    hook_event_name: 'SubagentStop';
+    stop_hook_active: boolean;
+    agent_id: string;
+    agent_transcript_path: string;
+    agent_type: string;
+};
+
+export declare type SyncHookJSONOutput = {
+    continue?: boolean;
+    suppressOutput?: boolean;
+    stopReason?: string;
+    decision?: 'approve' | 'block';
+    systemMessage?: string;
+    reason?: string;
+    hookSpecificOutput?: PreToolUseHookSpecificOutput | UserPromptSubmitHookSpecificOutput | SessionStartHookSpecificOutput | SetupHookSpecificOutput | SubagentStartHookSpecificOutput | PostToolUseHookSpecificOutput | PostToolUseFailureHookSpecificOutput | NotificationHookSpecificOutput | PermissionRequestHookSpecificOutput;
+};
+
+export declare type TaskCompletedHookInput = BaseHookInput & {
+    hook_event_name: 'TaskCompleted';
+    task_id: string;
+    task_subject: string;
+    task_description?: string;
+    teammate_name?: string;
+    team_name?: string;
+};
+
+export declare type TeammateIdleHookInput = BaseHookInput & {
+    hook_event_name: 'TeammateIdle';
+    teammate_name: string;
+    team_name: string;
+};
+
+export declare function tool<Schema extends AnyZodRawShape>(_name: string, _description: string, _inputSchema: Schema, _handler: (args: InferShape<Schema>, extra: unknown) => Promise<CallToolResult>, _extras?: {
+    annotations?: ToolAnnotations;
+}): SdkMcpToolDefinition<Schema>;
+
+/**
+ * Transport interface for Claude Code SDK communication
+ * Abstracts the communication layer to support both process and WebSocket transports
+ */
+export declare interface Transport {
+    /**
+     * Write data to the transport
+     * May be async for network-based transports
+     */
+    write(data: string): void | Promise<void>;
+    /**
+     * Close the transport connection and clean up resources
+     * This also closes stdin if still open (eliminating need for endInput)
+     */
+    close(): void;
+    /**
+     * Check if transport is ready for communication
+     */
+    isReady(): boolean;
+    /**
+     * Read and parse messages from the transport
+     * Each transport handles its own protocol and error checking
+     */
+    readMessages(): AsyncGenerator<StdoutMessage, void, unknown>;
+    /**
+     * End the input stream
+     */
+    endInput(): void;
+}
+
+/**
+ * V2 API - UNSTABLE
+ * Create a persistent session for multi-turn conversations.
+ * @alpha
+ */
+export declare function unstable_v2_createSession(_options: SDKSessionOptions): SDKSession;
+
+/**
+ * V2 API - UNSTABLE
+ * One-shot convenience function for single prompts.
+ * @alpha
+ *
+ * @example
+ * ```typescript
+ * const result = await unstable_v2_prompt("What files are here?", {
+ *   model: 'claude-sonnet-4-5-20250929'
+ * })
+ * ```
+ */
+export declare function unstable_v2_prompt(_message: string, _options: SDKSessionOptions): Promise<SDKResultMessage>;
+
+/**
+ * V2 API - UNSTABLE
+ * Resume an existing session by ID.
+ * @alpha
+ */
+export declare function unstable_v2_resumeSession(_sessionId: string, _options: SDKSessionOptions): SDKSession;
+
+export declare type UserPromptSubmitHookInput = BaseHookInput & {
+    hook_event_name: 'UserPromptSubmit';
+    prompt: string;
+};
+
+export declare type UserPromptSubmitHookSpecificOutput = {
+    hookEventName: 'UserPromptSubmit';
+    additionalContext?: string;
+};
+
+export { }
