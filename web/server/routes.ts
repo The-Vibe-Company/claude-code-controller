@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
@@ -303,6 +303,29 @@ export function createRoutes(
       lastModified: number;
     }
 
+    // Extract the real cwd from a session JSONL by reading the first few lines
+    function extractCwd(filePath: string): string | null {
+      try {
+        const fd = openSync(filePath, "r");
+        const buf = Buffer.alloc(4096);
+        const bytesRead = readSync(fd, buf, 0, 4096, 0);
+        closeSync(fd);
+        const chunk = buf.toString("utf-8", 0, bytesRead);
+        for (const line of chunk.split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (obj.cwd) return obj.cwd;
+          } catch {
+            continue;
+          }
+        }
+      } catch {
+        // Can't read file
+      }
+      return null;
+    }
+
     const sessions: CliSession[] = [];
     try {
       const projectDirs = readdirSync(claudeProjectsDir, { withFileTypes: true });
@@ -310,8 +333,6 @@ export function createRoutes(
       for (const dir of projectDirs) {
         if (!dir.isDirectory()) continue;
         const projectPath = join(claudeProjectsDir, dir.name);
-        // Convert slug back to path: -home-kev-project → /home/kev/project
-        const cwd = dir.name.replace(/^-/, "/").replace(/-/g, "/");
 
         try {
           const files = readdirSync(projectPath);
@@ -326,7 +347,7 @@ export function createRoutes(
               sessions.push({
                 sessionId: match[1],
                 project: dir.name,
-                cwd,
+                cwd: "", // populated below for the top results
                 lastModified: fileStat.mtimeMs,
               });
             } catch {
@@ -341,9 +362,15 @@ export function createRoutes(
       return c.json([]);
     }
 
-    // Sort by most recently modified first, limit to 50
+    // Sort by most recently modified first, then extract cwd for top results only
+    // (reading JSONL files is expensive, so limit to what we'll return)
     sessions.sort((a, b) => b.lastModified - a.lastModified);
-    return c.json(sessions.slice(0, 50));
+    const topSessions = sessions.slice(0, 50);
+    for (const s of topSessions) {
+      const filePath = join(claudeProjectsDir, s.project, `${s.sessionId}.jsonl`);
+      s.cwd = extractCwd(filePath) || s.project;
+    }
+    return c.json(topSessions);
   });
 
   // ─── Recording Management ──────────────────────────────────
