@@ -86,6 +86,15 @@ export interface CreateSessionOpts {
   useWorktree?: boolean;
   backend?: "claude" | "codex";
   container?: ContainerCreateOpts;
+  /** Resume an existing Claude CLI session by its internal session ID */
+  resumeSessionId?: string;
+}
+
+export interface CliSessionInfo {
+  sessionId: string;
+  project: string;
+  cwd: string;
+  lastModified: number;
 }
 
 export interface BackendInfo {
@@ -295,6 +304,9 @@ export const api = {
     get<PRStatusResponse>(
       `/git/pr-status?cwd=${encodeURIComponent(cwd)}&branch=${encodeURIComponent(branch)}`,
     ),
+
+  // CLI sessions (for resuming external sessions)
+  listCliSessions: () => get<CliSessionInfo[]>("/sessions/cli-sessions"),
 
   // Backends
   getBackends: () => get<BackendInfo[]>("/backends"),

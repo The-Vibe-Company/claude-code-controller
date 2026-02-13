@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "../store.js";
-import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
+import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type CliSessionInfo } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -27,6 +27,18 @@ function readFileAsBase64(file: File): Promise<{ base64: string; mediaType: stri
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function formatTimeAgo(timestampMs: number): string {
+  const seconds = Math.floor((Date.now() - timestampMs) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(timestampMs).toLocaleDateString();
 }
 
 let idCounter = 0;
@@ -76,6 +88,12 @@ export function HomePage() {
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [branchFilter, setBranchFilter] = useState("");
   const [isNewBranch, setIsNewBranch] = useState(false);
+
+  // Resume session state
+  const [showResumePicker, setShowResumePicker] = useState(false);
+  const [cliSessions, setCliSessions] = useState<CliSessionInfo[]>([]);
+  const [resumeFilter, setResumeFilter] = useState("");
+  const [resuming, setResuming] = useState(false);
 
   // Branch freshness check state
   const [pullPrompt, setPullPrompt] = useState<{ behind: number; branchName: string } | null>(null);
@@ -379,6 +397,43 @@ export function HomePage() {
     setPullPrompt(null);
     setPullError("");
     setSending(false);
+  }
+
+  async function handleResumeSession(cliSession: CliSessionInfo) {
+    setResuming(true);
+    setError("");
+    try {
+      if (currentSessionId) {
+        disconnectSession(currentSessionId);
+      }
+
+      const result = await api.createSession({
+        model,
+        permissionMode: mode,
+        cwd: cliSession.cwd || cwd || undefined,
+        resumeSessionId: cliSession.sessionId,
+        backend,
+      });
+      const sessionId = result.sessionId;
+
+      const existingNames = new Set(useStore.getState().sessionNames.values());
+      const sessionName = generateUniqueSessionName(existingNames);
+      useStore.getState().setSessionName(sessionId, sessionName);
+
+      if (cliSession.cwd) addRecentDir(cliSession.cwd);
+      useStore.getState().setPreviousPermissionMode(sessionId, mode);
+
+      setCurrentSession(sessionId);
+      connectSession(sessionId);
+      await waitForConnection(sessionId);
+
+      setShowResumePicker(false);
+      setResumeFilter("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResuming(false);
+    }
   }
 
   const canSend = text.trim().length > 0 && !sending;
@@ -845,6 +900,20 @@ export function HomePage() {
           </div>
         </div>
 
+        {/* Resume session link */}
+        <div className="flex justify-end mt-1.5 px-1">
+          <button
+            onClick={() => {
+              api.listCliSessions().then(setCliSessions).catch(() => setCliSessions([]));
+              setShowResumePicker(true);
+              setResumeFilter("");
+            }}
+            className="text-[11px] text-cc-muted hover:text-cc-primary transition-colors cursor-pointer"
+          >
+            Resume an existing session...
+          </button>
+        </div>
+
         {/* Branch behind remote warning */}
         {pullPrompt && (
           <div className="mt-3 p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
@@ -917,6 +986,85 @@ export function HomePage() {
             api.listEnvs().then(setEnvs).catch(() => {});
           }}
         />
+      )}
+
+      {/* Resume session picker modal */}
+      {showResumePicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-cc-card border border-cc-border rounded-[14px] shadow-xl w-full max-w-lg max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-cc-border">
+              <h2 className="text-sm font-semibold text-cc-fg">Resume Session</h2>
+              <button
+                onClick={() => setShowResumePicker(false)}
+                className="text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-4 py-2 border-b border-cc-border">
+              <input
+                type="text"
+                value={resumeFilter}
+                onChange={(e) => setResumeFilter(e.target.value)}
+                placeholder="Filter by session ID or project path..."
+                className="w-full px-3 py-1.5 text-sm bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg font-mono-code placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {(() => {
+                const filter = resumeFilter.toLowerCase().trim();
+                const filtered = cliSessions.filter((s) =>
+                  !filter ||
+                  s.sessionId.toLowerCase().includes(filter) ||
+                  s.cwd.toLowerCase().includes(filter) ||
+                  s.project.toLowerCase().includes(filter)
+                );
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="px-4 py-8 text-center text-xs text-cc-muted">
+                      {cliSessions.length === 0
+                        ? "No Claude Code sessions found"
+                        : "No sessions match your filter"}
+                    </div>
+                  );
+                }
+
+                return filtered.map((s) => {
+                  const ago = formatTimeAgo(s.lastModified);
+                  const dirName = s.cwd.split("/").pop() || s.cwd;
+                  return (
+                    <button
+                      key={s.sessionId}
+                      onClick={() => handleResumeSession(s)}
+                      disabled={resuming}
+                      className="w-full px-3 py-2.5 text-left hover:bg-cc-hover rounded-lg transition-colors cursor-pointer group flex items-start gap-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-cc-fg truncate">{dirName}</span>
+                          <span className="text-[10px] text-cc-muted shrink-0">{ago}</span>
+                        </div>
+                        <div className="text-[11px] text-cc-muted font-mono-code truncate mt-0.5">
+                          {s.cwd}
+                        </div>
+                        <div className="text-[10px] text-cc-muted/60 font-mono-code truncate mt-0.5">
+                          {s.sessionId.slice(0, 8)}...
+                        </div>
+                      </div>
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-cc-muted group-hover:text-cc-primary shrink-0 mt-1 transition-colors">
+                        <path d="M6.3 1.7a1 1 0 011.4 0l4.6 4.6a1 1 0 010 1.4l-4.6 4.6a1 1 0 01-1.4-1.4L10.2 7H2a1 1 0 110-2h8.2L6.3 1.7z" />
+                      </svg>
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

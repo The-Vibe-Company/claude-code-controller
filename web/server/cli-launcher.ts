@@ -60,6 +60,8 @@ export interface LaunchOptions {
   codexSandbox?: "workspace-write" | "danger-full-access";
   /** Whether Codex internet/web search should be enabled for this session. */
   codexInternetAccess?: boolean;
+  /** Resume an existing Claude CLI session by its internal session ID */
+  resumeSessionId?: string;
   /** Pre-resolved worktree info from the session creation flow */
   worktreeInfo?: {
     isWorktree: boolean;
@@ -175,7 +177,10 @@ export class CliLauncher {
     if (backendType === "codex") {
       this.spawnCodex(sessionId, info, options);
     } else {
-      this.spawnCLI(sessionId, info, options);
+      this.spawnCLI(sessionId, info, {
+        ...options,
+        resumeSessionId: options.resumeSessionId,
+      });
     }
     return info;
   }

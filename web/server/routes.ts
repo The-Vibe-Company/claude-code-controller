@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
@@ -158,6 +158,7 @@ export function createRoutes(
         env: envVars,
         backendType: backend,
         worktreeInfo,
+        resumeSessionId: body.resumeSessionId,
       });
 
       // Re-track container with real session ID
@@ -284,6 +285,64 @@ export function createRoutes(
     launcher.setArchived(id, false);
     sessionStore.setArchived(id, false);
     return c.json({ ok: true });
+  });
+
+  // ─── CLI Sessions (for resuming external sessions) ─────────────
+
+  api.get("/sessions/cli-sessions", (c) => {
+    const claudeProjectsDir = join(homedir(), ".claude", "projects");
+    if (!existsSync(claudeProjectsDir)) {
+      return c.json([]);
+    }
+
+    interface CliSession {
+      sessionId: string;
+      project: string;
+      cwd: string;
+      lastModified: number;
+    }
+
+    const sessions: CliSession[] = [];
+    try {
+      const projectDirs = readdirSync(claudeProjectsDir, { withFileTypes: true });
+
+      for (const dir of projectDirs) {
+        if (!dir.isDirectory()) continue;
+        const projectPath = join(claudeProjectsDir, dir.name);
+        // Convert slug back to path: -home-kev-project → /home/kev/project
+        const cwd = dir.name.replace(/^-/, "/").replace(/-/g, "/");
+
+        try {
+          const files = readdirSync(projectPath);
+          for (const file of files) {
+            // Session files are UUID.jsonl
+            const match = file.match(/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
+            if (!match) continue;
+
+            const filePath = join(projectPath, file);
+            try {
+              const fileStat = statSync(filePath);
+              sessions.push({
+                sessionId: match[1],
+                project: dir.name,
+                cwd,
+                lastModified: fileStat.mtimeMs,
+              });
+            } catch {
+              // Skip files we can't stat
+            }
+          }
+        } catch {
+          // Skip dirs we can't read
+        }
+      }
+    } catch {
+      return c.json([]);
+    }
+
+    // Sort by most recently modified first, limit to 50
+    sessions.sort((a, b) => b.lastModified - a.lastModified);
+    return c.json(sessions.slice(0, 50));
   });
 
   // ─── Available backends ─────────────────────────────────────
