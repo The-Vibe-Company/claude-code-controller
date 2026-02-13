@@ -1121,6 +1121,7 @@ describe("GET /api/fs/diff", () => {
   });
 
   it("returns unified diff for a file", async () => {
+    // Validates that /api/fs/diff uses the repository default branch as base (origin/main here).
     const diffOutput = `diff --git a/file.ts b/file.ts
 --- a/file.ts
 +++ b/file.ts
@@ -1148,6 +1149,7 @@ describe("GET /api/fs/diff", () => {
   });
 
   it("returns no-index diff for untracked files", async () => {
+    // Untracked files have no base-branch diff content, so API must fallback to a full-file no-index diff.
     const untrackedDiff = `diff --git a/new.txt b/new.txt
 new file mode 100644
 index 0000000..e69de29
@@ -1180,6 +1182,7 @@ index 0000000..e69de29
   });
 
   it("falls back to local default branch when origin HEAD is unavailable", async () => {
+    // Ensures fallback chain works when symbolic-ref fails (e.g. no origin/HEAD): use local fallback branch.
     const diffOutput = `diff --git a/file.ts b/file.ts
 --- a/file.ts
 +++ b/file.ts

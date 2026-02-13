@@ -81,6 +81,7 @@ describe("DiffPanel", () => {
   });
 
   it("fetches diff when a file is selected", async () => {
+    // Validates that file diffs are fetched and rendered, including the baseline context label in the header.
     const diffOutput = `diff --git a/src/app.ts b/src/app.ts
 --- a/src/app.ts
 +++ b/src/app.ts
