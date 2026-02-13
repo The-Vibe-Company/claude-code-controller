@@ -604,8 +604,8 @@ export function HomePage() {
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-60">
                   <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.378A2.5 2.5 0 007.5 8h1a1 1 0 010 2h-1A2.5 2.5 0 005 12.5v.128a2.25 2.25 0 101.5 0V12.5a1 1 0 011-1h1a2.5 2.5 0 000-5h-1a1 1 0 01-1-1V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
                 </svg>
-                <span className="max-w-[100px] sm:max-w-[160px] truncate font-mono-code">
-                  {worktreeBranch || gitRepoInfo.currentBranch}
+                <span className={`max-w-[100px] sm:max-w-[160px] truncate ${worktreeBranch ? "font-mono-code" : ""}`}>
+                  {worktreeBranch || "No branch"}
                 </span>
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
                   <path d="M4 6l4 4 4-4" />
@@ -640,6 +640,21 @@ export function HomePage() {
 
                       return (
                         <>
+                          {/* No branch option */}
+                          {!filter && (
+                            <button
+                              onClick={() => {
+                                setWorktreeBranch("");
+                                setIsNewBranch(false);
+                                setShowBranchDropdown(false);
+                              }}
+                              className={`w-full px-3 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 ${
+                                !worktreeBranch ? "text-cc-primary font-medium" : "text-cc-fg"
+                              }`}
+                            >
+                              <span>No branch (use directory as-is)</span>
+                            </button>
+                          )}
                           {/* Local branches */}
                           {localBranches.length > 0 && (
                             <>
