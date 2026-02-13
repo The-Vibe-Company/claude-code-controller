@@ -4,7 +4,7 @@ import { resolveBinary } from "./path-resolver.js";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
@@ -40,6 +40,86 @@ function execCaptureStdout(
     }
     throw err;
   }
+}
+
+interface CachedCodexModel {
+  slug: string;
+  display_name?: string;
+  description?: string;
+  visibility?: string;
+  priority?: number;
+}
+
+function getCodexModelsFromCachePath(cachePath: string): Array<{
+  value: string;
+  label: string;
+  description: string;
+}> {
+  const raw = readFileSync(cachePath, "utf-8");
+  const cache = JSON.parse(raw) as { models?: CachedCodexModel[] };
+  const models = Array.isArray(cache.models) ? cache.models : [];
+  return models
+    .filter((m) => m.visibility === "list")
+    .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+    .map((m) => ({
+      value: m.slug,
+      label: m.display_name || m.slug,
+      description: m.description || "",
+    }));
+}
+
+function getCodexCachePathsByRecency(): string[] {
+  const cachePaths = new Set<string>();
+  const home = homedir();
+  cachePaths.add(join(home, ".codex", "models_cache.json"));
+  if (process.env.CODEX_HOME?.trim()) {
+    cachePaths.add(join(process.env.CODEX_HOME, "models_cache.json"));
+  }
+
+  const companionCodexHome = join(home, ".companion", "codex-home");
+  if (existsSync(companionCodexHome)) {
+    for (const entry of readdirSync(companionCodexHome, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      cachePaths.add(join(companionCodexHome, entry.name, "models_cache.json"));
+    }
+  }
+
+  return Array.from(cachePaths)
+    .filter((p) => existsSync(p))
+    .sort((a, b) => {
+      const aMtime = statSync(a).mtimeMs;
+      const bMtime = statSync(b).mtimeMs;
+      return bMtime - aMtime;
+    });
+}
+
+function getLatestCodexModelsFromCache(): {
+  models: Array<{ value: string; label: string; description: string }>;
+  sourceCachePath: string;
+  parseFailed: boolean;
+} | null {
+  const candidates = getCodexCachePathsByRecency();
+  let parseFailed = false;
+  for (const cachePath of candidates) {
+    try {
+      return {
+        models: getCodexModelsFromCachePath(cachePath),
+        sourceCachePath: cachePath,
+        parseFailed: false,
+      };
+    } catch {
+      parseFailed = true;
+      // Try next cache candidate.
+    }
+  }
+  if (parseFailed) {
+    return {
+      models: [],
+      sourceCachePath: "",
+      parseFailed: true,
+    };
+  }
+  return null;
 }
 
 export function createRoutes(
@@ -306,39 +386,52 @@ export function createRoutes(
     const backendId = c.req.param("id");
 
     if (backendId === "codex") {
-      // Read Codex model list from its local cache file
-      const cachePath = join(homedir(), ".codex", "models_cache.json");
-      if (!existsSync(cachePath)) {
+      const cachedModels = getLatestCodexModelsFromCache();
+      if (!cachedModels) {
         return c.json({ error: "Codex models cache not found. Run codex once to populate it." }, 404);
       }
-      try {
-        const raw = readFileSync(cachePath, "utf-8");
-        const cache = JSON.parse(raw) as {
-          models: Array<{
-            slug: string;
-            display_name?: string;
-            description?: string;
-            visibility?: string;
-            priority?: number;
-          }>;
-        };
-        // Only return visible models, sorted by priority
-        const models = cache.models
-          .filter((m) => m.visibility === "list")
-          .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
-          .map((m) => ({
-            value: m.slug,
-            label: m.display_name || m.slug,
-            description: m.description || "",
-          }));
-        return c.json(models);
-      } catch (e) {
+      if (cachedModels.parseFailed) {
         return c.json({ error: "Failed to parse Codex models cache" }, 500);
       }
+      return c.json(cachedModels.models);
     }
 
     // Claude models are hardcoded on the frontend
     return c.json({ error: "Use frontend defaults for this backend" }, 404);
+  });
+
+  api.post("/backends/:id/models/refresh", (c) => {
+    const backendId = c.req.param("id");
+    if (backendId !== "codex") {
+      return c.json({ error: "Refresh is only supported for codex backend" }, 404);
+    }
+
+    const codexBinary = resolveBinary("codex");
+    if (!codexBinary) {
+      return c.json({ error: "Codex CLI not found in PATH" }, 404);
+    }
+
+    try {
+      execCaptureStdout(
+        `"${codexBinary}" exec --skip-git-repo-check -C /tmp "Reply with OK"`,
+        {
+          cwd: "/tmp",
+          encoding: "utf-8",
+          timeout: 30_000,
+        },
+      );
+    } catch {
+      // Even if the command fails, a partial refresh may still have updated cache files.
+    }
+
+    const cachedModels = getLatestCodexModelsFromCache();
+    if (!cachedModels) {
+      return c.json({ error: "Codex models cache not found after refresh" }, 404);
+    }
+    if (cachedModels.parseFailed) {
+      return c.json({ error: "Failed to parse Codex models cache after refresh" }, 500);
+    }
+    return c.json(cachedModels.models);
   });
 
   // ─── Containers ─────────────────────────────────────────────────

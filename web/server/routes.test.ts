@@ -23,7 +23,9 @@ vi.mock("node:fs", async (importOriginal) => {
   return {
     ...actual,
     existsSync: vi.fn(() => false),
+    readdirSync: vi.fn(() => []),
     readFileSync: vi.fn(() => ""),
+    statSync: vi.fn(() => ({ mtimeMs: 0 })),
   };
 });
 
@@ -87,7 +89,7 @@ vi.mock("./update-checker.js", () => ({
 
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRoutes } from "./routes.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
@@ -1284,9 +1286,68 @@ describe("GET /api/backends/:id/models", () => {
     expect(json.error).toContain("Failed to parse");
   });
 
+  it("prefers the newest Companion session cache when newer than ~/.codex cache", async () => {
+    const globalCache = JSON.stringify({
+      models: [
+        { slug: "gpt-5.2-codex", display_name: "gpt-5.2-codex", description: "Older", visibility: "list", priority: 1 },
+      ],
+    });
+    const companionCache = JSON.stringify({
+      models: [
+        { slug: "gpt-5.3-codex-spark", display_name: "gpt-5.3-codex-spark", description: "New", visibility: "list", priority: 0 },
+      ],
+    });
+
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readdirSync).mockReturnValue([
+      { name: "session-a", isDirectory: () => true },
+    ] as any);
+    vi.mocked(statSync).mockImplementation((path) => (
+      String(path).includes("/.companion/") ? { mtimeMs: 200 } : { mtimeMs: 100 }
+    ) as any);
+    vi.mocked(readFileSync).mockImplementation((path) => (
+      String(path).includes("/.companion/") ? companionCache : globalCache
+    ) as any);
+
+    const res = await app.request("/api/backends/codex/models", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual([
+      { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", description: "New" },
+    ]);
+  });
+
   it("returns 404 for claude backend (uses frontend defaults)", async () => {
     const res = await app.request("/api/backends/claude/models", { method: "GET" });
 
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/backends/:id/models/refresh", () => {
+  it("refreshes codex model cache and returns refreshed models", async () => {
+    const cacheContent = JSON.stringify({
+      models: [
+        { slug: "gpt-5.3-codex-spark", display_name: "gpt-5.3-codex-spark", description: "Fast", visibility: "list", priority: 0 },
+      ],
+    });
+    mockResolveBinary.mockReturnValue("/usr/bin/codex");
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(cacheContent);
+
+    const res = await app.request("/api/backends/codex/models/refresh", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(execSync).toHaveBeenCalled();
+    const json = await res.json();
+    expect(json).toEqual([
+      { value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", description: "Fast" },
+    ]);
+  });
+
+  it("returns 404 for non-codex backend", async () => {
+    const res = await app.request("/api/backends/claude/models/refresh", { method: "POST" });
     expect(res.status).toBe(404);
   });
 });

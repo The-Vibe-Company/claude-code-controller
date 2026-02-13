@@ -300,6 +300,8 @@ export const api = {
   getBackends: () => get<BackendInfo[]>("/backends"),
   getBackendModels: (backendId: string) =>
     get<BackendModelInfo[]>(`/backends/${encodeURIComponent(backendId)}/models`),
+  refreshBackendModels: (backendId: string) =>
+    post<BackendModelInfo[]>(`/backends/${encodeURIComponent(backendId)}/models/refresh`),
 
   // Containers
   getContainerStatus: () => get<ContainerStatus>("/containers/status"),

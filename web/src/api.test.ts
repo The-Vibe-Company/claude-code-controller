@@ -160,6 +160,23 @@ describe("listDirs", () => {
 });
 
 // ===========================================================================
+// refreshBackendModels
+// ===========================================================================
+describe("refreshBackendModels", () => {
+  it("sends POST to backend model refresh endpoint", async () => {
+    const models = [{ value: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", description: "Fastest" }];
+    mockFetch.mockResolvedValueOnce(mockResponse(models));
+
+    const result = await api.refreshBackendModels("codex");
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/backends/codex/models/refresh");
+    expect(opts.method).toBe("POST");
+    expect(result).toEqual(models);
+  });
+});
+
+// ===========================================================================
 // createEnv
 // ===========================================================================
 describe("createEnv", () => {

@@ -47,6 +47,7 @@ export const CLAUDE_MODELS: ModelOption[] = [
 
 export const CODEX_MODELS: ModelOption[] = [
   { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", icon: "\u2733" },
+  { value: "gpt-5.3-codex-spark", label: "GPT-5.3 Spark", icon: "\u2726" },
   { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", icon: "\u25C6" },
   { value: "gpt-5.1-codex-max", label: "GPT-5.1 Max", icon: "\u25A0" },
   { value: "gpt-5.2", label: "GPT-5.2", icon: "\u25CF" },

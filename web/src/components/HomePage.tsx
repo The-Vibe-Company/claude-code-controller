@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "../store.js";
-import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
+import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type BackendModelInfo } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -48,6 +48,7 @@ export function HomePage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const [codexInternetAccess, setCodexInternetAccess] = useState(() =>
     localStorage.getItem("cc-codex-internet-access") === "1",
   );
@@ -119,6 +120,16 @@ export function HomePage() {
     setMode(getDefaultMode(newBackend));
   }
 
+  function applyFetchedCodexModels(models: BackendModelInfo[]) {
+    if (models.length === 0) return;
+    const options = toModelOptions(models);
+    setDynamicModels(options);
+    // If current model isn't in the list, switch to first
+    if (!options.some((m) => m.value === model)) {
+      setModel(options[0].value);
+    }
+  }
+
   // Fetch dynamic models for the selected backend
   useEffect(() => {
     if (backend !== "codex") {
@@ -126,18 +137,25 @@ export function HomePage() {
       return;
     }
     api.getBackendModels(backend).then((models) => {
-      if (models.length > 0) {
-        const options = toModelOptions(models);
-        setDynamicModels(options);
-        // If current model isn't in the list, switch to first
-        if (!options.some((m) => m.value === model)) {
-          setModel(options[0].value);
-        }
-      }
+      applyFetchedCodexModels(models);
     }).catch(() => {
       // Fall back to hardcoded models silently
     });
   }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleRefreshModels() {
+    if (backend !== "codex" || refreshingModels) return;
+    setRefreshingModels(true);
+    setError("");
+    try {
+      const models = await api.refreshBackendModels(backend);
+      applyFetchedCodexModels(models);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefreshingModels(false);
+    }
+  }
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -813,6 +831,29 @@ export function HomePage() {
               </div>
             )}
           </div>
+
+          {/* Codex model refresh */}
+          {backend === "codex" && (
+            <button
+              onClick={handleRefreshModels}
+              disabled={refreshingModels}
+              title="Refresh model list from Codex"
+              className={`group flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border transition-all ${
+                refreshingModels
+                  ? "border-cc-primary/30 bg-cc-primary/10 text-cc-primary cursor-wait"
+                  : "border-cc-border text-cc-muted hover:text-cc-fg hover:border-cc-primary/30 hover:bg-cc-primary/5 cursor-pointer"
+              }`}
+            >
+              {refreshingModels ? (
+                <span className="w-3 h-3 border-2 border-cc-primary/30 border-t-cc-primary rounded-full animate-spin" />
+              ) : (
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-70 group-hover:rotate-180 transition-transform duration-300">
+                  <path d="M8 2a6 6 0 014.95 2.6.75.75 0 11-1.24.84A4.5 4.5 0 103.62 8h1.63a.75.75 0 110 1.5H2.78a.75.75 0 01-.75-.75V6.28a.75.75 0 111.5 0v1.02A6 6 0 018 2z" />
+                </svg>
+              )}
+              <span>{refreshingModels ? "Refreshing..." : "Refresh models"}</span>
+            </button>
+          )}
 
           {/* Model selector */}
           <div className="relative" ref={modelDropdownRef}>
