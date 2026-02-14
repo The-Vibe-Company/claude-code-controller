@@ -1,0 +1,10 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "syntax"],
+  "triggerOnUpdates": true,
+  "fixWithAI": true,
+  "statusCheck": true,
+  "statusCommentsEnabled": true,
+  "ignoreKeywords": "typo\ncopy edit\nchore(release)",
+  "instructions": "Prioritize high-signal issues: bugs, protocol regressions, state-loss risks, security flaws, and missing tests tied to changed behavior. Avoid style-only nitpicks unless they hide correctness problems."
+}
