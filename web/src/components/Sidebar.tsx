@@ -388,6 +388,24 @@ export function Sidebar() {
         </button>
         <button
           onClick={() => {
+            window.location.hash = "#/skills";
+            if (window.innerWidth < 768) {
+              useStore.getState().setSidebarOpen(false);
+            }
+          }}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm transition-colors cursor-pointer ${
+            hash === "#/skills"
+              ? "bg-cc-active text-cc-fg"
+              : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+          }`}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+            <path d="M8.5 1.5A.5.5 0 019 1h0a.5.5 0 00-.5.5v5.243a4.5 4.5 0 11-1 0V1.5A.5.5 0 018 1h0a.5.5 0 01.5.5z" />
+          </svg>
+          <span>Skills</span>
+        </button>
+        <button
+          onClick={() => {
             useStore.getState().closeTerminal();
             window.location.hash = "#/settings";
           }}

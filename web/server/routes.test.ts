@@ -1,6 +1,17 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
 // Mock env-manager and git-utils modules before any imports
+// Mock skills-manager module (lazy-imported by skills routes)
+const mockListAllSkills = vi.hoisted(() => vi.fn());
+const mockInstallSkill = vi.hoisted(() => vi.fn());
+const mockUninstallSkill = vi.hoisted(() => vi.fn());
+
+vi.mock("./skills-manager.js", () => ({
+  listAllSkills: mockListAllSkills,
+  installSkill: mockInstallSkill,
+  uninstallSkill: mockUninstallSkill,
+}));
+
 vi.mock("./env-manager.js", () => ({
   listEnvs: vi.fn(() => []),
   getEnv: vi.fn(() => null),
@@ -1441,5 +1452,209 @@ describe("GET /api/sessions/:id/usage-limits", () => {
     const json = await res.json();
     expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
     expect(mockGetUsageLimits).toHaveBeenCalled();
+  });
+});
+
+// ─── Skills ──────────────────────────────────────────────────────────────────
+
+describe("GET /api/skills", () => {
+  it("returns marketplace and installed skills", async () => {
+    // Verifies the skills listing endpoint delegates to listAllSkills
+    // and passes through the cwd query parameter
+    const mockResponse = {
+      plugins: [{ name: "test-plugin", description: "A test plugin", skills: [], commands: [], agents: [], installed: false }],
+      userSkills: [],
+      projectSkills: [],
+    };
+    mockListAllSkills.mockReturnValue(mockResponse);
+
+    const res = await app.request("/api/skills?cwd=/test-project", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual(mockResponse);
+    expect(mockListAllSkills).toHaveBeenCalledWith("/test-project");
+  });
+
+  it("passes undefined cwd when not provided", async () => {
+    // Ensures that when no cwd is supplied, undefined is passed
+    // so marketplace-only skills are still returned
+    mockListAllSkills.mockReturnValue({ plugins: [], userSkills: [], projectSkills: [] });
+
+    const res = await app.request("/api/skills", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(mockListAllSkills).toHaveBeenCalledWith(undefined);
+  });
+
+  it("returns 500 on internal error", async () => {
+    mockListAllSkills.mockImplementation(() => { throw new Error("scan failed"); });
+
+    const res = await app.request("/api/skills", { method: "GET" });
+
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error).toBe("scan failed");
+  });
+});
+
+describe("POST /api/skills/install", () => {
+  it("returns 400 when pluginName is missing", async () => {
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "user" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("pluginName and scope are required");
+  });
+
+  it("returns 400 when scope is missing", async () => {
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pluginName: "test-plugin" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("pluginName and scope are required");
+  });
+
+  it("installs all skills from a plugin at user scope", async () => {
+    // Verifies that install-all passes the correct options through to installSkill
+    mockInstallSkill.mockReturnValue({ installed: ["skill-a", "skill-b"] });
+
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pluginName: "test-plugin", scope: "user", cwd: "/my-project" }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.installed).toEqual(["skill-a", "skill-b"]);
+    expect(mockInstallSkill).toHaveBeenCalledWith({
+      pluginName: "test-plugin",
+      skillName: undefined,
+      scope: "user",
+      cwd: "/my-project",
+      dualInstall: undefined,
+    });
+  });
+
+  it("installs a single skill by name", async () => {
+    // Verifies individual skill install passes skillName correctly
+    mockInstallSkill.mockReturnValue({ installed: ["code-reviewer"] });
+
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pluginName: "feature-dev", skillName: "code-reviewer", scope: "user" }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.installed).toEqual(["code-reviewer"]);
+  });
+
+  it("falls back to process.cwd() when no cwd is provided for project scope", async () => {
+    // Ensures project-level installs work even without explicit cwd
+    // by falling back to process.cwd() server-side
+    mockInstallSkill.mockReturnValue({ installed: ["my-skill"] });
+
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pluginName: "test-plugin", scope: "project" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockInstallSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "project", cwd: process.cwd() }),
+    );
+  });
+
+  it("returns 400 when installSkill throws", async () => {
+    // Verifies error propagation when a skill isn't found in the plugin
+    mockInstallSkill.mockImplementation(() => {
+      throw new Error('Skill "missing" not found in plugin "test-plugin"');
+    });
+
+    const res = await app.request("/api/skills/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pluginName: "test-plugin", skillName: "missing", scope: "user" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("not found");
+  });
+});
+
+describe("POST /api/skills/uninstall", () => {
+  it("returns 400 when name is missing", async () => {
+    const res = await app.request("/api/skills/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "user" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("name and scope are required");
+  });
+
+  it("uninstalls a user-scoped skill", async () => {
+    mockUninstallSkill.mockReturnValue({ removed: true });
+
+    const res = await app.request("/api/skills/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "my-skill", scope: "user" }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.removed).toBe(true);
+    expect(mockUninstallSkill).toHaveBeenCalledWith({
+      name: "my-skill",
+      scope: "user",
+      cwd: process.cwd(),
+    });
+  });
+
+  it("uninstalls a project-scoped skill with explicit cwd", async () => {
+    mockUninstallSkill.mockReturnValue({ removed: true });
+
+    const res = await app.request("/api/skills/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "my-skill", scope: "project", cwd: "/my-project" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockUninstallSkill).toHaveBeenCalledWith({
+      name: "my-skill",
+      scope: "project",
+      cwd: "/my-project",
+    });
+  });
+
+  it("returns 400 when uninstallSkill throws", async () => {
+    mockUninstallSkill.mockImplementation(() => { throw new Error("permission denied"); });
+
+    const res = await app.request("/api/skills/uninstall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "locked-skill", scope: "user" }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toBe("permission denied");
   });
 });

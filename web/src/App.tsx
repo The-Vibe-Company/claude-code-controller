@@ -14,6 +14,8 @@ import { SettingsPage } from "./components/SettingsPage.js";
 import { EnvManager } from "./components/EnvManager.js";
 import { TerminalPage } from "./components/TerminalPage.js";
 
+import { SkillsPage } from "./components/SkillsPage.js";
+
 function useHash() {
   return useSyncExternalStore(
     (cb) => { window.addEventListener("hashchange", cb); return () => window.removeEventListener("hashchange", cb); },
@@ -32,7 +34,8 @@ export default function App() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
-  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
+  const isSkillsPage = hash === "#/skills";
+  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage && !isSkillsPage;
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -104,6 +107,12 @@ export default function App() {
           {isEnvironmentsPage && (
             <div className="absolute inset-0">
               <EnvManager embedded />
+            </div>
+          )}
+
+          {isSkillsPage && (
+            <div className="absolute inset-0">
+              <SkillsPage />
             </div>
           )}
 

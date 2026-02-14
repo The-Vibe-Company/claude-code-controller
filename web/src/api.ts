@@ -183,6 +183,37 @@ export interface AppSettings {
   openrouterModel: string;
 }
 
+export interface SkillInfo {
+  name: string;
+  description: string;
+  source: "marketplace" | "user" | "project";
+  pluginName?: string;
+  type: "skill" | "command" | "agent";
+  path: string;
+  frontmatter: Record<string, unknown>;
+  installed: boolean;
+  installedScope?: "user" | "project";
+  installedPath?: string;
+}
+
+export interface PluginInfo {
+  name: string;
+  description: string;
+  author?: { name: string; email?: string };
+  skills: SkillInfo[];
+  commands: SkillInfo[];
+  agents: SkillInfo[];
+  readme?: string;
+  installed: boolean;
+  installedVersion?: string;
+}
+
+export interface SkillsResponse {
+  plugins: PluginInfo[];
+  userSkills: SkillInfo[];
+  projectSkills: SkillInfo[];
+}
+
 export interface GitHubPRInfo {
   number: number;
   title: string;
@@ -351,4 +382,22 @@ export const api = {
   forceCheckForUpdate: () => post<UpdateInfo>("/update-check"),
   triggerUpdate: () =>
     post<{ ok: boolean; message: string }>("/update"),
+
+  // Skills management
+  listSkills: (cwd?: string) =>
+    get<SkillsResponse>(
+      `/skills${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`,
+    ),
+  installSkill: (opts: {
+    pluginName: string;
+    skillName?: string;
+    scope: "user" | "project";
+    cwd?: string;
+    dualInstall?: boolean;
+  }) => post<{ installed: string[] }>("/skills/install", opts),
+  uninstallSkill: (opts: {
+    name: string;
+    scope: "user" | "project";
+    cwd?: string;
+  }) => post<{ removed: boolean }>("/skills/uninstall", opts),
 };

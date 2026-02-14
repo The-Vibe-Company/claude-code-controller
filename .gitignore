@@ -10,3 +10,5 @@ web/dist/
 .env
 .dev-*.pid
 .dev-*.log
+.claude/
+.agents/

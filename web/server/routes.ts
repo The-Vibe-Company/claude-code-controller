@@ -1039,5 +1039,49 @@ export function createRoutes(
     return c.json({ ok: true });
   });
 
+  // ─── Skills Management ──────────────────────────────────────────────
+
+  api.get("/skills", async (c) => {
+    const { listAllSkills } = await import("./skills-manager.js");
+    const cwd = c.req.query("cwd");
+    try {
+      return c.json(listAllSkills(cwd || undefined));
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  });
+
+  api.post("/skills/install", async (c) => {
+    const { installSkill } = await import("./skills-manager.js");
+    const body = await c.req.json().catch(() => ({}));
+    const { pluginName, skillName, scope, dualInstall } = body;
+    const effectiveCwd = body.cwd || process.cwd();
+    if (!pluginName || !scope) {
+      return c.json({ error: "pluginName and scope are required" }, 400);
+    }
+    try {
+      const result = installSkill({ pluginName, skillName, scope, cwd: effectiveCwd, dualInstall });
+      return c.json(result);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  api.post("/skills/uninstall", async (c) => {
+    const { uninstallSkill } = await import("./skills-manager.js");
+    const body = await c.req.json().catch(() => ({}));
+    const { name, scope } = body;
+    const effectiveCwd = body.cwd || process.cwd();
+    if (!name || !scope) {
+      return c.json({ error: "name and scope are required" }, 400);
+    }
+    try {
+      const result = uninstallSkill({ name, scope, cwd: effectiveCwd });
+      return c.json(result);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
   return api;
 }
