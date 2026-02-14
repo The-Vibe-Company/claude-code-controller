@@ -23,6 +23,9 @@ import { getSettings } from "./settings-manager.js";
 import { PRPoller } from "./pr-poller.js";
 import { startPeriodicCheck, setServiceMode } from "./update-checker.js";
 import { isRunningAsService } from "./service.js";
+import * as notificationManager from "./notification-manager.js";
+import { dispatchNotifications } from "./notification-sender.js";
+import type { NotificationEvent } from "./notification-types.js";
 import type { SocketData } from "./ws-bridge.js";
 import type { ServerWebSocket } from "bun";
 
@@ -93,6 +96,23 @@ wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
     sessionNames.setName(sessionId, title);
     wsBridge.broadcastNameUpdate(sessionId, title);
   }
+});
+
+// Dispatch server-side notifications on session events
+wsBridge.onNotificationTriggerCallback((trigger, sessionId, sessionCwd, message) => {
+  const providers = notificationManager.getEnabledForTrigger(trigger);
+  if (providers.length === 0) return;
+
+  const event: NotificationEvent = {
+    trigger,
+    sessionId,
+    sessionName: sessionNames.getName(sessionId) || sessionCwd,
+    message,
+  };
+
+  dispatchNotifications(providers, event).catch((err) => {
+    console.error("[server] Notification dispatch error:", err);
+  });
 });
 
 console.log(`[server] Session persistence: ${sessionStore.directory}`);
