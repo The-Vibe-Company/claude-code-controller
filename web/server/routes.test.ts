@@ -204,6 +204,36 @@ describe("POST /api/sessions/create", () => {
     );
   });
 
+  it("passes env vars to git operations when envSlug is provided with branch", async () => {
+    vi.mocked(envManager.getEnv).mockReturnValue({
+      name: "Production",
+      slug: "production",
+      variables: { GH_TOKEN: "ghp_abc123" },
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "develop",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", branch: "main", envSlug: "production" }),
+    });
+
+    expect(res.status).toBe(200);
+    const expectedEnv = { GH_TOKEN: "ghp_abc123" };
+    expect(gitUtils.getRepoInfo).toHaveBeenCalledWith("/repo", { env: expectedEnv });
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo", { env: expectedEnv });
+    expect(gitUtils.checkoutBranch).toHaveBeenCalledWith("/repo", "main", { env: expectedEnv });
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo", { env: expectedEnv });
+  });
+
   it("sets up a worktree when branch is specified", async () => {
     vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
       repoRoot: "/repo",
@@ -226,11 +256,12 @@ describe("POST /api/sessions/create", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(gitUtils.getRepoInfo).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.getRepoInfo).toHaveBeenCalledWith("/repo", { env: undefined });
     expect(gitUtils.ensureWorktree).toHaveBeenCalledWith("/repo", "feat-branch", {
       baseBranch: "main",
       createBranch: undefined,
       forceNew: true,
+      env: undefined,
     });
     expect(launcher.launch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -270,9 +301,9 @@ describe("POST /api/sessions/create", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo", { env: undefined });
     expect(gitUtils.checkoutBranch).not.toHaveBeenCalled();
-    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo", { env: undefined });
   });
 
   it("fetches, checks out selected branch, then pulls before create", async () => {
@@ -291,9 +322,9 @@ describe("POST /api/sessions/create", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo");
-    expect(gitUtils.checkoutBranch).toHaveBeenCalledWith("/repo", "main");
-    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo", { env: undefined });
+    expect(gitUtils.checkoutBranch).toHaveBeenCalledWith("/repo", "main", { env: undefined });
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo", { env: undefined });
     expect(vi.mocked(gitUtils.gitFetch).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(gitUtils.checkoutBranch).mock.invocationCallOrder[0],
     );
@@ -911,7 +942,81 @@ describe("POST /api/git/worktree", () => {
     expect(gitUtils.ensureWorktree).toHaveBeenCalledWith("/repo", "feat", {
       baseBranch: "main",
       createBranch: undefined,
+      env: undefined,
     });
+  });
+});
+
+describe("POST /api/git/worktree with envSlug", () => {
+  it("passes env vars from envSlug to ensureWorktree", async () => {
+    vi.mocked(envManager.getEnv).mockReturnValue({
+      name: "CI",
+      slug: "ci",
+      variables: { GH_TOKEN: "ghp_test" },
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+    vi.mocked(gitUtils.ensureWorktree).mockReturnValue({
+      worktreePath: "/wt/feat",
+      branch: "feat",
+      actualBranch: "feat",
+      isNew: true,
+    });
+
+    const res = await app.request("/api/git/worktree", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoRoot: "/repo", branch: "feat", envSlug: "ci" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.ensureWorktree).toHaveBeenCalledWith("/repo", "feat", {
+      baseBranch: undefined,
+      createBranch: undefined,
+      env: { GH_TOKEN: "ghp_test" },
+    });
+  });
+});
+
+describe("POST /api/git/fetch with envSlug", () => {
+  it("passes env vars from envSlug to gitFetch", async () => {
+    vi.mocked(envManager.getEnv).mockReturnValue({
+      name: "CI",
+      slug: "ci",
+      variables: { GH_TOKEN: "ghp_test" },
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+
+    const res = await app.request("/api/git/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoRoot: "/repo", envSlug: "ci" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo", { env: { GH_TOKEN: "ghp_test" } });
+  });
+});
+
+describe("POST /api/git/pull with envSlug", () => {
+  it("passes env vars from envSlug to gitPull", async () => {
+    vi.mocked(envManager.getEnv).mockReturnValue({
+      name: "CI",
+      slug: "ci",
+      variables: { GH_TOKEN: "ghp_test" },
+      createdAt: 1000,
+      updatedAt: 1000,
+    });
+
+    const res = await app.request("/api/git/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", envSlug: "ci" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo", { env: { GH_TOKEN: "ghp_test" } });
   });
 });
 

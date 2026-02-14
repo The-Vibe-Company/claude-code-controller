@@ -118,7 +118,7 @@ export function createRoutes(
 
       // If worktree is requested, set up a worktree for the selected branch
       if (body.useWorktree && body.branch && cwd) {
-        const repoInfo = gitUtils.getRepoInfo(cwd);
+        const repoInfo = gitUtils.getRepoInfo(cwd, { env: envVars });
         if (repoInfo) {
           const result = gitUtils.ensureWorktree(
             repoInfo.repoRoot,
@@ -127,6 +127,7 @@ export function createRoutes(
               baseBranch: repoInfo.defaultBranch,
               createBranch: body.createBranch,
               forceNew: true,
+              env: envVars,
             },
           );
           cwd = result.worktreePath;
@@ -140,18 +141,18 @@ export function createRoutes(
         }
       } else if (body.branch && cwd) {
         // Non-worktree: checkout the selected branch in-place
-        const repoInfo = gitUtils.getRepoInfo(cwd);
+        const repoInfo = gitUtils.getRepoInfo(cwd, { env: envVars });
         if (repoInfo) {
-          const fetchResult = gitUtils.gitFetch(repoInfo.repoRoot);
+          const fetchResult = gitUtils.gitFetch(repoInfo.repoRoot, { env: envVars });
           if (!fetchResult.success) {
             throw new Error(`git fetch failed before session create: ${fetchResult.output}`);
           }
 
           if (repoInfo.currentBranch !== body.branch) {
-            gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+            gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch, { env: envVars });
           }
 
-          const pullResult = gitUtils.gitPull(repoInfo.repoRoot);
+          const pullResult = gitUtils.gitPull(repoInfo.repoRoot, { env: envVars });
           if (!pullResult.success) {
             // Don't fail session creation if pull fails (e.g. no upstream tracking)
             console.warn(`[routes] git pull warning (non-fatal): ${pullResult.output}`);
@@ -737,13 +738,15 @@ export function createRoutes(
 
   api.post("/git/worktree", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const { repoRoot, branch, baseBranch, createBranch } = body;
+    const { repoRoot, branch, baseBranch, createBranch, envSlug } = body;
     if (!repoRoot || !branch)
       return c.json({ error: "repoRoot and branch required" }, 400);
     try {
+      const env = envSlug ? envManager.getEnv(envSlug)?.variables : undefined;
       const result = gitUtils.ensureWorktree(repoRoot, branch, {
         baseBranch,
         createBranch,
+        env,
       });
       return c.json(result);
     } catch (e: unknown) {
@@ -762,16 +765,18 @@ export function createRoutes(
 
   api.post("/git/fetch", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const { repoRoot } = body;
+    const { repoRoot, envSlug } = body;
     if (!repoRoot) return c.json({ error: "repoRoot required" }, 400);
-    return c.json(gitUtils.gitFetch(repoRoot));
+    const env = envSlug ? envManager.getEnv(envSlug)?.variables : undefined;
+    return c.json(gitUtils.gitFetch(repoRoot, { env }));
   });
 
   api.post("/git/pull", async (c) => {
     const body = await c.req.json().catch(() => ({}));
-    const { cwd } = body;
+    const { cwd, envSlug } = body;
     if (!cwd) return c.json({ error: "cwd required" }, 400);
-    const result = gitUtils.gitPull(cwd);
+    const env = envSlug ? envManager.getEnv(envSlug)?.variables : undefined;
+    const result = gitUtils.gitPull(cwd, { env });
     // Return refreshed ahead/behind counts
     let git_ahead = 0,
       git_behind = 0;

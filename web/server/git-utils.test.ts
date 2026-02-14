@@ -831,3 +831,63 @@ describe("getBranchStatus", () => {
     expect(status.behind).toBe(0);
   });
 });
+
+// ─── Environment variable threading ──────────────────────────────────────────
+
+describe("env threading", () => {
+  it("passes env to execSync when provided to gitFetch", () => {
+    mockGitCommand("fetch --prune", "");
+
+    gitUtils.gitFetch("/repo", { env: { GH_TOKEN: "abc" } });
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("fetch --prune"),
+      expect.objectContaining({
+        env: expect.objectContaining({ GH_TOKEN: "abc" }),
+      }),
+    );
+  });
+
+  it("does not set env when not provided to gitFetch", () => {
+    mockGitCommand("fetch --prune", "");
+
+    gitUtils.gitFetch("/repo");
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("fetch --prune"),
+      expect.objectContaining({
+        env: undefined,
+      }),
+    );
+  });
+
+  it("passes env to execSync when provided to gitPull", () => {
+    mockGitCommand("pull", "");
+
+    gitUtils.gitPull("/repo", { env: { GH_TOKEN: "abc" } });
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git pull"),
+      expect.objectContaining({
+        env: expect.objectContaining({ GH_TOKEN: "abc" }),
+      }),
+    );
+  });
+
+  it("passes env through getRepoInfo to execSync", () => {
+    mockGitCommands({
+      "rev-parse --show-toplevel": "/repo",
+      "rev-parse --abbrev-ref HEAD": "main",
+      "rev-parse --git-dir": ".git",
+      "symbolic-ref refs/remotes/origin/HEAD": "refs/remotes/origin/main",
+    });
+
+    gitUtils.getRepoInfo("/repo", { env: { GH_TOKEN: "xyz" } });
+
+    // All execSync calls should have env set
+    for (const call of mockExecSync.mock.calls) {
+      expect(call[1]).toHaveProperty("env");
+      expect(call[1].env).toEqual(expect.objectContaining({ GH_TOKEN: "xyz" }));
+    }
+  });
+});
