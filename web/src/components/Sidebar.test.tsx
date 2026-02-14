@@ -338,6 +338,39 @@ describe("Sidebar", () => {
     expect(archiveButton).toBeInTheDocument();
   });
 
+  it("archive action button is visible by default on mobile and hover-only on desktop", () => {
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+
+    render(<Sidebar />);
+    const archiveButton = screen.getByTitle("Archive session");
+
+    expect(archiveButton).toHaveClass("opacity-100");
+    expect(archiveButton).toHaveClass("sm:opacity-0");
+    expect(archiveButton).toHaveClass("sm:group-hover:opacity-100");
+  });
+
+  it("permission badge uses mobile-friendly positioning and hover behavior", () => {
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+      pendingPermissions: new Map([["s1", new Map([["p1", {}]])]]),
+    });
+
+    render(<Sidebar />);
+    const permissionBadge = screen.getByText("1");
+
+    expect(permissionBadge).toHaveClass("right-8");
+    expect(permissionBadge).toHaveClass("sm:right-2");
+    expect(permissionBadge).toHaveClass("sm:group-hover:opacity-0");
+  });
+
   it("archived sessions section shows count", () => {
     const sdk1 = makeSdkSession("s1", { archived: false });
     const sdk2 = makeSdkSession("s2", { archived: true });
