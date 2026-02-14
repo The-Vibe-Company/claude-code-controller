@@ -364,11 +364,12 @@ describe("Sidebar", () => {
     });
 
     render(<Sidebar />);
-    const permissionBadge = screen.getByText("1");
-
-    expect(permissionBadge).toHaveClass("right-8");
-    expect(permissionBadge).toHaveClass("sm:right-2");
-    expect(permissionBadge).toHaveClass("sm:group-hover:opacity-0");
+    const mobilePermissionBadge = screen.getAllByText("1").find((node) =>
+      node.classList.contains("bg-cc-warning") && node.classList.contains("px-1"),
+    )!;
+    expect(mobilePermissionBadge).toHaveClass("right-8");
+    expect(mobilePermissionBadge).toHaveClass("sm:right-2");
+    expect(mobilePermissionBadge).toHaveClass("sm:group-hover:opacity-0");
   });
 
   it("archived sessions section shows count", () => {
