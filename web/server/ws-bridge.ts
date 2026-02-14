@@ -768,26 +768,30 @@ export class WsBridge {
     this.persistSession(session);
 
     // Detect agent spawns from Task tool_use blocks
+    const justSpawnedIds = new Set<string>();
     for (const block of msg.message.content) {
       if (block.type === "tool_use" && block.name === "Task") {
         const input = block.input as Record<string, unknown>;
+        const rawName = (input.name as string) || (input.description as string) || undefined;
         const agentInfo: AgentInfo = {
           agentId: block.id,
           agentType: (input.subagent_type as string) || "general-purpose",
-          agentName: (input.name as string) || (input.description as string) || undefined,
+          agentName: rawName && rawName.length > 40 ? rawName.slice(0, 40) + "…" : rawName,
           parentToolUseId: block.id,
           status: "running",
           spawnedAt: Date.now(),
         };
         if (!session.state.agents_active) session.state.agents_active = [];
         session.state.agents_active.push(agentInfo);
+        justSpawnedIds.add(block.id);
         this.broadcastToBrowsers(session, { type: "agent_spawned", agent: agentInfo });
       }
     }
 
-    // Fallback: detect agent completions from tool_result blocks (works with Codex sessions)
+    // Fallback: detect agent completions from tool_result blocks (works with Codex sessions).
+    // Skip IDs that were just spawned in this same message to avoid spawn-and-immediately-stop.
     for (const block of msg.message.content) {
-      if (block.type === "tool_result") {
+      if (block.type === "tool_result" && !justSpawnedIds.has(block.tool_use_id)) {
         this.markAgentStopped(session, block.tool_use_id);
       }
     }
