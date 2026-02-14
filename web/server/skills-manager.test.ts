@@ -2,7 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseFrontmatter } from "./skills-manager.js";
+import {
+  parseFrontmatter,
+  listMarketplacePlugins,
+  listUserSkills,
+  listProjectSkills,
+  installSkill,
+  uninstallSkill,
+  listAllSkills,
+} from "./skills-manager.js";
+import { readFileSync } from "node:fs";
 
 // ─── parseFrontmatter tests ──────────────────────────────────────────────────
 
@@ -102,13 +111,19 @@ body`;
 describe("skills-manager filesystem operations", () => {
   let tempDir: string;
 
+  let originalHome: string | undefined;
   beforeEach(() => {
     tempDir = join(tmpdir(), `skills-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tempDir, { recursive: true });
+    // Point homedir() to our temp dir for the duration of these tests
+    originalHome = process.env.HOME;
+    process.env.HOME = tempDir;
   });
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
   });
 
   /**
@@ -202,5 +217,151 @@ describe("skills-manager filesystem operations", () => {
     writeFileSync(join(refsDir, "patterns.md"), "# Patterns\nSome content");
 
     expect(existsSync(join(refsDir, "patterns.md"))).toBe(true);
+  });
+
+  // ─── Marketplace & install/uninstall tests ─────────────────────────────────
+
+  it("lists marketplace plugins and marks installed state", () => {
+    // Create marketplace structure under HOME
+    const marketplacesDir = join(process.env.HOME as string, ".claude", "plugins", "marketplaces", "market1");
+    const pluginsRoot = join(marketplacesDir, "plugins");
+    const pluginDir = join(pluginsRoot, "awesome-plugin");
+    const metaDir = join(pluginDir, ".claude-plugin");
+    mkdirSync(metaDir, { recursive: true });
+    writeFileSync(join(metaDir, "plugin.json"), JSON.stringify({ name: "Awesome", description: "X" }));
+
+    // Add a skill
+    const skillsDir = join(pluginDir, "skills");
+    const skillDir = join(skillsDir, "do-stuff");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), `---\nname: do-stuff\ndescription: Does stuff\n---\n\nbody`);
+
+    // Ensure not installed initially
+    let plugins = listMarketplacePlugins();
+    const p = plugins.find((x) => x.name === "Awesome" || x.skills.some((s) => s.name === "do-stuff"));
+    expect(p).toBeTruthy();
+    expect(p!.installed).toBe(false);
+
+    // Create installed_plugins.json to mark installation
+    const installedPath = join(process.env.HOME as string, ".claude", "plugins", "installed_plugins.json");
+    mkdirSync(join(installedPath, ".."), { recursive: true });
+    writeFileSync(
+      installedPath,
+      JSON.stringify({ version: 2, plugins: { "awesome-plugin@market1": [{ scope: "user", installPath: "/x", version: "1.0", installedAt: "now", lastUpdated: "now" }] } }),
+    );
+
+    plugins = listMarketplacePlugins();
+    const p2 = plugins.find((x) => x.name === "Awesome");
+    expect(p2).toBeTruthy();
+    expect(p2!.installed).toBe(true);
+  });
+
+  it("installs and uninstalls a single skill to user and project scopes", () => {
+    // Setup marketplace plugin with command and agent
+    const marketplacesDir = join(process.env.HOME as string, ".claude", "plugins", "marketplaces", "mkt");
+    const pluginDir = join(marketplacesDir, "plugins", "mini-plugin");
+    const metaDir = join(pluginDir, ".claude-plugin");
+    mkdirSync(metaDir, { recursive: true });
+    writeFileSync(join(metaDir, "plugin.json"), JSON.stringify({ name: "mini-plugin", description: "" }));
+
+    // Add command file
+    const commandsDir = join(pluginDir, "commands");
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(join(commandsDir, "say-hello.md"), `---\nname: say-hello\n---\nHi`);
+
+    // Install single command as user-scope
+    const res = installSkill({ pluginName: "mini-plugin", skillName: "say-hello", scope: "user", dualInstall: false });
+    expect(res.installed).toContain("say-hello");
+
+    // Verify it exists in HOME/.claude/skills
+    const userSkillPath = join(process.env.HOME as string, ".claude", "skills", "say-hello", "SKILL.md");
+    expect(existsSync(userSkillPath)).toBe(true);
+
+    // Uninstall it (user scope)
+    const un = uninstallSkill({ name: "say-hello", scope: "user" });
+    expect(un.removed).toBe(true);
+    expect(existsSync(userSkillPath)).toBe(false);
+
+    // Now test project-level install: create a fake repo cwd
+    const projectCwd = join(tempDir, "proj");
+    mkdirSync(projectCwd, { recursive: true });
+    const res2 = installSkill({ pluginName: "mini-plugin", skillName: "say-hello", scope: "project", cwd: projectCwd, dualInstall: false });
+    expect(res2.installed).toContain("say-hello");
+    const projSkillPath = join(projectCwd, ".claude", "skills", "say-hello", "SKILL.md");
+    expect(existsSync(projSkillPath)).toBe(true);
+
+    // Uninstall project-level
+    const un2 = uninstallSkill({ name: "say-hello", scope: "project", cwd: projectCwd });
+    expect(un2.removed).toBe(true);
+    expect(existsSync(projSkillPath)).toBe(false);
+  });
+
+  it("installs all skills/commands/agents from plugin and listAllSkills marks installed ones", () => {
+    // Create plugin with skill, command, and agent
+    const marketplacesDir = join(process.env.HOME as string, ".claude", "plugins", "marketplaces", "allmkt");
+    const pluginDir = join(marketplacesDir, "plugins", "big-plugin");
+    mkdirSync(join(pluginDir, "skills", "alpha"), { recursive: true });
+    writeFileSync(join(pluginDir, "skills", "alpha", "SKILL.md"), `---\nname: alpha\n---\n`);
+    mkdirSync(join(pluginDir, "commands"), { recursive: true });
+    writeFileSync(join(pluginDir, "commands", "beta.md"), `---\nname: beta\n---\n`);
+    mkdirSync(join(pluginDir, "agents"), { recursive: true });
+    writeFileSync(join(pluginDir, "agents", "gamma.md"), `---\nname: gamma\n---\n`);
+
+    // Install whole plugin to user scope
+    const res = installSkill({ pluginName: "big-plugin", scope: "user", dualInstall: false });
+    expect(res.installed.sort()).toEqual(["alpha", "beta", "gamma"].sort());
+
+    // listAllSkills should reflect installed user skills
+    const all = listAllSkills();
+    const installedSet = new Set(all.userSkills.map((s) => s.name));
+    expect(installedSet.has("alpha")).toBe(true);
+
+    // cleanup
+    uninstallSkill({ name: "alpha", scope: "user" });
+    uninstallSkill({ name: "beta", scope: "user" });
+    uninstallSkill({ name: "gamma", scope: "user" });
+  });
+
+  it("throws when plugin not found", () => {
+    expect(() => installSkill({ pluginName: "no-such-plugin", scope: "user" })).toThrow();
+  });
+
+  it("throws when requested skillName not present in plugin", () => {
+    // Create empty plugin dir
+    const marketplacesDir = join(process.env.HOME as string, ".claude", "plugins", "marketplaces", "emptymkt");
+    const pluginDir = join(marketplacesDir, "plugins", "empty-plugin");
+    mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "empty-plugin" }));
+
+    expect(() => installSkill({ pluginName: "empty-plugin", skillName: "missing", scope: "user" })).toThrow(
+      /not found/,
+    );
+  });
+
+  it("uninstallSkill returns false when nothing removed", () => {
+    const res = uninstallSkill({ name: "does-not-exist", scope: "user" });
+    expect(res.removed).toBe(false);
+  });
+
+  it("listAllSkills marks project-installed skills with project scope", () => {
+    // Create plugin with skill
+    const marketplacesDir = join(process.env.HOME as string, ".claude", "plugins", "marketplaces", "pmkt");
+    const pluginDir = join(marketplacesDir, "plugins", "proj-plugin");
+    mkdirSync(join(pluginDir, "skills", "proj-skill"), { recursive: true });
+    writeFileSync(join(pluginDir, "skills", "proj-skill", "SKILL.md"), `---\nname: proj-skill\n---\n`);
+
+    // Create project cwd with installed proj-skill
+    const projectCwd = join(tempDir, "project-xyz");
+    mkdirSync(join(projectCwd, ".claude", "skills", "proj-skill"), { recursive: true });
+    writeFileSync(join(projectCwd, ".claude", "skills", "proj-skill", "SKILL.md"), `---\nname: proj-skill\n---\n`);
+
+    const all = listAllSkills(projectCwd);
+    // Find plugin and its skill
+    const plugin = all.plugins.find((p) => p.skills.some((s) => s.name === "proj-skill"));
+    expect(plugin).toBeTruthy();
+    const skill = plugin!.skills.find((s) => s.name === "proj-skill");
+    expect(skill).toBeTruthy();
+    expect(skill!.installed).toBe(true);
+    expect(skill!.installedScope).toBe("project");
   });
 });
