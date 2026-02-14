@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState, type LinearIssue } from "../api.js";
+import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -8,10 +8,8 @@ import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
 import { navigateToSession } from "../utils/routing.js";
 import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
 import type { BackendType } from "../types.js";
-import { resolveLinearBranch } from "../utils/linear-branch.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
-import { LinearLogo } from "./LinearLogo.js";
 
 interface ImageAttachment {
   name: string;
@@ -51,14 +49,9 @@ export function HomePage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
-  const [linearConfigured, setLinearConfigured] = useState(false);
-  const [linearQuery, setLinearQuery] = useState("");
-  const [linearIssues, setLinearIssues] = useState<LinearIssue[]>([]);
-  const [selectedLinearIssue, setSelectedLinearIssue] = useState<LinearIssue | null>(null);
-  const [showLinearDropdown, setShowLinearDropdown] = useState(false);
-  const [linearSearching, setLinearSearching] = useState(false);
-  const [linearSearchError, setLinearSearchError] = useState("");
-  const [showLinearStartWarning, setShowLinearStartWarning] = useState(false);
+  const [codexInternetAccess, setCodexInternetAccess] = useState(() =>
+    localStorage.getItem("cc-codex-internet-access") === "1",
+  );
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -101,7 +94,6 @@ export function HomePage() {
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const envDropdownRef = useRef<HTMLDivElement>(null);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
-  const linearDropdownRef = useRef<HTMLDivElement>(null);
   const effortDropdownRef = useRef<HTMLDivElement>(null);
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
@@ -124,9 +116,6 @@ export function HomePage() {
     }).catch(() => {});
     api.listEnvs().then(setEnvs).catch(() => {});
     api.getBackends().then(setBackends).catch(() => {});
-    api.getSettings().then((s) => {
-      setLinearConfigured(s.linearApiKeyConfigured);
-    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When backend changes, reset model and mode to defaults
@@ -218,9 +207,6 @@ export function HomePage() {
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
         setShowBranchDropdown(false);
       }
-      if (linearDropdownRef.current && !linearDropdownRef.current.contains(e.target as Node)) {
-        setShowLinearDropdown(false);
-      }
       if (effortDropdownRef.current && !effortDropdownRef.current.contains(e.target as Node)) {
         setShowEffortDropdown(false);
       }
@@ -251,39 +237,6 @@ export function HomePage() {
       api.listBranches(gitRepoInfo.repoRoot).then(setBranches).catch(() => setBranches([]));
     }
   }, [gitRepoInfo]);
-
-  useEffect(() => {
-    if (!linearConfigured) return;
-    const query = linearQuery.trim();
-    if (query.length < 2) {
-      setLinearIssues([]);
-      setLinearSearchError("");
-      setLinearSearching(false);
-      return;
-    }
-
-    let active = true;
-    setLinearSearching(true);
-    setLinearSearchError("");
-    const timer = setTimeout(() => {
-      api.searchLinearIssues(query, 8).then((res) => {
-        if (!active) return;
-        setLinearIssues(res.issues);
-      }).catch((e: unknown) => {
-        if (!active) return;
-        setLinearIssues([]);
-        setLinearSearchError(e instanceof Error ? e.message : String(e));
-      }).finally(() => {
-        if (!active) return;
-        setLinearSearching(false);
-      });
-    }, 220);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [linearConfigured, linearQuery]);
 
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
@@ -347,32 +300,9 @@ export function HomePage() {
     }
   }
 
-  function buildInitialMessage(msg: string): string {
-    if (!selectedLinearIssue) return msg;
-    const description = selectedLinearIssue.description?.trim();
-    const safeDescription = description
-      ? (description.length > 1600 ? `${description.slice(0, 1600)}...` : description)
-      : "";
-    const context = [
-      "Linear issue context:",
-      `- Identifier: ${selectedLinearIssue.identifier}`,
-      `- Title: ${selectedLinearIssue.title}`,
-      selectedLinearIssue.stateName ? `- State: ${selectedLinearIssue.stateName}` : "",
-      selectedLinearIssue.priorityLabel ? `- Priority: ${selectedLinearIssue.priorityLabel}` : "",
-      selectedLinearIssue.teamName ? `- Team: ${selectedLinearIssue.teamName}` : "",
-      `- URL: ${selectedLinearIssue.url}`,
-      safeDescription ? `- Description: ${safeDescription}` : "",
-    ].filter(Boolean).join("\n");
-    return `${context}\n\nUser request:\n${msg}`;
-  }
-
   async function handleSend() {
     const msg = text.trim();
     if (!msg || sending) return;
-
-    if (!linearConfigured) {
-      setShowLinearStartWarning(true);
-    }
 
     setSending(true);
     setError("");
@@ -392,16 +322,6 @@ export function HomePage() {
       }
     }
 
-    await doCreateSession(msg);
-  }
-
-  async function handleContinueWithoutLinear() {
-    const msg = text.trim();
-    if (!msg || sending) return;
-    setShowLinearStartWarning(false);
-    setSending(true);
-    setError("");
-    setPullError("");
     await doCreateSession(msg);
   }
 
@@ -433,7 +353,7 @@ export function HomePage() {
           createBranch: branchName && isNewBranch ? true : undefined,
           useWorktree: useWorktree || undefined,
           backend,
-          codexInternetAccess: backend === "codex" ? true : undefined,
+          codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
         },
         (progress) => {
           useStore.getState().addCreationProgress(progress);
@@ -461,9 +381,8 @@ export function HomePage() {
       // Wait for WebSocket connection
       await waitForConnection(sessionId);
 
-      const initialMessage = buildInitialMessage(msg);
-
-      // Set effort level if not default
+      // Set effort level and sync to store
+      useStore.getState().setSessionEffort(sessionId, effortLevel);
       if (effortLevel !== "medium") {
         const tokens = effortLevel === "low" ? 1024 : 32000;
         sendToSession(sessionId, { type: "set_max_thinking_tokens", max_thinking_tokens: tokens });
@@ -472,7 +391,7 @@ export function HomePage() {
       // Send message
       sendToSession(sessionId, {
         type: "user_message",
-        content: initialMessage,
+        content: msg,
         session_id: sessionId,
         images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
       });
@@ -481,7 +400,7 @@ export function HomePage() {
       useStore.getState().appendMessage(sessionId, {
         id: `user-${Date.now()}-${++idCounter}`,
         role: "user",
-        content: initialMessage,
+        content: msg,
         images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
         timestamp: Date.now(),
       });
@@ -545,12 +464,12 @@ export function HomePage() {
   const canSend = text.trim().length > 0 && !sending;
 
   return (
-    <div className="flex-1 h-full flex items-start justify-center px-3 sm:px-4 pt-6 sm:pt-8 pb-6 overflow-y-auto">
+    <div className="flex-1 h-full flex items-start justify-center px-3 sm:px-4 pt-[15vh] sm:pt-[20vh] overflow-y-auto">
       <div className="w-full max-w-2xl">
         {/* Logo + Title */}
-        <div className="flex flex-col items-center justify-center mb-3 sm:mb-4">
-          <img src={logoSrc} alt="The Companion" className="w-16 h-16 sm:w-20 sm:h-20 mb-2.5" />
-          <h1 className="text-2xl sm:text-[2rem] font-semibold tracking-tight text-cc-fg">
+        <div className="flex flex-col items-center justify-center mb-4 sm:mb-6">
+          <img src={logoSrc} alt="The Companion" className="w-24 h-24 sm:w-32 sm:h-32 mb-3" />
+          <h1 className="text-xl sm:text-2xl font-semibold text-cc-fg">
             The Companion
           </h1>
         </div>
@@ -588,118 +507,89 @@ export function HomePage() {
           className="hidden"
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:gap-4 items-start">
-          <div>
-            {/* Input card */}
-            <div className="bg-cc-card border border-cc-border rounded-[14px] shadow-sm overflow-hidden">
-              {selectedLinearIssue && (
-                <div className="px-3 pt-3">
-                  <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-cc-border bg-cc-hover/60 px-2.5 py-1.5 text-[11px] text-cc-muted">
-                    <span className="shrink-0">Linear</span>
-                    <span className="font-mono-code shrink-0">{selectedLinearIssue.identifier}</span>
-                    <span className="truncate">{selectedLinearIssue.title}</span>
+        {/* Input card */}
+        <div className="bg-cc-card border border-cc-border rounded-[14px] shadow-sm overflow-hidden">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder="Fix a bug, build a feature, refactor code..."
+            rows={4}
+            className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
+            style={{ minHeight: "100px", maxHeight: "200px" }}
+          />
+
+          {/* Bottom toolbar */}
+          <div className="flex items-center justify-between px-3 pb-3">
+            {/* Left: mode dropdown */}
+            <div className="relative" ref={modeDropdownRef}>
+              <button
+                onClick={() => setShowModeDropdown(!showModeDropdown)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cc-muted hover:text-cc-fg rounded-lg hover:bg-cc-hover transition-colors cursor-pointer"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+                  <path d="M2 4h12M2 8h8M2 12h10" strokeLinecap="round" />
+                </svg>
+                {selectedMode.label}
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
+                  <path d="M4 6l4 4 4-4" />
+                </svg>
+              </button>
+              {showModeDropdown && (
+                <div className="absolute left-0 bottom-full mb-1 w-40 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1 overflow-hidden">
+                  {MODES.map((m) => (
                     <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedLinearIssue(null);
-                        setLinearQuery("");
-                        setLinearIssues([]);
-                        setLinearSearchError("");
-                        // Revert branch to current when clearing Linear issue
-                        if (gitRepoInfo) {
-                          setSelectedBranch(gitRepoInfo.currentBranch);
-                          setIsNewBranch(false);
-                        }
-                      }}
-                      className="shrink-0 rounded px-1 text-cc-muted hover:text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
-                      title="Remove Linear issue"
+                      key={m.value}
+                      onClick={() => { setMode(m.value); setShowModeDropdown(false); }}
+                      className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer ${
+                        m.value === mode ? "text-cc-primary font-medium" : "text-cc-fg"
+                      }`}
                     >
-                      ×
+                      {m.label}
                     </button>
-                  </div>
+                  ))}
                 </div>
               )}
-              <textarea
-                ref={textareaRef}
-                value={text}
-                onChange={handleInput}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder="Fix a bug, build a feature, refactor code..."
-                rows={4}
-                className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
-                style={{ minHeight: "100px", maxHeight: "200px" }}
-              />
-
-              {/* Bottom toolbar */}
-              <div className="flex items-center justify-between px-3 pb-3">
-                {/* Left: mode dropdown */}
-                <div className="relative" ref={modeDropdownRef}>
-                  <button
-                    onClick={() => setShowModeDropdown(!showModeDropdown)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cc-muted hover:text-cc-fg rounded-lg hover:bg-cc-hover transition-colors cursor-pointer"
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-                      <path d="M2 4h12M2 8h8M2 12h10" strokeLinecap="round" />
-                    </svg>
-                    {selectedMode.label}
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
-                      <path d="M4 6l4 4 4-4" />
-                    </svg>
-                  </button>
-                  {showModeDropdown && (
-                    <div className="absolute left-0 bottom-full mb-1 w-40 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1 overflow-hidden">
-                      {MODES.map((m) => (
-                        <button
-                          key={m.value}
-                          onClick={() => { setMode(m.value); setShowModeDropdown(false); }}
-                          className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer ${
-                            m.value === mode ? "text-cc-primary font-medium" : "text-cc-fg"
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Right: image placeholder + send */}
-                <div className="flex items-center gap-1.5">
-                  {/* Image upload */}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
-                    title="Upload image"
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
-                      <rect x="2" y="2" width="12" height="12" rx="2" />
-                      <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
-                      <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </button>
-
-                  {/* Send button */}
-                  <button
-                    onClick={handleSend}
-                    disabled={!canSend}
-                    className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
-                      canSend
-                        ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
-                        : "bg-cc-hover text-cc-muted cursor-not-allowed"
-                    }`}
-                    title="Send message"
-                  >
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                      <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
             </div>
 
-            {/* Below-card selectors */}
-            <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap">
+            {/* Right: image placeholder + send */}
+            <div className="flex items-center gap-1.5">
+              {/* Image upload */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+                title="Upload image"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                  <rect x="2" y="2" width="12" height="12" rx="2" />
+                  <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
+                  <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+
+              {/* Send button */}
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                  canSend
+                    ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
+                    : "bg-cc-hover text-cc-muted cursor-not-allowed"
+                }`}
+                title="Send message"
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Below-card selectors */}
+        <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap">
           {/* Backend toggle */}
           {backends.length > 1 && (
             <div className="flex items-center bg-cc-hover/50 rounded-lg p-0.5">
@@ -727,6 +617,28 @@ export function HomePage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Codex internet access toggle */}
+          {backend === "codex" && (
+            <button
+              onClick={() => {
+                const next = !codexInternetAccess;
+                setCodexInternetAccess(next);
+                localStorage.setItem("cc-codex-internet-access", next ? "1" : "0");
+              }}
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                codexInternetAccess
+                  ? "bg-cc-primary/15 text-cc-primary font-medium"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              title="Allow Codex internet/network access for this session"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-70">
+                <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 1.5c.8 0 1.55.22 2.2.61-.39.54-.72 1.21-.95 1.98H6.75c-.23-.77-.56-1.44-.95-1.98A4.47 4.47 0 018 3.5zm-3.2 1.3c.3.4.57.86.78 1.37H3.83c.24-.53.57-1.01.97-1.37zm-.97 2.87h2.15c.07.44.12.9.12 1.38 0 .48-.05.94-.12 1.38H3.83A4.56 4.56 0 013.5 9c0-.47.12-.92.33-1.33zm2.03 4.08c.39-.54.72-1.21.95-1.98h2.38c.23.77.56 1.44.95 1.98A4.47 4.47 0 018 12.5c-.8 0-1.55-.22-2.2-.61zm4.34-1.37c.07-.44.12-.9.12-1.38 0-.48-.05-.94-.12-1.38h2.15c.21.41.33.86.33 1.33 0 .47-.12.92-.33 1.33H10.2zm1.37-3.58h-1.75c-.21-.51-.48-.97-.78-1.37.4.36.73.84.97 1.37z" />
+              </svg>
+              <span>Internet</span>
+            </button>
           )}
 
           {/* Folder selector */}
@@ -1069,163 +981,6 @@ export function HomePage() {
               </div>
             )}
           </div>
-            </div>
-          </div>
-
-          <aside className="space-y-2 mt-0.5" ref={linearDropdownRef}>
-            <div className="relative rounded-[12px] border border-cc-border bg-cc-card/90 px-2.5 py-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] uppercase tracking-wide text-cc-muted">Context</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!linearConfigured) {
-                      window.location.hash = "#/integrations/linear";
-                      return;
-                    }
-                    setShowLinearDropdown(!showLinearDropdown);
-                  }}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors cursor-pointer ${
-                    selectedLinearIssue
-                      ? "border-cc-primary/35 bg-cc-primary/10 text-cc-primary"
-                      : linearConfigured
-                        ? "border-cc-border bg-cc-hover/70 text-cc-fg hover:bg-cc-hover"
-                        : "border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-                  }`}
-                >
-                  <LinearLogo className="w-3.5 h-3.5" />
-                  <span>Linear</span>
-                </button>
-                {!linearConfigured && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-300">
-                    Configure Linear to attach an issue.
-                  </span>
-                )}
-              </div>
-
-              {showLinearDropdown && linearConfigured && (
-                <div className="absolute left-2.5 right-2.5 top-[44px] bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 overflow-hidden">
-                  <div className="p-2 border-b border-cc-border">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={linearQuery}
-                        onChange={(e) => {
-                          setLinearQuery(e.target.value);
-                        }}
-                        onFocus={() => setShowLinearDropdown(true)}
-                        autoFocus
-                        placeholder="ENG-123 or issue title"
-                        className="w-full px-2.5 py-2 text-sm bg-cc-input-bg border border-cc-border rounded-md text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/60"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowLinearDropdown(false);
-                        }}
-                        className="px-2 py-2 rounded-md text-xs bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-cc-muted">
-                      <span>Attach an issue to this draft</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.location.hash = "#/integrations/linear";
-                        }}
-                        className="hover:text-cc-fg underline underline-offset-2 cursor-pointer"
-                      >
-                        Settings
-                      </button>
-                    </div>
-                  </div>
-
-                  {linearQuery.trim().length < 2 && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">Type at least 2 characters…</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && linearSearching && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">Searching Linear...</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && linearSearchError && (
-                    <div className="px-3 py-2 text-xs text-cc-error">{linearSearchError}</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && !linearSearchError && linearIssues.length === 0 && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">No matching issues</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && !linearSearchError && (
-                    <div className="max-h-56 overflow-y-auto">
-                      {linearIssues.map((issue) => (
-                        <button
-                          key={issue.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedLinearIssue(issue);
-                            setLinearQuery(`${issue.identifier} - ${issue.title}`);
-                            setShowLinearDropdown(false);
-                            // Auto-set branch from Linear issue
-                            const branch = resolveLinearBranch(issue);
-                            setSelectedBranch(branch);
-                            // Mark as new branch — session creation will create it if it doesn't exist
-                            setIsNewBranch(true);
-                          }}
-                          className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
-                        >
-                          <div className="text-xs text-cc-fg truncate">
-                            <span className="font-mono-code">{issue.identifier}</span> - {issue.title}
-                          </div>
-                          <div className="text-[10px] text-cc-muted truncate">
-                            {[issue.stateName, issue.teamName].filter(Boolean).join(" • ")}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.hash = "#/integrations/linear";
-                }}
-                className="absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
-                title="Linear settings"
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.35-.8-2.92.77-2.12 2.12.54.9.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98 1.02.25 1.49 1.39.95 2.29-.8 1.35.77 2.92 2.12 2.12.9-.54 2.04-.07 2.29.95.38 1.56 2.6 1.56 2.98 0 .25-1.02 1.39-1.49 2.29-.95 1.35.8 2.92-.77 2.12-2.12-.54-.9-.07-2.04.95-2.29 1.56-.38 1.56-2.6 0-2.98-1.02-.25-1.49-1.39-.95-2.29.8-1.35-.77-2.92-2.12-2.12-.9.54-2.04.07-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-
-            {showLinearStartWarning && (
-              <div className="p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
-                <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
-                  Warning: Linear is not configured. Continue anyway?
-                </p>
-                <div className="flex gap-2 mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLinearStartWarning(false);
-                      window.location.hash = "#/integrations/linear";
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-cc-hover text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
-                  >
-                    Configurer Linear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleContinueWithoutLinear}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer"
-                  >
-                    Continuer sans Linear
-                  </button>
-                </div>
-              </div>
-            )}
-          </aside>
         </div>
 
         {/* Branch behind remote warning */}
