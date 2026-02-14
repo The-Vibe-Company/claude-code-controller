@@ -79,6 +79,8 @@ export function HomePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showEffortDropdown, setShowEffortDropdown] = useState(false);
+  const [effortLevel, setEffortLevel] = useState<"low" | "medium" | "high">("medium");
 
   // Git branch state
   const [gitRepoInfo, setGitRepoInfo] = useState<GitRepoInfo | null>(null);
@@ -100,6 +102,7 @@ export function HomePage() {
   const envDropdownRef = useRef<HTMLDivElement>(null);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
   const linearDropdownRef = useRef<HTMLDivElement>(null);
+  const effortDropdownRef = useRef<HTMLDivElement>(null);
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -217,6 +220,9 @@ export function HomePage() {
       }
       if (linearDropdownRef.current && !linearDropdownRef.current.contains(e.target as Node)) {
         setShowLinearDropdown(false);
+      }
+      if (effortDropdownRef.current && !effortDropdownRef.current.contains(e.target as Node)) {
+        setShowEffortDropdown(false);
       }
     }
     document.addEventListener("pointerdown", handleClick);
@@ -456,6 +462,12 @@ export function HomePage() {
       await waitForConnection(sessionId);
 
       const initialMessage = buildInitialMessage(msg);
+
+      // Set effort level if not default
+      if (effortLevel !== "medium") {
+        const tokens = effortLevel === "low" ? 1024 : 32000;
+        sendToSession(sessionId, { type: "set_max_thinking_tokens", max_thinking_tokens: tokens });
+      }
 
       // Send message
       sendToSession(sessionId, {
@@ -1013,6 +1025,45 @@ export function HomePage() {
                   >
                     <span>{m.icon}</span>
                     {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Effort selector */}
+          <div className="relative" ref={effortDropdownRef}>
+            <button
+              onClick={() => setShowEffortDropdown(!showEffortDropdown)}
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                effortLevel === "high"
+                  ? "text-cc-primary hover:bg-cc-primary/10 font-medium"
+                  : effortLevel === "low"
+                  ? "text-cc-muted/60 hover:bg-cc-hover"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+            >
+              <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5">
+                <rect x="3" y="10" width="2.5" height="3" rx="0.5" fill="currentColor" />
+                <rect x="6.75" y="7" width="2.5" height="6" rx="0.5" fill="currentColor" opacity={effortLevel === "medium" || effortLevel === "high" ? 1 : 0.25} />
+                <rect x="10.5" y="4" width="2.5" height="9" rx="0.5" fill="currentColor" opacity={effortLevel === "high" ? 1 : 0.25} />
+              </svg>
+              <span className="capitalize">{effortLevel}</span>
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
+                <path d="M4 6l4 4 4-4" />
+              </svg>
+            </button>
+            {showEffortDropdown && (
+              <div className="absolute left-0 bottom-full mb-1 w-36 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1">
+                {(["low", "medium", "high"] as const).map((lvl) => (
+                  <button
+                    key={lvl}
+                    onClick={() => { setEffortLevel(lvl); setShowEffortDropdown(false); }}
+                    className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer capitalize ${
+                      lvl === effortLevel ? "text-cc-primary font-medium" : "text-cc-fg"
+                    }`}
+                  >
+                    {lvl}
                   </button>
                 ))}
               </div>
