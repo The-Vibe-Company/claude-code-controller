@@ -1,6 +1,6 @@
 {
   "name": "the-companion",
-  "version": "0.38.0",
+  "version": "0.39.1",
   "type": "module",
   "description": "Web UI for launching and interacting with Claude Code agents",
   "license": "MIT",
@@ -38,7 +38,8 @@
   },
   "dependencies": {
     "diff": "^8.0.3",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "posthog-js": "^1.347.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
@@ -50,6 +51,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "@vitest/coverage-v8": "^4.0.18",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "autoprefixer": "^10.4.21",
