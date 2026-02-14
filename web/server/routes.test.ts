@@ -411,6 +411,54 @@ describe("POST /api/sessions/create", () => {
     expect(res.status).toBe(200);
     expect(pluginManager.emit).toHaveBeenCalledTimes(1);
   });
+
+  it("emits session.created with resolved session config fields", async () => {
+    const pluginManager = {
+      emit: vi.fn(async () => ({ insights: [], aborted: false })),
+      list: vi.fn(() => []),
+      setEnabled: vi.fn(),
+      updateConfig: vi.fn(),
+    } as any;
+    const bridgeSession = {
+      id: "session-1",
+      backendType: "claude",
+      state: {
+        session_id: "session-1",
+        backend_type: "claude",
+        model: "",
+        cwd: "",
+        tools: [],
+        permissionMode: "default",
+      },
+    };
+    const pluginBridge = {
+      ...bridge,
+      getOrCreateSession: vi.fn(() => bridgeSession),
+    } as any;
+    const pluginApp = new Hono();
+    const terminalManager = { getInfo: () => null, spawn: () => "", kill: () => {} } as any;
+    pluginApp.route("/api", createRoutes(launcher, pluginBridge, sessionStore, tracker, terminalManager, undefined, pluginManager));
+
+    const res = await pluginApp.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/project",
+        model: "claude-sonnet-4-5-20250929",
+        permissionMode: "acceptEdits",
+        allowedTools: ["Bash", "Read"],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(pluginManager.emit).toHaveBeenCalledTimes(1);
+    const emitted = pluginManager.emit.mock.calls[0][0];
+    expect(emitted.name).toBe("session.created");
+    expect(emitted.data.session.model).toBe("claude-sonnet-4-5-20250929");
+    expect(emitted.data.session.cwd).toBe("/project");
+    expect(emitted.data.session.permissionMode).toBe("acceptEdits");
+    expect(emitted.data.session.tools).toEqual(["Bash", "Read"]);
+  });
 });
 
 describe("Plugin routes", () => {

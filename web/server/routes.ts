@@ -220,6 +220,18 @@ export function createRoutes(
 
       if (pluginManager) {
         const bridgeSession = wsBridge.getOrCreateSession(session.sessionId, backend);
+        if (typeof body.model === "string" && body.model.trim().length > 0) {
+          bridgeSession.state.model = body.model;
+        }
+        if (typeof cwd === "string" && cwd.trim().length > 0) {
+          bridgeSession.state.cwd = cwd;
+        }
+        if (typeof body.permissionMode === "string" && body.permissionMode.trim().length > 0) {
+          bridgeSession.state.permissionMode = body.permissionMode;
+        }
+        if (Array.isArray(body.allowedTools)) {
+          bridgeSession.state.tools = body.allowedTools.filter((tool: unknown): tool is string => typeof tool === "string");
+        }
         emitRoutePluginEvent({
           name: "session.created",
           meta: {

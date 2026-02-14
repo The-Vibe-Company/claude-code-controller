@@ -701,11 +701,18 @@ export class WsBridge {
             return;
           }
 
+          if (!session.codexAdapter) {
+            return;
+          }
+
           session.pendingPermissions.set(msg.request.request_id, msg.request);
           this.persistSession(session);
           this.broadcastToBrowsers(session, msg);
         }).catch((err: unknown) => {
           console.error(`[ws-bridge] Plugin emit failed in codex permission flow, falling back:`, err);
+          if (!session.codexAdapter) {
+            return;
+          }
           session.pendingPermissions.set(msg.request.request_id, msg.request);
           this.persistSession(session);
           this.broadcastToBrowsers(session, msg);
@@ -1239,6 +1246,10 @@ export class WsBridge {
           return;
         }
 
+        if (!session.cliSocket) {
+          return;
+        }
+
         session.pendingPermissions.set(msg.request_id, perm);
         this.broadcastToBrowsers(session, {
           type: "permission_request",
@@ -1247,6 +1258,9 @@ export class WsBridge {
         this.persistSession(session);
       }).catch((err: unknown) => {
         console.error(`[ws-bridge] Plugin emit failed in Claude permission flow, falling back:`, err);
+        if (!session.cliSocket) {
+          return;
+        }
         session.pendingPermissions.set(msg.request_id, perm);
         this.broadcastToBrowsers(session, {
           type: "permission_request",

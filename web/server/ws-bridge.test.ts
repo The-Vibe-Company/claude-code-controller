@@ -1232,6 +1232,43 @@ describe("Browser message routing", () => {
     expect(session?.pendingPermissions.has("req-emit-fail-1")).toBe(true);
   });
 
+  it("permission request: does not enqueue stale permission after CLI disconnect during async plugin emit", async () => {
+    let resolveRequested: ((result: any) => void) | undefined;
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name !== "permission.requested") {
+          return { insights: [], aborted: false };
+        }
+        return await new Promise((resolve) => {
+          resolveRequested = resolve;
+        });
+      }),
+    } as any);
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "control_request",
+      request_id: "req-disconnect-race",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "echo race" },
+        tool_use_id: "tu-disconnect-race",
+      },
+    }));
+
+    // Simulate disconnect before plugin pipeline resolves.
+    bridge.handleCLIClose(cli);
+    expect(resolveRequested).toBeDefined();
+    resolveRequested!({ insights: [], aborted: false });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const session = bridge.getSession("s1");
+    expect(session?.pendingPermissions.has("req-disconnect-race")).toBe(false);
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    expect(calls.some((m: any) => m.type === "permission_request" && m.request?.request_id === "req-disconnect-race")).toBe(false);
+  });
+
   it("permission_response deny: sends deny response to CLI", () => {
     // Create a pending permission
     bridge.handleCLIMessage(cli, JSON.stringify({
@@ -1503,6 +1540,62 @@ describe("Codex permission handling", () => {
     const session = bridge.getSession("s-codex-emit-fail");
     expect(session?.pendingPermissions.has("codex-req-emit-fail")).toBe(true);
     expect(adapter.sendBrowserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not enqueue stale permission after Codex adapter disconnect during async plugin emit", async () => {
+    let onBrowserMessageHandler: ((msg: any) => void) | null = null;
+    let onDisconnectHandler: (() => void) | undefined;
+    let resolveRequested: ((result: any) => void) | undefined;
+    const adapter = {
+      onBrowserMessage: (handler: (msg: any) => void) => {
+        onBrowserMessageHandler = handler;
+      },
+      onSessionMeta: (_handler: (meta: any) => void) => {},
+      onDisconnect: (handler: () => void) => {
+        onDisconnectHandler = handler;
+      },
+      onInitError: (_handler: (error: Error) => void) => {},
+      sendBrowserMessage: vi.fn(),
+      isConnected: () => true,
+    };
+    const browser = makeBrowserSocket("s-codex-disconnect-race");
+
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name !== "permission.requested") {
+          return { insights: [], aborted: false };
+        }
+        return await new Promise((resolve) => {
+          resolveRequested = resolve;
+        });
+      }),
+    } as any);
+    bridge.attachCodexAdapter("s-codex-disconnect-race", adapter as any);
+    bridge.handleBrowserOpen(browser, "s-codex-disconnect-race");
+
+    expect(onBrowserMessageHandler).toBeTruthy();
+    onBrowserMessageHandler!({
+      type: "permission_request",
+      request: {
+        request_id: "codex-req-disconnect-race",
+        tool_name: "Bash",
+        input: { command: "echo race" },
+        tool_use_id: "codex-tu-disconnect-race",
+        timestamp: Date.now(),
+      },
+    });
+
+    // Simulate disconnect before plugin pipeline resolves.
+    expect(onDisconnectHandler).toBeDefined();
+    onDisconnectHandler!();
+    expect(resolveRequested).toBeDefined();
+    resolveRequested!({ insights: [], aborted: false });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const session = bridge.getSession("s-codex-disconnect-race");
+    expect(session?.pendingPermissions.has("codex-req-disconnect-race")).toBe(false);
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    expect(calls.some((m: any) => m.type === "permission_request" && m.request?.request_id === "codex-req-disconnect-race")).toBe(false);
   });
 });
 
