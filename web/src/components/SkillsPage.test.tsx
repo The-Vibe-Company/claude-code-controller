@@ -9,15 +9,21 @@ interface MockStoreState {
   currentSessionId: string | null;
   sessions: Map<string, { cwd?: string }>;
   sdkSessions: { sessionId: string; cwd?: string }[];
+  skillsCwd: string | null;
+  setSkillsCwd: (cwd: string | null) => void;
 }
 
 let mockState: MockStoreState;
+
+const mockSetSkillsCwd = vi.fn();
 
 function createMockState(overrides: Partial<MockStoreState> = {}): MockStoreState {
   return {
     currentSessionId: "session-1",
     sessions: new Map([["session-1", { cwd: "/test-project" }]]),
     sdkSessions: [],
+    skillsCwd: null,
+    setSkillsCwd: mockSetSkillsCwd,
     ...overrides,
   };
 }
@@ -41,6 +47,16 @@ vi.mock("../store.js", () => {
   useStoreFn.getState = () => mockState;
   return { useStore: useStoreFn };
 });
+
+// Mock FolderPicker to avoid rendering the full modal in tests
+vi.mock("./FolderPicker.js", () => ({
+  FolderPicker: ({ onSelect, onClose }: { onSelect: (path: string) => void; onClose: () => void }) => (
+    <div data-testid="folder-picker">
+      <button onClick={() => onSelect("/custom-project")}>Select Folder</button>
+      <button onClick={onClose}>Close Picker</button>
+    </div>
+  ),
+}));
 
 import { SkillsPage } from "./SkillsPage.js";
 
@@ -126,8 +142,8 @@ describe("SkillsPage", () => {
   });
 
   it("passes cwd from current session to listSkills", async () => {
-    // Ensures the component reads the session cwd from the store
-    // and passes it to the API so project-level skills are discovered
+    // Ensures the component falls back to the session cwd from the store
+    // when skillsCwd is null, and passes it to the API
     render(<SkillsPage />);
     await screen.findByText("feature-dev");
 
@@ -135,7 +151,8 @@ describe("SkillsPage", () => {
   });
 
   it("renders without cwd when no session is active", async () => {
-    // When no session is selected, listSkills should receive undefined cwd
+    // When no session is selected and skillsCwd is null,
+    // listSkills should receive undefined cwd
     mockState = createMockState({ currentSessionId: null });
     render(<SkillsPage />);
     await screen.findByText("feature-dev");
@@ -287,5 +304,80 @@ describe("SkillsPage", () => {
 
     fireEvent.click(screen.getByText("Back"));
     expect(window.location.hash).toBe("");
+  });
+
+  // ─── Folder picker tests ──────────────────────────────────────────────────
+
+  it("uses skillsCwd when set instead of session cwd", async () => {
+    // When skillsCwd is explicitly set in the store, it takes priority
+    // over the active session's cwd for listing and installing skills
+    mockState = createMockState({ skillsCwd: "/custom-path" });
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    expect(mockApi.listSkills).toHaveBeenCalledWith("/custom-path");
+  });
+
+  it("shows Change Folder button when cwd is available", async () => {
+    // When a project folder is active (from session or skillsCwd),
+    // the header shows "Change Folder" to let users switch projects
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    expect(screen.getByText("Change Folder")).toBeInTheDocument();
+  });
+
+  it("shows Choose Project button when no cwd is available", async () => {
+    // When no session is active and skillsCwd is null,
+    // the header shows "Choose Project" to prompt folder selection
+    mockState = createMockState({ currentSessionId: null });
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    expect(screen.getByText("Choose Project")).toBeInTheDocument();
+  });
+
+  it("shows project folder prompt when no cwd", async () => {
+    // When no cwd is available, a prompt card appears encouraging the user
+    // to choose a project folder for project-level skills
+    mockState = createMockState({ currentSessionId: null });
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    expect(
+      screen.getByText("Choose a project folder to view and manage project-level skills."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Choose Project Folder")).toBeInTheDocument();
+  });
+
+  it("opens folder picker and selects a folder", async () => {
+    // Verifies clicking the folder picker button opens the FolderPicker,
+    // and selecting a folder calls setSkillsCwd with the chosen path
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    // Click the "Change Folder" button to open picker
+    fireEvent.click(screen.getByText("Change Folder"));
+
+    // The mocked FolderPicker should appear
+    expect(screen.getByTestId("folder-picker")).toBeInTheDocument();
+
+    // Select a folder in the mocked picker
+    fireEvent.click(screen.getByText("Select Folder"));
+
+    // Verify setSkillsCwd was called with the selected path
+    expect(mockSetSkillsCwd).toHaveBeenCalledWith("/custom-project");
+
+    // Picker should be closed
+    expect(screen.queryByTestId("folder-picker")).not.toBeInTheDocument();
+  });
+
+  it("displays current cwd path in header", async () => {
+    // Verifies the current project path is shown in the header
+    // so users know which project's skills they're viewing
+    render(<SkillsPage />);
+    await screen.findByText("feature-dev");
+
+    expect(screen.getByTitle("/test-project")).toBeInTheDocument();
   });
 });

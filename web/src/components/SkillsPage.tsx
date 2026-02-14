@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api.js";
 import { useStore } from "../store.js";
+import { FolderPicker } from "./FolderPicker.js";
 import type { PluginInfo, SkillInfo, SkillsResponse } from "../api.js";
 
 // ─── SkillBadge ───────────────────────────────────────────────────────────────
@@ -287,9 +288,15 @@ export function SkillsPage() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const cwd = useSessionCwd();
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const skillsCwd = useStore((s) => s.skillsCwd);
+  const setSkillsCwd = useStore((s) => s.setSkillsCwd);
+  const sessionCwd = useSessionCwd();
 
-  const load = () => {
+  // Use explicitly-chosen folder, fall back to active session's cwd
+  const cwd = skillsCwd || sessionCwd;
+
+  const load = useCallback(() => {
     setLoading(true);
     setError("");
     api
@@ -297,9 +304,9 @@ export function SkillsPage() {
       .then(setData)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  };
+  }, [cwd]);
 
-  useEffect(() => { load(); }, [cwd]);
+  useEffect(() => { load(); }, [load]);
 
   const showFeedback = (type: "success" | "error", message: string) => {
     setActionFeedback({ type, message });
@@ -388,13 +395,28 @@ export function SkillsPage() {
       <div className="max-w-3xl mx-auto px-4 py-6 sm:py-10">
         {/* Header */}
         <div className="flex items-center justify-between gap-3 mb-6">
-          <h1 className="text-lg font-semibold">Skills</h1>
-          <button
-            onClick={() => { window.location.hash = ""; }}
-            className="px-3 py-1.5 rounded-lg text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
-          >
-            Back
-          </button>
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-lg font-semibold shrink-0">Skills</h1>
+            {cwd && (
+              <span className="text-xs text-cc-muted font-mono truncate max-w-[300px]" title={cwd}>
+                {cwd}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowFolderPicker(true)}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-cc-primary hover:bg-cc-primary-hover text-white transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {cwd ? "Change Folder" : "Choose Project"}
+            </button>
+            <button
+              onClick={() => { window.location.hash = ""; }}
+              className="px-3 py-1.5 rounded-lg text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+            >
+              Back
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -416,6 +438,21 @@ export function SkillsPage() {
             />
           </div>
         </div>
+
+        {/* No project folder prompt */}
+        {!cwd && !loading && (
+          <div className="bg-cc-card border border-cc-border rounded-xl p-6 mb-6 text-center">
+            <p className="text-sm text-cc-muted mb-3">
+              Choose a project folder to view and manage project-level skills.
+            </p>
+            <button
+              onClick={() => setShowFolderPicker(true)}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-cc-primary hover:bg-cc-primary-hover text-white transition-colors cursor-pointer"
+            >
+              Choose Project Folder
+            </button>
+          </div>
+        )}
 
         {/* Feedback toast */}
         {actionFeedback && (
@@ -494,6 +531,17 @@ export function SkillsPage() {
           </div>
         )}
       </div>
+
+      {showFolderPicker && (
+        <FolderPicker
+          initialPath={cwd || ""}
+          onSelect={(path) => {
+            setSkillsCwd(path);
+            setShowFolderPicker(false);
+          }}
+          onClose={() => setShowFolderPicker(false)}
+        />
+      )}
     </div>
   );
 }

@@ -422,7 +422,7 @@ export interface InstallOpts {
  * Install a skill or entire plugin from the marketplace.
  * If skillName is provided, install just that skill. Otherwise install all skills from the plugin.
  */
-export function installSkill(opts: InstallOpts): { installed: string[] } {
+export function installSkill(opts: InstallOpts): { installed: string[]; marketplace: string | null } {
   const { pluginName, skillName, scope, cwd, dualInstall = true } = opts;
   // Default cwd for project-level if not provided
   let effectiveCwd = cwd;
@@ -433,12 +433,14 @@ export function installSkill(opts: InstallOpts): { installed: string[] } {
   // Find the plugin in the marketplace
   const marketplacesDir = getMarketplacesDir();
   let pluginPath: string | null = null;
+  let matchedMarketplace: string | null = null;
 
   if (existsSync(marketplacesDir)) {
     for (const marketplace of readdirSync(marketplacesDir)) {
       const candidate = join(marketplacesDir, marketplace, "plugins", pluginName);
       if (existsSync(candidate) && statSync(candidate).isDirectory()) {
         pluginPath = candidate;
+        matchedMarketplace = marketplace;
         break;
       }
     }
@@ -530,7 +532,7 @@ export function installSkill(opts: InstallOpts): { installed: string[] } {
     }
   }
 
-  return { installed };
+  return { installed, marketplace: matchedMarketplace };
 }
 
 export function uninstallSkill(opts: {

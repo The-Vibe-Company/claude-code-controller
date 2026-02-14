@@ -145,6 +145,10 @@ interface AppState {
   openTerminal: (cwd: string) => void;
   closeTerminal: () => void;
 
+  // Skills state
+  skillsCwd: string | null;
+  setSkillsCwd: (cwd: string | null) => void;
+
   reset: () => void;
 }
 
@@ -230,6 +234,7 @@ export const useStore = create<AppState>((set) => ({
   terminalOpen: false,
   terminalCwd: null,
   terminalId: null,
+  skillsCwd: null,
 
   setDarkMode: (v) => {
     localStorage.setItem("cc-dark-mode", String(v));
@@ -583,6 +588,8 @@ export const useStore = create<AppState>((set) => ({
   openTerminal: (cwd) => set({ terminalOpen: true, terminalCwd: cwd }),
   closeTerminal: () => set({ terminalOpen: false, terminalCwd: null, terminalId: null }),
 
+  setSkillsCwd: (cwd) => set({ skillsCwd: cwd }),
+
   reset: () =>
     set({
       sessions: new Map(),
@@ -608,5 +615,6 @@ export const useStore = create<AppState>((set) => ({
       terminalOpen: false,
       terminalCwd: null,
       terminalId: null,
+      skillsCwd: null,
     }),
 }));
