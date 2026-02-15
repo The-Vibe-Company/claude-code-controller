@@ -94,6 +94,31 @@ Full protocol documentation is in `WEBSOCKET_PROTOCOL_REVERSED.md`.
 
 Sessions persist to disk (`$TMPDIR/vibe-sessions/`) and survive server restarts. On restart, live CLI processes are detected by PID and given a grace period to reconnect their WebSocket. If they don't, they're killed and relaunched with `--resume` using the CLI's internal session ID.
 
+### Raw Protocol Recordings
+
+The server automatically records **all raw protocol messages** (both Claude Code NDJSON and Codex JSON-RPC) to JSONL files. This is useful for debugging, understanding the protocol, and building replay-based tests.
+
+- **Location**: `~/.companion/recordings/` (override with `COMPANION_RECORDINGS_DIR`)
+- **Format**: JSONL — one JSON object per line. First line is a header with session metadata, subsequent lines are raw message entries.
+- **File naming**: `{sessionId}_{backendType}_{ISO-timestamp}_{randomSuffix}.jsonl`
+- **Disable**: set `COMPANION_RECORD=0` or `COMPANION_RECORD=false`
+- **Rotation**: automatic cleanup when total lines exceed 100k (configurable via `COMPANION_RECORDINGS_MAX_LINES`)
+
+Each entry captures:
+```json
+{"ts": 1771153996875, "dir": "in", "raw": "{\"type\":\"system\",...}", "ch": "cli"}
+```
+- `dir`: `"in"` (received by server) or `"out"` (sent by server)
+- `ch`: `"cli"` (Claude Code / Codex process) or `"browser"` (frontend WebSocket)
+- `raw`: the exact original string — never re-serialized, preserving the true protocol payload
+
+**REST API**:
+- `GET /api/recordings` — list all recording files with metadata
+- `GET /api/sessions/:id/recording/status` — check if a session is recording + file path
+- `POST /api/sessions/:id/recording/start` / `stop` — enable/disable per session
+
+**Code**: `web/server/recorder.ts` (recorder + manager), `web/server/replay.ts` (load & filter utilities).
+
 ## Browser Exploration
 
 Always use `agent-browser` CLI command to explore the browser. Never use playwright or other browser automation libraries.

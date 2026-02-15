@@ -28,6 +28,7 @@ vi.mock("../store.js", () => ({
       streamingStartedAt: mockStoreValues.streamingStartedAt ?? new Map(),
       streamingOutputTokens: mockStoreValues.streamingOutputTokens ?? new Map(),
       sessionStatus: mockStoreValues.sessionStatus ?? new Map(),
+      toolProgress: mockStoreValues.toolProgress ?? new Map(),
     };
     return selector(state);
   },
@@ -386,8 +387,8 @@ describe("MessageFeed - subagent grouping", () => {
 
     render(<MessageFeed sessionId={sid} />);
 
-    // The subagent container should show the description
-    expect(screen.getByText("Research the problem")).toBeTruthy();
+    // The description appears in both the tool preview and the subagent container label
+    expect(screen.getAllByText("Research the problem").length).toBeGreaterThanOrEqual(1);
     // The agent type badge should be shown
     expect(screen.getByText("researcher")).toBeTruthy();
   });

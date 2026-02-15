@@ -22,6 +22,7 @@ import * as sessionNames from "./session-names.js";
 import { getSettings } from "./settings-manager.js";
 import { PRPoller } from "./pr-poller.js";
 import { RecorderManager } from "./recorder.js";
+import { CronScheduler } from "./cron-scheduler.js";
 import { startPeriodicCheck, setServiceMode } from "./update-checker.js";
 import { isRunningAsService } from "./service.js";
 import * as notificationManager from "./notification-manager.js";
@@ -44,6 +45,7 @@ const worktreeTracker = new WorktreeTracker();
 const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
 const recorder = new RecorderManager();
+const cronScheduler = new CronScheduler(launcher, wsBridge);
 
 // ── Restore persisted sessions from disk ────────────────────────────────────
 wsBridge.setStore(sessionStore);
@@ -127,7 +129,7 @@ if (recorder.isGloballyEnabled()) {
 const app = new Hono();
 
 app.use("/api/*", cors());
-app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder));
+app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder, cronScheduler));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
 if (process.env.NODE_ENV === "production") {
@@ -219,6 +221,9 @@ console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sess
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
 }
+
+// ── Cron scheduler ──────────────────────────────────────────────────────────
+cronScheduler.startAll();
 
 // ── Update checker ──────────────────────────────────────────────────────────
 startPeriodicCheck();

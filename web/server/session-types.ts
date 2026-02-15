@@ -242,6 +242,23 @@ export interface SessionState {
   git_behind: number;
   total_lines_added: number;
   total_lines_removed: number;
+  // Codex-specific token details (forwarded from thread/tokenUsage/updated)
+  codex_token_details?: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens: number;
+    reasoningOutputTokens: number;
+    modelContextWindow: number;
+  };
+  // Codex-specific rate limits (forwarded from account/rateLimits/updated)
+  codex_rate_limits?: {
+    primary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
+    secondary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
+  };
+  /** If this session was spawned by a cron job */
+  cronJobId?: string;
+  /** Human-readable name of the cron job that spawned this session */
+  cronJobName?: string;
 }
 
 // ─── MCP Types ───────────────────────────────────────────────────────────────

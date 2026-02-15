@@ -1152,3 +1152,106 @@ describe("MCP status messages", () => {
     expect(typeof sent.client_msg_id).toBe("string");
   });
 });
+
+// ===========================================================================
+// handleMessage: tool_progress
+// ===========================================================================
+describe("handleMessage: tool_progress", () => {
+  it("stores tool progress in the store", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 5,
+    });
+
+    const progress = useStore.getState().toolProgress.get("s1");
+    expect(progress).toBeDefined();
+    expect(progress!.get("tu-123")).toEqual({
+      toolName: "Bash",
+      elapsedSeconds: 5,
+    });
+  });
+
+  it("updates elapsed time on subsequent messages", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 2,
+    });
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 7,
+    });
+
+    const entry = useStore.getState().toolProgress.get("s1")!.get("tu-123");
+    expect(entry!.elapsedSeconds).toBe(7);
+  });
+});
+
+// ===========================================================================
+// handleMessage: tool_use_summary
+// ===========================================================================
+describe("handleMessage: tool_use_summary", () => {
+  it("appends a system message with the summary text", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_use_summary",
+      summary: "Ran 3 tools: Bash, Read, Grep",
+      tool_use_ids: ["tu-1", "tu-2", "tu-3"],
+    });
+
+    const msgs = useStore.getState().messages.get("s1");
+    expect(msgs).toBeDefined();
+    const systemMsg = msgs!.find((m) => m.role === "system" && m.content === "Ran 3 tools: Bash, Read, Grep");
+    expect(systemMsg).toBeDefined();
+  });
+});
+
+// ===========================================================================
+// assistant message: per-tool progress clearing (not blanket clear)
+// ===========================================================================
+describe("handleMessage: assistant clears only completed tool progress", () => {
+  it("clears progress for tool_result blocks but keeps others", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    // Set up progress for two concurrent tools
+    useStore.getState().setToolProgress("s1", "tu-a", { toolName: "Grep", elapsedSeconds: 3 });
+    useStore.getState().setToolProgress("s1", "tu-b", { toolName: "Glob", elapsedSeconds: 2 });
+
+    // Simulate assistant message with tool_result for only tu-a
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [
+          { type: "tool_result", tool_use_id: "tu-a", content: "3 matches" },
+        ] as ContentBlock[],
+        stop_reason: null,
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const progress = useStore.getState().toolProgress.get("s1");
+    // tu-a should be cleared (its result arrived)
+    expect(progress?.has("tu-a")).toBeFalsy();
+    // tu-b should still be present (still running)
+    expect(progress?.get("tu-b")).toEqual({ toolName: "Glob", elapsedSeconds: 2 });
+  });
+});

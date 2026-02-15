@@ -11,7 +11,7 @@ import { api } from "../api.js";
 import type { PermissionRequest, ChatMessage, ContentBlock, SessionState, McpServerDetail } from "../types.js";
 import type { TaskItem } from "../types.js";
 import type { UpdateInfo, GitHubPRInfo } from "../api.js";
-import { GitHubPRDisplay } from "./TaskPanel.js";
+import { GitHubPRDisplay, CodexRateLimitsSection, CodexTokenDetailsSection } from "./TaskPanel.js";
 
 // ─── Mock Data ──────────────────────────────────────────────────────────────
 
@@ -627,13 +627,60 @@ export function Playground() {
         {/* ─── Tool Blocks (standalone) ──────────────────────── */}
         <Section title="Tool Blocks" description="Expandable tool call visualization">
           <div className="space-y-2 max-w-3xl">
-            <ToolBlock name="Bash" input={{ command: "git status && npm run lint" }} toolUseId="tb-1" />
-            <ToolBlock name="Read" input={{ file_path: "/Users/stan/Dev/project/src/index.ts" }} toolUseId="tb-2" />
-            <ToolBlock name="Edit" input={{ file_path: "src/utils.ts", old_string: "const x = 1;", new_string: "const x = 2;" }} toolUseId="tb-3" />
+            <ToolBlock name="Bash" input={{ command: "git status && npm run lint", description: "Check git status and lint" }} toolUseId="tb-1" />
+            <ToolBlock name="Read" input={{ file_path: "/Users/stan/Dev/project/src/index.ts", offset: 10, limit: 50 }} toolUseId="tb-2" />
+            <ToolBlock name="Edit" input={{ file_path: "src/utils.ts", old_string: "const x = 1;", new_string: "const x = 2;", replace_all: true }} toolUseId="tb-3" />
             <ToolBlock name="Write" input={{ file_path: "src/new-file.ts", content: 'export const hello = "world";\n' }} toolUseId="tb-4" />
-            <ToolBlock name="Glob" input={{ pattern: "**/*.tsx" }} toolUseId="tb-5" />
-            <ToolBlock name="Grep" input={{ pattern: "useEffect", path: "src/", glob: "*.tsx" }} toolUseId="tb-6" />
-            <ToolBlock name="WebSearch" input={{ query: "React 19 new features" }} toolUseId="tb-7" />
+            <ToolBlock name="Glob" input={{ pattern: "**/*.tsx", path: "/Users/stan/Dev/project/src" }} toolUseId="tb-5" />
+            <ToolBlock name="Grep" input={{ pattern: "useEffect", path: "src/", glob: "*.tsx", output_mode: "content", context: 3, head_limit: 20 }} toolUseId="tb-6" />
+            <ToolBlock name="WebSearch" input={{ query: "React 19 new features", allowed_domains: ["react.dev", "github.com"] }} toolUseId="tb-7" />
+            <ToolBlock name="WebFetch" input={{ url: "https://react.dev/blog/2024/12/05/react-19", prompt: "Summarize the key changes in React 19" }} toolUseId="tb-8" />
+            <ToolBlock name="Task" input={{ description: "Search for auth patterns", subagent_type: "Explore", prompt: "Find all files related to authentication and authorization in the codebase. Look for middleware, guards, and token handling." }} toolUseId="tb-9" />
+            <ToolBlock name="TodoWrite" input={{ todos: [
+              { content: "Create JWT utility module", status: "completed", activeForm: "Creating JWT module" },
+              { content: "Update auth middleware", status: "in_progress", activeForm: "Updating middleware" },
+              { content: "Migrate login endpoint", status: "pending", activeForm: "Migrating login" },
+              { content: "Run full test suite", status: "pending", activeForm: "Running tests" },
+            ]}} toolUseId="tb-10" />
+            <ToolBlock name="NotebookEdit" input={{ notebook_path: "/Users/stan/Dev/project/analysis.ipynb", cell_type: "code", edit_mode: "replace", cell_number: 3, new_source: "import pandas as pd\ndf = pd.read_csv('data.csv')\ndf.describe()" }} toolUseId="tb-11" />
+            <ToolBlock name="SendMessage" input={{ type: "message", recipient: "researcher", content: "Please investigate the auth module structure and report back.", summary: "Requesting auth module investigation" }} toolUseId="tb-12" />
+          </div>
+        </Section>
+
+        {/* ─── Tool Progress Indicator ──────────────────────── */}
+        <Section title="Tool Progress" description="Real-time progress indicator shown while tools are running">
+          <div className="space-y-4 max-w-3xl">
+            <Card label="Single tool running">
+              <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cc-primary animate-pulse" />
+                <span>Terminal</span>
+                <span className="text-cc-muted/60">8s</span>
+              </div>
+            </Card>
+            <Card label="Multiple tools running">
+              <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cc-primary animate-pulse" />
+                <span>Search Content</span>
+                <span className="text-cc-muted/60">3s</span>
+                <span className="text-cc-muted/40">&middot;</span>
+                <span>Find Files</span>
+                <span className="text-cc-muted/60">2s</span>
+              </div>
+            </Card>
+          </div>
+        </Section>
+
+        {/* ─── Tool Use Summary ──────────────────────────────── */}
+        <Section title="Tool Use Summary" description="System message summarizing batch tool execution">
+          <div className="space-y-4 max-w-3xl">
+            <Card label="Summary as system message">
+              <MessageBubble message={{
+                id: "summary-1",
+                role: "system",
+                content: "Read 4 files, searched 12 matches across 3 directories",
+                timestamp: Date.now(),
+              }} />
+            </Card>
           </div>
         </Section>
 
@@ -727,6 +774,15 @@ export function Playground() {
                   ))}
                 </div>
               </div>
+            </Card>
+          </div>
+        </Section>
+
+        {/* ─── Codex Session Details ──────────────────────── */}
+        <Section title="Codex Session Details" description="Rate limits and token details for Codex (OpenAI) sessions — streamed via session_update">
+          <div className="space-y-4">
+            <Card label="Rate limits with token breakdown">
+              <CodexPlaygroundDemo />
             </Card>
           </div>
         </Section>
@@ -1203,6 +1259,70 @@ function PlaygroundSubagentGroup({ description, agentType, items }: { descriptio
           <PlaygroundToolGroup toolName={items[0]?.name || "Grep"} items={items} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Codex Session Demo (injects mock Codex data into a temp session) ────────
+
+const CODEX_DEMO_SESSION = "codex-playground-demo";
+
+function CodexPlaygroundDemo() {
+  useEffect(() => {
+    const store = useStore.getState();
+    const prev = store.sessions.get(CODEX_DEMO_SESSION);
+
+    // Create a fake Codex session with rate limits and token details
+    store.addSession({
+      session_id: CODEX_DEMO_SESSION,
+      backend_type: "codex",
+      model: "o3",
+      cwd: "/Users/demo/project",
+      tools: [],
+      permissionMode: "bypassPermissions",
+      claude_code_version: "0.1.0",
+      mcp_servers: [],
+      agents: [],
+      slash_commands: [],
+      skills: [],
+      total_cost_usd: 0,
+      num_turns: 8,
+      context_used_percent: 45,
+      is_compacting: false,
+      git_branch: "main",
+      is_worktree: false,
+      repo_root: "/Users/demo/project",
+      git_ahead: 0,
+      git_behind: 0,
+      total_lines_added: 0,
+      total_lines_removed: 0,
+      codex_rate_limits: {
+        primary: { usedPercent: 62, windowDurationMins: 300, resetsAt: Date.now() + 2 * 3_600_000 },
+        secondary: { usedPercent: 18, windowDurationMins: 10080, resetsAt: Date.now() + 5 * 86_400_000 },
+      },
+      codex_token_details: {
+        inputTokens: 84_230,
+        outputTokens: 12_450,
+        cachedInputTokens: 41_200,
+        reasoningOutputTokens: 8_900,
+        modelContextWindow: 200_000,
+      },
+    });
+
+    return () => {
+      useStore.setState((s) => {
+        const sessions = new Map(s.sessions);
+        if (prev) sessions.set(CODEX_DEMO_SESSION, prev);
+        else sessions.delete(CODEX_DEMO_SESSION);
+        return { sessions };
+      });
+    };
+  }, []);
+
+  return (
+    <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
+      <CodexRateLimitsSection sessionId={CODEX_DEMO_SESSION} />
+      <CodexTokenDetailsSection sessionId={CODEX_DEMO_SESSION} />
     </div>
   );
 }

@@ -259,6 +259,15 @@ function handleParsedMessage(
       };
       store.appendMessage(sessionId, chatMsg);
       store.setStreaming(sessionId, null);
+      // Clear progress only for completed tools (tool_result blocks), not all tools.
+      // Blanket clear would cause flickering during concurrent tool execution.
+      if (msg.content?.length) {
+        for (const block of msg.content) {
+          if (block.type === "tool_result") {
+            store.clearToolProgress(sessionId, block.tool_use_id);
+          }
+        }
+      }
       store.setSessionStatus(sessionId, "running");
 
       // Start timer if not already started (for non-streaming tool calls)
@@ -332,6 +341,7 @@ function handleParsedMessage(
       store.updateSession(sessionId, sessionUpdates);
       store.setStreaming(sessionId, null);
       store.setStreamingStats(sessionId, null);
+      store.clearToolProgress(sessionId);
       store.setSessionStatus(sessionId, "idle");
       // Play notification sound if enabled and tab is not focused
       if (!document.hasFocus() && store.notificationSound) {
@@ -389,12 +399,20 @@ function handleParsedMessage(
     }
 
     case "tool_progress": {
-      // Could be used for progress indicators; ignored for now
+      store.setToolProgress(sessionId, data.tool_use_id, {
+        toolName: data.tool_name,
+        elapsedSeconds: data.elapsed_time_seconds,
+      });
       break;
     }
 
     case "tool_use_summary": {
-      // Optional: add as system message
+      store.appendMessage(sessionId, {
+        id: nextId(),
+        role: "system",
+        content: data.summary,
+        timestamp: Date.now(),
+      });
       break;
     }
 

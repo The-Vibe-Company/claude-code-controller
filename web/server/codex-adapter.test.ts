@@ -2088,4 +2088,64 @@ describe("CodexAdapter", () => {
     stdout.push(JSON.stringify({ id: 6, result: { config: { mcp_servers: { alpha: { enabled: true, url: "http://localhost:8080/mcp" } } } } }) + "\n");
     await new Promise((r) => setTimeout(r, 40));
   });
+
+  it("computes context_used_percent from last turn, not cumulative total", async () => {
+    // Regression: cumulative total.inputTokens can far exceed contextWindow
+    // (e.g. 1.2M input on a 258k window). The context bar should use
+    // last.inputTokens + last.outputTokens which reflects current turn usage.
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Send a tokenUsage/updated with large cumulative totals but small last-turn
+    stdout.push(JSON.stringify({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thr_123",
+        turnId: "turn_1",
+        tokenUsage: {
+          total: {
+            totalTokens: 1_200_000,
+            inputTokens: 1_150_000,
+            cachedInputTokens: 930_000,
+            outputTokens: 50_000,
+            reasoningOutputTokens: 2_000,
+          },
+          last: {
+            totalTokens: 90_000,
+            inputTokens: 85_000,
+            cachedInputTokens: 80_000,
+            outputTokens: 5_000,
+            reasoningOutputTokens: 200,
+          },
+          modelContextWindow: 258_400,
+        },
+      },
+    }) + "\n");
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Find the session_update message
+    const sessionUpdates = messages.filter((m) => m.type === "session_update") as Array<{
+      type: "session_update";
+      session: { context_used_percent?: number; codex_token_details?: Record<string, number> };
+    }>;
+    expect(sessionUpdates.length).toBeGreaterThan(0);
+
+    const lastUpdate = sessionUpdates[sessionUpdates.length - 1];
+
+    // context_used_percent should use last turn: (85000 + 5000) / 258400 ≈ 35%
+    expect(lastUpdate.session.context_used_percent).toBe(35);
+
+    // codex_token_details should still show cumulative totals
+    expect(lastUpdate.session.codex_token_details?.inputTokens).toBe(1_150_000);
+    expect(lastUpdate.session.codex_token_details?.outputTokens).toBe(50_000);
+    expect(lastUpdate.session.codex_token_details?.cachedInputTokens).toBe(930_000);
+  });
 });

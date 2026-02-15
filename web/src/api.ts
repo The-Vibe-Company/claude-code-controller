@@ -318,6 +318,38 @@ export interface PRStatusResponse {
   pr: GitHubPRInfo | null;
 }
 
+export interface CronJobInfo {
+  id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  recurring: boolean;
+  backendType: "claude" | "codex";
+  model: string;
+  cwd: string;
+  envSlug?: string;
+  enabled: boolean;
+  permissionMode: string;
+  codexInternetAccess?: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
+  lastSessionId?: string;
+  consecutiveFailures: number;
+  totalRuns: number;
+  nextRunAt?: number | null;
+}
+
+export interface CronJobExecution {
+  sessionId: string;
+  jobId: string;
+  startedAt: number;
+  completedAt?: number;
+  success?: boolean;
+  error?: string;
+  costUsd?: number;
+}
+
 export const api = {
   createSession: (opts?: CreateSessionOpts) =>
     post<{ sessionId: string; state: string; cwd: string }>(
@@ -496,4 +528,16 @@ export const api = {
   forceCheckForUpdate: () => post<UpdateInfo>("/update-check"),
   triggerUpdate: () =>
     post<{ ok: boolean; message: string }>("/update"),
+
+  // Cron jobs
+  listCronJobs: () => get<CronJobInfo[]>("/cron/jobs"),
+  getCronJob: (id: string) => get<CronJobInfo>(`/cron/jobs/${encodeURIComponent(id)}`),
+  createCronJob: (data: Partial<CronJobInfo>) => post<CronJobInfo>("/cron/jobs", data),
+  updateCronJob: (id: string, data: Partial<CronJobInfo>) =>
+    put<CronJobInfo>(`/cron/jobs/${encodeURIComponent(id)}`, data),
+  deleteCronJob: (id: string) => del(`/cron/jobs/${encodeURIComponent(id)}`),
+  toggleCronJob: (id: string) => post<CronJobInfo>(`/cron/jobs/${encodeURIComponent(id)}/toggle`),
+  runCronJob: (id: string) => post(`/cron/jobs/${encodeURIComponent(id)}/run`),
+  getCronJobExecutions: (id: string) =>
+    get<CronJobExecution[]>(`/cron/jobs/${encodeURIComponent(id)}/executions`),
 };

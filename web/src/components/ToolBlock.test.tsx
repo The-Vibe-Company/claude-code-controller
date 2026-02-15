@@ -79,8 +79,15 @@ describe("getToolLabel", () => {
     expect(getToolLabel("Grep")).toBe("Search Content");
   });
 
+  it("returns known labels for newly added tools", () => {
+    expect(getToolLabel("WebFetch")).toBe("Web Fetch");
+    expect(getToolLabel("Task")).toBe("Subagent");
+    expect(getToolLabel("TodoWrite")).toBe("Tasks");
+    expect(getToolLabel("NotebookEdit")).toBe("Notebook");
+    expect(getToolLabel("SendMessage")).toBe("Message");
+  });
+
   it("returns the name itself for unknown tools", () => {
-    expect(getToolLabel("WebFetch")).toBe("WebFetch");
     expect(getToolLabel("SomeUnknownTool")).toBe("SomeUnknownTool");
     expect(getToolLabel("CustomTool")).toBe("CustomTool");
   });
@@ -223,7 +230,7 @@ describe("ToolBlock", () => {
         toolUseId="tool-2"
       />
     );
-    expect(screen.getByText("WebFetch")).toBeTruthy();
+    expect(screen.getByText("Web Fetch")).toBeTruthy();
   });
 
   it("is collapsed by default (does not show details)", () => {

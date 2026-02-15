@@ -680,6 +680,17 @@ export class WsBridge {
     this.routeBrowserMessage(session, msg, ws);
   }
 
+  /** Send a user message into a session programmatically (no browser required).
+   *  Used by the cron scheduler to send prompts to autonomous sessions. */
+  injectUserMessage(sessionId: string, content: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      console.error(`[ws-bridge] Cannot inject message: session ${sessionId} not found`);
+      return;
+    }
+    this.routeBrowserMessage(session, { type: "user_message", content });
+  }
+
   handleBrowserClose(ws: ServerWebSocket<SocketData>) {
     const sessionId = (ws.data as BrowserSocketData).sessionId;
     const session = this.sessions.get(sessionId);

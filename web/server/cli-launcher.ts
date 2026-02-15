@@ -58,6 +58,10 @@ export interface SdkSessionInfo {
   codexInternetAccess?: boolean;
   /** Sandbox mode selected for Codex sessions */
   codexSandbox?: "workspace-write" | "danger-full-access";
+  /** If this session was spawned by a cron job */
+  cronJobId?: string;
+  /** Human-readable name of the cron job that spawned this session */
+  cronJobName?: string;
 }
 
 export interface LaunchOptions {

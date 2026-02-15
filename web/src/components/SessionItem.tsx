@@ -145,6 +145,11 @@ export function SessionItem({
                   <span className={`text-[9px] font-medium px-1.5 rounded-full leading-[16px] shrink-0 ${pillColors}`}>
                     {s.backendType === "codex" ? "Codex" : "Claude"}
                   </span>
+                  {s.cronJobId && (
+                    <span className="text-[9px] font-medium px-1.5 rounded-full leading-[16px] shrink-0 text-violet-500 bg-violet-500/10">
+                      Cron
+                    </span>
+                  )}
                 </>
               )}
             </div>

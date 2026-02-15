@@ -55,4 +55,8 @@ export interface SdkSessionInfo {
   gitBehind?: number;
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
+  /** If this session was spawned by a cron job */
+  cronJobId?: string;
+  /** Human-readable name of the cron job that spawned this session */
+  cronJobName?: string;
 }

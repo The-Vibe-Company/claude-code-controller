@@ -13,6 +13,7 @@ import { Playground } from "./components/Playground.js";
 import { UpdateBanner } from "./components/UpdateBanner.js";
 import { SettingsPage } from "./components/SettingsPage.js";
 import { EnvManager } from "./components/EnvManager.js";
+import { CronManager } from "./components/CronManager.js";
 import { TerminalPage } from "./components/TerminalPage.js";
 
 function useHash() {
@@ -33,7 +34,8 @@ export default function App() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
-  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
+  const isScheduledPage = hash === "#/scheduled";
+  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage && !isScheduledPage;
 
   useEffect(() => {
     capturePageView(hash || "#/");
@@ -109,6 +111,12 @@ export default function App() {
           {isEnvironmentsPage && (
             <div className="absolute inset-0">
               <EnvManager embedded />
+            </div>
+          )}
+
+          {isScheduledPage && (
+            <div className="absolute inset-0">
+              <CronManager embedded />
             </div>
           )}
 

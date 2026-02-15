@@ -29,6 +29,7 @@ export function Sidebar() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
+  const isScheduledPage = hash === "#/scheduled";
 
   // Poll for SDK sessions on mount
   useEffect(() => {
@@ -216,6 +217,8 @@ export function Sidebar() {
       backendType: bridgeState?.backend_type || sdkInfo?.backendType || "claude",
       repoRoot: bridgeState?.repo_root || sdkInfo?.repoRoot || "",
       permCount: pendingPermissions.get(id)?.size ?? 0,
+      cronJobId: bridgeState?.cronJobId || sdkInfo?.cronJobId,
+      cronJobName: bridgeState?.cronJobName || sdkInfo?.cronJobName,
     };
   }).sort((a, b) => b.createdAt - a.createdAt);
 
@@ -387,6 +390,22 @@ export function Sidebar() {
             <path d="M8 1a2 2 0 012 2v1h2a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2h2V3a2 2 0 012-2zm0 1.5a.5.5 0 00-.5.5v1h1V3a.5.5 0 00-.5-.5zM4 5.5a.5.5 0 00-.5.5v6a.5.5 0 00.5.5h8a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H4z" />
           </svg>
           <span>Environments</span>
+        </button>
+        <button
+          onClick={() => {
+            useStore.getState().closeTerminal();
+            window.location.hash = "#/scheduled";
+          }}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm transition-colors cursor-pointer ${
+            isScheduledPage
+              ? "bg-cc-active text-cc-fg"
+              : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+          }`}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+            <path d="M8 2a6 6 0 100 12A6 6 0 008 2zM0 8a8 8 0 1116 0A8 8 0 010 8zm9-3a1 1 0 10-2 0v3a1 1 0 00.293.707l2 2a1 1 0 001.414-1.414L9 7.586V5z" />
+          </svg>
+          <span>Scheduled</span>
         </button>
         <button
           onClick={() => {
