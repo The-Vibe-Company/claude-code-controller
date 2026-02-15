@@ -474,7 +474,15 @@ describe("Sidebar", () => {
 
     render(<Sidebar />);
     const nameElement = screen.getByText("Animated Name");
-    fireEvent.animationEnd(nameElement);
+    expect(nameElement.className).toContain("animate-name-appear");
+    // jsdom lacks AnimationEvent, so fireEvent.animationEnd is unreliable
+    // with React's event delegation. Invoke the handler via React's
+    // internal __reactProps$ which holds the element's React props.
+    const propsKey = Object.keys(nameElement).find((k) => k.startsWith("__reactProps$"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = propsKey ? (nameElement as any)[propsKey] : null;
+    expect(props?.onAnimationEnd).toBeDefined();
+    props.onAnimationEnd();
     expect(mockState.clearRecentlyRenamed).toHaveBeenCalledWith("s1");
   });
 
