@@ -371,6 +371,7 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
   const streamingStartedAt = useStore((s) => s.streamingStartedAt.get(sessionId));
   const streamingOutputTokens = useStore((s) => s.streamingOutputTokens.get(sessionId));
   const sessionStatus = useStore((s) => s.sessionStatus.get(sessionId));
+  const toolProgress = useStore((s) => s.toolProgress.get(sessionId));
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isNearBottom = useRef(true);
@@ -439,7 +440,7 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
         <div className="text-center">
           <p className="text-sm text-cc-fg font-medium mb-1">Start a conversation</p>
           <p className="text-xs text-cc-muted leading-relaxed">
-            Send a message to begin working with The Vibe Companion.
+            Send a message to begin working with The Companion.
           </p>
         </div>
       </div>
@@ -468,6 +469,20 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <FeedEntries entries={visibleEntries} />
+
+          {/* Tool progress indicator */}
+          {toolProgress && toolProgress.size > 0 && !streamingText && (
+            <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-cc-primary animate-pulse" />
+              {Array.from(toolProgress.values()).map((p, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-cc-muted/40">·</span>}
+                  <span>{getToolLabel(p.toolName)}</span>
+                  <span className="text-cc-muted/60">{p.elapsedSeconds}s</span>
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Streaming indicator */}
           {streamingText && (

@@ -79,8 +79,15 @@ describe("getToolLabel", () => {
     expect(getToolLabel("Grep")).toBe("Search Content");
   });
 
+  it("returns known labels for newly added tools", () => {
+    expect(getToolLabel("WebFetch")).toBe("Web Fetch");
+    expect(getToolLabel("Task")).toBe("Subagent");
+    expect(getToolLabel("TodoWrite")).toBe("Tasks");
+    expect(getToolLabel("NotebookEdit")).toBe("Notebook");
+    expect(getToolLabel("SendMessage")).toBe("Message");
+  });
+
   it("returns the name itself for unknown tools", () => {
-    expect(getToolLabel("WebFetch")).toBe("WebFetch");
     expect(getToolLabel("SomeUnknownTool")).toBe("SomeUnknownTool");
     expect(getToolLabel("CustomTool")).toBe("CustomTool");
   });
@@ -223,7 +230,7 @@ describe("ToolBlock", () => {
         toolUseId="tool-2"
       />
     );
-    expect(screen.getByText("WebFetch")).toBeTruthy();
+    expect(screen.getByText("Web Fetch")).toBeTruthy();
   });
 
   it("is collapsed by default (does not show details)", () => {
@@ -301,7 +308,7 @@ describe("ToolBlock", () => {
   });
 
   it("renders Edit diff view when expanded", () => {
-    render(
+    const { container } = render(
       <ToolBlock
         name="Edit"
         input={{
@@ -315,13 +322,11 @@ describe("ToolBlock", () => {
 
     fireEvent.click(screen.getByRole("button"));
 
-    // The preview header shows "src/app.ts" (last 2 segments), expanded shows full path
-    expect(screen.getByText("/home/user/src/app.ts")).toBeTruthy();
-    // Check diff sections
-    expect(screen.getByText("removed")).toBeTruthy();
-    expect(screen.getByText("added")).toBeTruthy();
-    expect(screen.getByText("const x = 1;")).toBeTruthy();
-    expect(screen.getByText("const x = 2;")).toBeTruthy();
+    // DiffViewer renders file header with basename
+    expect(screen.getByText("app.ts")).toBeTruthy();
+    // DiffViewer renders del/add lines
+    expect(container.querySelector(".diff-line-del")).toBeTruthy();
+    expect(container.querySelector(".diff-line-add")).toBeTruthy();
   });
 
   it("renders Read file path when expanded", () => {

@@ -8,5 +8,6 @@ package-lock.json
 test-live.ts
 web/dist/
 .env
+web/.env.local
 .dev-*.pid
 .dev-*.log

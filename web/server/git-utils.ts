@@ -252,12 +252,24 @@ export function ensureWorktree(
     gitSafe(`rev-parse --verify refs/remotes/origin/${branchName}`, repoRoot) !== null;
 
   if (branchExists) {
+    if (options?.forceNew) {
+      // Create a uniquely-named branch so multiple sessions can work independently
+      const commitHash = git(`rev-parse refs/heads/${branchName}`, repoRoot);
+      const uniqueBranch = generateUniqueWorktreeBranch(repoRoot, branchName);
+      git(`worktree add -b ${uniqueBranch} "${targetPath}" ${commitHash}`, repoRoot);
+      return { worktreePath: targetPath, branch: branchName, actualBranch: uniqueBranch, isNew: false };
+    }
     // Worktree add with existing local branch
     git(`worktree add "${targetPath}" ${branchName}`, repoRoot);
     return { worktreePath: targetPath, branch: branchName, actualBranch: branchName, isNew: false };
   }
 
   if (remoteBranchExists) {
+    if (options?.forceNew) {
+      const uniqueBranch = generateUniqueWorktreeBranch(repoRoot, branchName);
+      git(`worktree add -b ${uniqueBranch} "${targetPath}" origin/${branchName}`, repoRoot);
+      return { worktreePath: targetPath, branch: branchName, actualBranch: uniqueBranch, isNew: false };
+    }
     // Create local tracking branch from remote
     git(`worktree add -b ${branchName} "${targetPath}" origin/${branchName}`, repoRoot);
     return { worktreePath: targetPath, branch: branchName, actualBranch: branchName, isNew: false };

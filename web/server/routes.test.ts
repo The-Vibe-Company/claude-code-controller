@@ -13,6 +13,11 @@ vi.mock("node:child_process", () => ({
   execSync: vi.fn(() => ""),
 }));
 
+const mockResolveBinary = vi.hoisted(() => vi.fn((_name: string) => null as string | null));
+vi.mock("./path-resolver.js", () => ({
+  resolveBinary: mockResolveBinary,
+}));
+
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
@@ -27,6 +32,9 @@ vi.mock("./git-utils.js", () => ({
   listBranches: vi.fn(() => []),
   listWorktrees: vi.fn(() => []),
   ensureWorktree: vi.fn(),
+  gitFetch: vi.fn(() => ({ success: true, output: "" })),
+  gitPull: vi.fn(() => ({ success: true, output: "" })),
+  checkoutBranch: vi.fn(),
   removeWorktree: vi.fn(),
   isWorktreeDirty: vi.fn(() => false),
 }));
@@ -39,9 +47,42 @@ vi.mock("./session-names.js", () => ({
   _resetForTest: vi.fn(),
 }));
 
+vi.mock("./settings-manager.js", () => ({
+  DEFAULT_OPENROUTER_MODEL: "openrouter/free",
+  getSettings: vi.fn(() => ({
+    openrouterApiKey: "",
+    openrouterModel: "openrouter/free",
+    updatedAt: 0,
+  })),
+  updateSettings: vi.fn((patch) => ({
+    openrouterApiKey: patch.openrouterApiKey ?? "",
+    openrouterModel: patch.openrouterModel ?? "openrouter/free",
+    updatedAt: Date.now(),
+  })),
+}));
+
 const mockGetUsageLimits = vi.hoisted(() => vi.fn());
+const mockUpdateCheckerState = vi.hoisted(() => ({
+  currentVersion: "0.22.1",
+  latestVersion: null as string | null,
+  lastChecked: 0,
+  isServiceMode: false,
+  checking: false,
+  updateInProgress: false,
+}));
+const mockCheckForUpdate = vi.hoisted(() => vi.fn(async () => {}));
+const mockIsUpdateAvailable = vi.hoisted(() => vi.fn(() => false));
+const mockSetUpdateInProgress = vi.hoisted(() => vi.fn());
+
 vi.mock("./usage-limits.js", () => ({
   getUsageLimits: mockGetUsageLimits,
+}));
+
+vi.mock("./update-checker.js", () => ({
+  getUpdateState: vi.fn(() => ({ ...mockUpdateCheckerState })),
+  checkForUpdate: mockCheckForUpdate,
+  isUpdateAvailable: mockIsUpdateAvailable,
+  setUpdateInProgress: mockSetUpdateInProgress,
 }));
 
 import { Hono } from "hono";
@@ -51,6 +92,7 @@ import { createRoutes } from "./routes.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import * as settingsManager from "./settings-manager.js";
 
 // ─── Mock factories ──────────────────────────────────────────────────────────
 
@@ -105,12 +147,19 @@ let tracker: ReturnType<typeof createMockTracker>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUpdateCheckerState.currentVersion = "0.22.1";
+  mockUpdateCheckerState.latestVersion = null;
+  mockUpdateCheckerState.lastChecked = 0;
+  mockUpdateCheckerState.isServiceMode = false;
+  mockUpdateCheckerState.checking = false;
+  mockUpdateCheckerState.updateInProgress = false;
   launcher = createMockLauncher();
   bridge = createMockBridge();
   sessionStore = createMockStore();
   tracker = createMockTracker();
   app = new Hono();
-  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker));
+  const terminalManager = { getInfo: () => null, spawn: () => "", kill: () => {} } as any;
+  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker, terminalManager));
 });
 
 // ─── Sessions ────────────────────────────────────────────────────────────────
@@ -203,6 +252,106 @@ describe("POST /api/sessions/create", () => {
         actualBranch: "feat-branch",
       }),
     );
+  });
+
+  it("fetches and pulls before create when branch matches current branch", async () => {
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "main",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", branch: "main" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.checkoutBranch).not.toHaveBeenCalled();
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo");
+  });
+
+  it("fetches, checks out selected branch, then pulls before create", async () => {
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "develop",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", branch: "main" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(gitUtils.gitFetch).toHaveBeenCalledWith("/repo");
+    expect(gitUtils.checkoutBranch).toHaveBeenCalledWith("/repo", "main");
+    expect(gitUtils.gitPull).toHaveBeenCalledWith("/repo");
+    expect(vi.mocked(gitUtils.gitFetch).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(gitUtils.checkoutBranch).mock.invocationCallOrder[0],
+    );
+    expect(vi.mocked(gitUtils.checkoutBranch).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(gitUtils.gitPull).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("returns 500 and does not launch when fetch fails before create", async () => {
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "main",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+    vi.mocked(gitUtils.gitFetch).mockReturnValueOnce({
+      success: false,
+      output: "network error",
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", branch: "main" }),
+    });
+
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json).toEqual({
+      error: "git fetch failed before session create: network error",
+    });
+    expect(gitUtils.gitPull).not.toHaveBeenCalled();
+    expect(launcher.launch).not.toHaveBeenCalled();
+  });
+
+  it("proceeds with session creation when pull fails (non-fatal)", async () => {
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValue({
+      repoRoot: "/repo",
+      repoName: "my-repo",
+      currentBranch: "main",
+      defaultBranch: "main",
+      isWorktree: false,
+    });
+    vi.mocked(gitUtils.gitPull).mockReturnValueOnce({
+      success: false,
+      output: "no tracking information",
+    });
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/repo", branch: "main" }),
+    });
+
+    // Pull failure is non-fatal — session should still be created
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalled();
   });
 
   it("returns 500 when launch throws an error", async () => {
@@ -552,6 +701,147 @@ describe("DELETE /api/envs/:slug", () => {
   });
 });
 
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+describe("GET /api/settings", () => {
+  it("returns settings status without exposing the key", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "or-secret",
+      openrouterModel: "openrouter/free",
+      updatedAt: 123,
+    });
+
+    const res = await app.request("/api/settings", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      openrouterApiKeyConfigured: true,
+      openrouterModel: "openrouter/free",
+    });
+  });
+
+  it("reports key as not configured when empty", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openai/gpt-4o-mini",
+      updatedAt: 123,
+    });
+
+    const res = await app.request("/api/settings", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      openrouterApiKeyConfigured: false,
+      openrouterModel: "openai/gpt-4o-mini",
+    });
+  });
+});
+
+describe("PUT /api/settings", () => {
+  it("updates settings", async () => {
+    vi.mocked(settingsManager.updateSettings).mockReturnValue({
+      openrouterApiKey: "new-key",
+      openrouterModel: "openrouter/free",
+      updatedAt: 456,
+    });
+
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterApiKey: "new-key" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(settingsManager.updateSettings).toHaveBeenCalledWith({
+      openrouterApiKey: "new-key",
+      openrouterModel: undefined,
+    });
+    const json = await res.json();
+    expect(json).toEqual({
+      openrouterApiKeyConfigured: true,
+      openrouterModel: "openrouter/free",
+    });
+  });
+
+  it("trims key and falls back to default model for blank value", async () => {
+    vi.mocked(settingsManager.updateSettings).mockReturnValue({
+      openrouterApiKey: "trimmed-key",
+      openrouterModel: "openrouter/free",
+      updatedAt: 789,
+    });
+
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterApiKey: "  trimmed-key  ", openrouterModel: "   " }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(settingsManager.updateSettings).toHaveBeenCalledWith({
+      openrouterApiKey: "trimmed-key",
+      openrouterModel: "openrouter/free",
+    });
+  });
+
+  it("updates only model without overriding key", async () => {
+    vi.mocked(settingsManager.updateSettings).mockReturnValue({
+      openrouterApiKey: "existing-key",
+      openrouterModel: "openai/gpt-4o-mini",
+      updatedAt: 999,
+    });
+
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterModel: "openai/gpt-4o-mini" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(settingsManager.updateSettings).toHaveBeenCalledWith({
+      openrouterApiKey: undefined,
+      openrouterModel: "openai/gpt-4o-mini",
+    });
+  });
+
+  it("returns 400 for non-string model", async () => {
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterApiKey: "new-key", openrouterModel: 123 }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "openrouterModel must be a string" });
+  });
+
+  it("returns 400 for non-string key", async () => {
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterApiKey: 123 }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "openrouterApiKey must be a string" });
+  });
+
+  it("returns 400 when no settings fields are provided", async () => {
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "At least one settings field is required" });
+  });
+});
+
 // ─── Git ─────────────────────────────────────────────────────────────────────
 
 describe("GET /api/git/repo-info", () => {
@@ -712,6 +1002,39 @@ describe("PATCH /api/sessions/:id/name", () => {
   });
 });
 
+// ─── Update checking ────────────────────────────────────────────────────────
+
+describe("GET /api/update-check", () => {
+  it("triggers a refresh when never checked", async () => {
+    mockUpdateCheckerState.lastChecked = 0;
+
+    const res = await app.request("/api/update-check", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(mockCheckForUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("does not trigger a refresh when the previous check is fresh", async () => {
+    mockUpdateCheckerState.lastChecked = Date.now();
+
+    const res = await app.request("/api/update-check", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(mockCheckForUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/update-check", () => {
+  it("always forces a refresh", async () => {
+    mockUpdateCheckerState.lastChecked = Date.now();
+
+    const res = await app.request("/api/update-check", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(mockCheckForUpdate).toHaveBeenCalledOnce();
+  });
+});
+
 // ─── Filesystem ──────────────────────────────────────────────────────────────
 
 describe("GET /api/fs/home", () => {
@@ -725,6 +1048,67 @@ describe("GET /api/fs/home", () => {
     expect(typeof json.home).toBe("string");
     expect(typeof json.cwd).toBe("string");
   });
+
+  it("returns home as cwd when process.cwd() is the package root", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__COMPANION_PACKAGE_ROOT;
+    try {
+      process.env.__COMPANION_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/opt/companion";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__COMPANION_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns home as cwd when process.cwd() is inside the package root", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__COMPANION_PACKAGE_ROOT;
+    try {
+      process.env.__COMPANION_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/opt/companion/node_modules/.bin";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__COMPANION_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns actual cwd when launched from a project directory", async () => {
+    const origCwd = process.cwd;
+    const origEnv = process.env.__COMPANION_PACKAGE_ROOT;
+    try {
+      process.env.__COMPANION_PACKAGE_ROOT = "/opt/companion";
+      process.cwd = () => "/Users/testuser/my-project";
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe("/Users/testuser/my-project");
+    } finally {
+      process.cwd = origCwd;
+      process.env.__COMPANION_PACKAGE_ROOT = origEnv;
+    }
+  });
+
+  it("returns home as cwd when process.cwd() equals home directory", async () => {
+    const { homedir } = await import("node:os");
+    const origCwd = process.cwd;
+    const origEnv = process.env.__COMPANION_PACKAGE_ROOT;
+    try {
+      delete process.env.__COMPANION_PACKAGE_ROOT;
+      process.cwd = () => homedir();
+      const res = await app.request("/api/fs/home", { method: "GET" });
+      const json = await res.json();
+      expect(json.cwd).toBe(json.home);
+    } finally {
+      process.cwd = origCwd;
+      process.env.__COMPANION_PACKAGE_ROOT = origEnv;
+    }
+  });
 });
 
 describe("GET /api/fs/diff", () => {
@@ -737,6 +1121,7 @@ describe("GET /api/fs/diff", () => {
   });
 
   it("returns unified diff for a file", async () => {
+    // Validates that /api/fs/diff uses the repository default branch as base (origin/main here).
     const diffOutput = `diff --git a/file.ts b/file.ts
 --- a/file.ts
 +++ b/file.ts
@@ -745,7 +1130,11 @@ describe("GET /api/fs/diff", () => {
 -old line
 +new line
  line3`;
-    vi.mocked(execSync).mockReturnValueOnce(diffOutput);
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/repo\n") // rev-parse --show-toplevel
+      .mockReturnValueOnce("file.ts\n") // ls-files --full-name
+      .mockReturnValueOnce("refs/remotes/origin/main\n") // symbolic-ref refs/remotes/origin/HEAD
+      .mockReturnValueOnce(diffOutput); // git diff origin/main
 
     const res = await app.request("/api/fs/diff?path=/repo/file.ts", { method: "GET" });
 
@@ -754,7 +1143,70 @@ describe("GET /api/fs/diff", () => {
     expect(json.diff).toBe(diffOutput);
     expect(json.path).toContain("file.ts");
     expect(vi.mocked(execSync)).toHaveBeenCalledWith(
-      expect.stringContaining("git diff HEAD"),
+      expect.stringContaining("git diff origin/main"),
+      expect.objectContaining({ encoding: "utf-8", timeout: 5000 }),
+    );
+  });
+
+  it("returns no-index diff for untracked files", async () => {
+    // Untracked files have no base-branch diff content, so API must fallback to a full-file no-index diff.
+    const untrackedDiff = `diff --git a/new.txt b/new.txt
+new file mode 100644
+index 0000000..e69de29
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1 @@
++hello`;
+
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/repo\n") // rev-parse --show-toplevel
+      .mockReturnValueOnce("new.txt\n") // ls-files --full-name
+      .mockReturnValueOnce("refs/remotes/origin/main\n") // symbolic-ref refs/remotes/origin/HEAD
+      .mockReturnValueOnce("") // git diff origin/main -> empty for untracked
+      .mockReturnValueOnce("new.txt\n") // ls-files --others --exclude-standard
+      .mockImplementationOnce(() => {
+        const err = new Error("diff exits with 1 for differences") as Error & { stdout: string };
+        err.stdout = untrackedDiff;
+        throw err;
+      }); // git diff --no-index
+
+    const res = await app.request("/api/fs/diff?path=/repo/new.txt", { method: "GET" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.diff).toContain("new file mode");
+    expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+      expect.stringContaining("git diff --no-index -- /dev/null"),
+      expect.objectContaining({ encoding: "utf-8", timeout: 5000 }),
+    );
+  });
+
+  it("falls back to local default branch when origin HEAD is unavailable", async () => {
+    // Ensures fallback chain works when symbolic-ref fails (e.g. no origin/HEAD): use local fallback branch.
+    const diffOutput = `diff --git a/file.ts b/file.ts
+--- a/file.ts
++++ b/file.ts
+@@ -1,2 +1,3 @@
+ line1
++added`;
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/repo\n") // rev-parse --show-toplevel
+      .mockReturnValueOnce("file.ts\n") // ls-files --full-name
+      .mockImplementationOnce(() => {
+        const err = new Error("no symbol ref") as Error & { stdout: string };
+        err.stdout = "error: ref refs/remotes/origin/HEAD is not a symbolic ref";
+        throw err;
+      }) // symbolic-ref refs/remotes/origin/HEAD unavailable
+      .mockReturnValueOnce("main\n") // branch --list fallback
+      .mockReturnValueOnce(diffOutput); // git diff main
+
+    const res = await app.request("/api/fs/diff?path=/repo/file.ts", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.diff).toBe(diffOutput);
+    expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+      expect.stringContaining("git diff main"),
       expect.objectContaining({ encoding: "utf-8", timeout: 5000 }),
     );
   });
@@ -777,8 +1229,8 @@ describe("GET /api/fs/diff", () => {
 
 describe("GET /api/backends", () => {
   it("returns both backends with availability status", async () => {
-    // First call: `which claude` succeeds, second: `which codex` succeeds
-    vi.mocked(execSync)
+    // resolveBinary returns a path for both binaries
+    mockResolveBinary
       .mockReturnValueOnce("/usr/bin/claude")
       .mockReturnValueOnce("/usr/bin/codex");
 
@@ -792,10 +1244,11 @@ describe("GET /api/backends", () => {
     ]);
   });
 
-  it("marks backends as unavailable when CLI is not found", async () => {
-    vi.mocked(execSync)
-      .mockImplementationOnce(() => { throw new Error("not found"); })
-      .mockImplementationOnce(() => { throw new Error("not found"); });
+  it("marks backends as unavailable when binary is not found", async () => {
+    // resolveBinary returns null for both
+    mockResolveBinary
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce(null);
 
     const res = await app.request("/api/backends", { method: "GET" });
 
@@ -808,9 +1261,9 @@ describe("GET /api/backends", () => {
   });
 
   it("handles mixed availability", async () => {
-    vi.mocked(execSync)
+    mockResolveBinary
       .mockReturnValueOnce("/usr/bin/claude") // claude found
-      .mockImplementationOnce(() => { throw new Error("not found"); }); // codex not found
+      .mockReturnValueOnce(null); // codex not found
 
     const res = await app.request("/api/backends", { method: "GET" });
 

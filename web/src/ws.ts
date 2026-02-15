@@ -1,13 +1,41 @@
 import { useStore } from "./store.js";
-import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo } from "./types.js";
+import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
 import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const lastSeqBySession = new Map<string, number>();
 const taskCounters = new Map<string, number>();
 /** Track processed tool_use IDs to prevent duplicate task creation */
 const processedToolUseIds = new Map<string, Set<string>>();
+
+function normalizePath(path: string): string {
+  const isAbs = path.startsWith("/");
+  const parts = path.split("/");
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (out.length > 0) out.pop();
+      continue;
+    }
+    out.push(part);
+  }
+  return `${isAbs ? "/" : ""}${out.join("/")}`;
+}
+
+export function resolveSessionFilePath(filePath: string, cwd?: string): string {
+  if (filePath.startsWith("/")) return normalizePath(filePath);
+  if (!cwd) return normalizePath(filePath);
+  return normalizePath(`${cwd}/${filePath}`);
+}
+
+function isPathInSessionScope(filePath: string, cwd?: string): boolean {
+  if (!cwd) return true;
+  const normalizedCwd = normalizePath(cwd);
+  return filePath === normalizedCwd || filePath.startsWith(`${normalizedCwd}/`);
+}
 
 function getProcessedSet(sessionId: string): Set<string> {
   let set = processedToolUseIds.get(sessionId);
@@ -81,23 +109,84 @@ function extractTasksFromBlocks(sessionId: string, blocks: ContentBlock[]) {
 
 function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]) {
   const store = useStore.getState();
+  const sessionCwd =
+    store.sessions.get(sessionId)?.cwd ||
+    store.sdkSessions.find((sdk) => sdk.sessionId === sessionId)?.cwd;
   for (const block of blocks) {
     if (block.type !== "tool_use") continue;
     const { name, input } = block;
     if ((name === "Edit" || name === "Write") && typeof input.file_path === "string") {
-      store.addChangedFile(sessionId, input.file_path);
+      const resolvedPath = resolveSessionFilePath(input.file_path, sessionCwd);
+      if (isPathInSessionScope(resolvedPath, sessionCwd)) {
+        store.addChangedFile(sessionId, resolvedPath);
+      }
     }
   }
 }
 
+function sendBrowserNotification(title: string, body: string, tag: string) {
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  new Notification(title, { body, tag });
+}
+
 let idCounter = 0;
+let clientMsgCounter = 0;
 function nextId(): string {
   return `msg-${Date.now()}-${++idCounter}`;
 }
 
+function nextClientMsgId(): string {
+  return `cmsg-${Date.now()}-${++clientMsgCounter}`;
+}
+
+const IDEMPOTENT_OUTGOING_TYPES = new Set<BrowserOutgoingMessage["type"]>([
+  "user_message",
+  "permission_response",
+  "interrupt",
+  "set_model",
+  "set_permission_mode",
+  "mcp_get_status",
+  "mcp_toggle",
+  "mcp_reconnect",
+  "mcp_set_servers",
+]);
+
 function getWsUrl(sessionId: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${location.host}/ws/browser/${sessionId}`;
+}
+
+function getLastSeqStorageKey(sessionId: string): string {
+  return `companion:last-seq:${sessionId}`;
+}
+
+function getLastSeq(sessionId: string): number {
+  const cached = lastSeqBySession.get(sessionId);
+  if (typeof cached === "number") return cached;
+  try {
+    const raw = localStorage.getItem(getLastSeqStorageKey(sessionId));
+    const parsed = raw ? Number(raw) : 0;
+    const normalized = Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+    lastSeqBySession.set(sessionId, normalized);
+    return normalized;
+  } catch {
+    return 0;
+  }
+}
+
+function setLastSeq(sessionId: string, seq: number): void {
+  const normalized = Math.max(0, Math.floor(seq));
+  lastSeqBySession.set(sessionId, normalized);
+  try {
+    localStorage.setItem(getLastSeqStorageKey(sessionId), String(normalized));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function ackSeq(sessionId: string, seq: number): void {
+  sendToSession(sessionId, { type: "session_ack", last_seq: seq });
 }
 
 function extractTextFromBlocks(blocks: ContentBlock[]): string {
@@ -112,7 +201,6 @@ function extractTextFromBlocks(blocks: ContentBlock[]): string {
 }
 
 function handleMessage(sessionId: string, event: MessageEvent) {
-  const store = useStore.getState();
   let data: BrowserIncomingMessage;
   try {
     data = JSON.parse(event.data);
@@ -120,11 +208,34 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     return;
   }
 
+  handleParsedMessage(sessionId, data);
+}
+
+function handleParsedMessage(
+  sessionId: string,
+  data: BrowserIncomingMessage,
+  options: { processSeq?: boolean; ackSeqMessage?: boolean } = {},
+) {
+  const { processSeq = true, ackSeqMessage = true } = options;
+  const store = useStore.getState();
+
+  if (processSeq && typeof data.seq === "number") {
+    const previous = getLastSeq(sessionId);
+    if (data.seq <= previous) return;
+    setLastSeq(sessionId, data.seq);
+    if (ackSeqMessage) {
+      ackSeq(sessionId, data.seq);
+    }
+  }
+
   switch (data.type) {
     case "session_init": {
+      const existingSession = store.sessions.get(sessionId);
       store.addSession(data.session);
       store.setCliConnected(sessionId, true);
-      store.setSessionStatus(sessionId, "idle");
+      if (!existingSession) {
+        store.setSessionStatus(sessionId, "idle");
+      }
       if (!store.sessionNames.has(sessionId)) {
         const existingNames = new Set(store.sessionNames.values());
         const name = generateUniqueSessionName(existingNames);
@@ -146,13 +257,22 @@ function handleMessage(sessionId: string, event: MessageEvent) {
         role: "assistant",
         content: textContent,
         contentBlocks: msg.content,
-        timestamp: Date.now(),
+        timestamp: data.timestamp || Date.now(),
         parentToolUseId: data.parent_tool_use_id,
         model: msg.model,
         stopReason: msg.stop_reason,
       };
       store.appendMessage(sessionId, chatMsg);
       store.setStreaming(sessionId, null);
+      // Clear progress only for completed tools (tool_result blocks), not all tools.
+      // Blanket clear would cause flickering during concurrent tool execution.
+      if (msg.content?.length) {
+        for (const block of msg.content) {
+          if (block.type === "tool_result") {
+            store.clearToolProgress(sessionId, block.tool_use_id);
+          }
+        }
+      }
       store.setSessionStatus(sessionId, "running");
 
       // Start timer if not already started (for non-streaming tool calls)
@@ -226,10 +346,14 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       store.updateSession(sessionId, sessionUpdates);
       store.setStreaming(sessionId, null);
       store.setStreamingStats(sessionId, null);
+      store.clearToolProgress(sessionId);
       store.setSessionStatus(sessionId, "idle");
       // Play notification sound if enabled and tab is not focused
       if (!document.hasFocus() && store.notificationSound) {
         playNotificationSound();
+      }
+      if (!document.hasFocus() && store.notificationDesktop) {
+        sendBrowserNotification("Session completed", "Claude finished the task", sessionId);
       }
       if (r.is_error && r.errors?.length) {
         store.appendMessage(sessionId, {
@@ -244,6 +368,14 @@ function handleMessage(sessionId: string, event: MessageEvent) {
 
     case "permission_request": {
       store.addPermission(sessionId, data.request);
+      if (!document.hasFocus() && store.notificationDesktop) {
+        const req = data.request;
+        sendBrowserNotification(
+          "Permission needed",
+          `${req.tool_name}: approve or deny`,
+          req.request_id,
+        );
+      }
       // Also extract tasks and changed files from permission requests
       const req = data.request;
       if (req.tool_name && req.input) {
@@ -265,12 +397,20 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     }
 
     case "tool_progress": {
-      // Could be used for progress indicators; ignored for now
+      store.setToolProgress(sessionId, data.tool_use_id, {
+        toolName: data.tool_name,
+        elapsedSeconds: data.elapsed_time_seconds,
+      });
       break;
     }
 
     case "tool_use_summary": {
-      // Optional: add as system message
+      store.appendMessage(sessionId, {
+        id: nextId(),
+        role: "system",
+        content: data.summary,
+        timestamp: Date.now(),
+      });
       break;
     }
 
@@ -327,12 +467,23 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       break;
     }
 
+    case "pr_status_update": {
+      store.setPRStatus(sessionId, { available: data.available, pr: data.pr });
+      break;
+    }
+
+    case "mcp_status": {
+      store.setMcpServers(sessionId, data.servers);
+      break;
+    }
+
     case "message_history": {
       const chatMessages: ChatMessage[] = [];
-      for (const histMsg of data.messages) {
+      for (let i = 0; i < data.messages.length; i++) {
+        const histMsg = data.messages[i];
         if (histMsg.type === "user_message") {
           chatMessages.push({
-            id: nextId(),
+            id: histMsg.id || nextId(),
             role: "user",
             content: histMsg.content,
             timestamp: histMsg.timestamp,
@@ -345,7 +496,7 @@ function handleMessage(sessionId: string, event: MessageEvent) {
             role: "assistant",
             content: textContent,
             contentBlocks: msg.content,
-            timestamp: Date.now(),
+            timestamp: histMsg.timestamp || Date.now(),
             parentToolUseId: histMsg.parent_tool_use_id,
             model: msg.model,
             stopReason: msg.stop_reason,
@@ -359,7 +510,7 @@ function handleMessage(sessionId: string, event: MessageEvent) {
           const r = histMsg.data;
           if (r.is_error && r.errors?.length) {
             chatMessages.push({
-              id: nextId(),
+              id: `hist-error-${i}`,
               role: "system",
               content: `Error: ${r.errors.join(", ")}`,
               timestamp: Date.now(),
@@ -369,12 +520,40 @@ function handleMessage(sessionId: string, event: MessageEvent) {
       }
       if (chatMessages.length > 0) {
         const existing = store.messages.get(sessionId) || [];
-        // Only replace if history has at least as many messages as current state,
-        // or if the current state is empty (initial connect). This prevents a race
-        // condition where live messages (e.g., tool_use) are lost by a stale history replay.
-        if (existing.length === 0 || chatMessages.length >= existing.length) {
+        if (existing.length === 0) {
+          // Initial connect: history is the full truth
           store.setMessages(sessionId, chatMessages);
+        } else {
+          // Reconnect: merge history with live messages, dedup by ID
+          const existingIds = new Set(existing.map((m) => m.id));
+          const newFromHistory = chatMessages.filter((m) => !existingIds.has(m.id));
+          if (newFromHistory.length > 0) {
+            // Merge and sort by timestamp to maintain chronological order
+            const merged = [...newFromHistory, ...existing].sort(
+              (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0),
+            );
+            store.setMessages(sessionId, merged);
+          }
         }
+      }
+      break;
+    }
+
+    case "event_replay": {
+      let latestProcessed: number | undefined;
+      for (const evt of data.events) {
+        const previous = getLastSeq(sessionId);
+        if (evt.seq <= previous) continue;
+        setLastSeq(sessionId, evt.seq);
+        latestProcessed = evt.seq;
+        handleParsedMessage(
+          sessionId,
+          evt.message as BrowserIncomingMessage,
+          { processSeq: false, ackSeqMessage: false },
+        );
+      }
+      if (typeof latestProcessed === "number") {
+        ackSeq(sessionId, latestProcessed);
       }
       break;
     }
@@ -392,6 +571,8 @@ export function connectSession(sessionId: string) {
 
   ws.onopen = () => {
     useStore.getState().setConnectionStatus(sessionId, "connected");
+    const lastSeq = getLastSeq(sessionId);
+    ws.send(JSON.stringify({ type: "session_subscribe", last_seq: lastSeq }));
     // Clear any reconnect timer
     const timer = reconnectTimers.get(sessionId);
     if (timer) {
@@ -475,7 +656,41 @@ export function waitForConnection(sessionId: string): Promise<void> {
 
 export function sendToSession(sessionId: string, msg: BrowserOutgoingMessage) {
   const ws = sockets.get(sessionId);
-  if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
+  let outgoing: BrowserOutgoingMessage = msg;
+  if (IDEMPOTENT_OUTGOING_TYPES.has(msg.type)) {
+    switch (msg.type) {
+      case "user_message":
+      case "permission_response":
+      case "interrupt":
+      case "set_model":
+      case "set_permission_mode":
+      case "mcp_get_status":
+      case "mcp_toggle":
+      case "mcp_reconnect":
+      case "mcp_set_servers":
+        if (!msg.client_msg_id) {
+          outgoing = { ...msg, client_msg_id: nextClientMsgId() };
+        }
+        break;
+    }
   }
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(outgoing));
+  }
+}
+
+export function sendMcpGetStatus(sessionId: string) {
+  sendToSession(sessionId, { type: "mcp_get_status" });
+}
+
+export function sendMcpToggle(sessionId: string, serverName: string, enabled: boolean) {
+  sendToSession(sessionId, { type: "mcp_toggle", serverName, enabled });
+}
+
+export function sendMcpReconnect(sessionId: string, serverName: string) {
+  sendToSession(sessionId, { type: "mcp_reconnect", serverName });
+}
+
+export function sendMcpSetServers(sessionId: string, servers: Record<string, McpServerConfig>) {
+  sendToSession(sessionId, { type: "mcp_set_servers", servers });
 }

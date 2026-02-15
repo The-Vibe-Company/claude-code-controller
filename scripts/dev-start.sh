@@ -14,7 +14,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/web"
-BACKEND_PORT=3456
+BACKEND_PORT=3457
 VITE_PORT=5174
 BACKEND_PID_FILE="$ROOT_DIR/.dev-backend.pid"
 VITE_PID_FILE="$ROOT_DIR/.dev-vite.pid"

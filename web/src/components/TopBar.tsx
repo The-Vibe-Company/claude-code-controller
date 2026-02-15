@@ -1,19 +1,57 @@
+import { useState, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
+import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
 
 export function TopBar() {
+  const hash = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener("hashchange", cb);
+      return () => window.removeEventListener("hashchange", cb);
+    },
+    () => window.location.hash,
+  );
+  const isSessionView = hash !== "#/settings" && hash !== "#/terminal" && hash !== "#/environments";
   const currentSessionId = useStore((s) => s.currentSessionId);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);
+  const sessionNames = useStore((s) => s.sessionNames);
+  const sdkSessions = useStore((s) => s.sdkSessions);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const taskPanelOpen = useStore((s) => s.taskPanelOpen);
   const setTaskPanelOpen = useStore((s) => s.setTaskPanelOpen);
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
+  const [claudeMdOpen, setClaudeMdOpen] = useState(false);
+  const changedFilesCount = useStore((s) => {
+    if (!currentSessionId) return 0;
+    const cwd =
+      s.sessions.get(currentSessionId)?.cwd ||
+      s.sdkSessions.find((sdk) => sdk.sessionId === currentSessionId)?.cwd;
+    const files = s.changedFiles.get(currentSessionId);
+    if (!files) return 0;
+    if (!cwd) return files.size;
+    const prefix = `${cwd}/`;
+    return [...files].filter((fp) => fp === cwd || fp.startsWith(prefix)).length;
+  });
+
+  const cwd = useStore((s) => {
+    if (!currentSessionId) return null;
+    return (
+      s.sessions.get(currentSessionId)?.cwd ||
+      s.sdkSessions.find((sdk) => sdk.sessionId === currentSessionId)?.cwd ||
+      null
+    );
+  });
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
+  const sessionName = currentSessionId
+    ? (sessionNames?.get(currentSessionId) ||
+      sdkSessions.find((s) => s.sessionId === currentSessionId)?.name ||
+      `Session ${currentSessionId.slice(0, 8)}`)
+    : null;
 
   return (
     <header className="shrink-0 flex items-center justify-between px-2 sm:px-4 py-2 sm:py-2.5 bg-cc-card border-b border-cc-border">
@@ -36,9 +74,12 @@ export function TopBar() {
                 isConnected ? "bg-cc-success" : "bg-cc-muted opacity-40"
               }`}
             />
-            {isConnected ? (
-              <span className="text-[11px] text-cc-muted hidden sm:inline">Connected</span>
-            ) : (
+            {sessionName && (
+              <span className="text-[11px] font-medium text-cc-fg max-w-[9rem] sm:max-w-none truncate" title={sessionName}>
+                {sessionName}
+              </span>
+            )}
+            {!isConnected && (
               <button
                 onClick={() => currentSessionId && api.relaunchSession(currentSessionId).catch(console.error)}
                 className="text-[11px] text-cc-warning hover:text-cc-warning/80 font-medium cursor-pointer hidden sm:inline"
@@ -51,7 +92,7 @@ export function TopBar() {
       </div>
 
       {/* Right side */}
-      {currentSessionId && (
+      {currentSessionId && isSessionView && (
         <div className="flex items-center gap-2 sm:gap-3 text-[12px] text-cc-muted">
           {status === "compacting" && (
             <span className="text-cc-warning font-medium animate-pulse">Compacting...</span>
@@ -77,16 +118,38 @@ export function TopBar() {
               Chat
             </button>
             <button
-              onClick={() => setActiveTab("editor")}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
-                activeTab === "editor"
+              onClick={() => setActiveTab("diff")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "diff"
                   ? "bg-cc-card text-cc-fg shadow-sm"
                   : "text-cc-muted hover:text-cc-fg"
               }`}
             >
-              Editor
+              Diffs
+              {changedFilesCount > 0 && (
+                <span className="text-[9px] bg-cc-warning text-white rounded-full w-4 h-4 flex items-center justify-center font-semibold leading-none">
+                  {changedFilesCount}
+                </span>
+              )}
             </button>
           </div>
+
+          {/* CLAUDE.md editor */}
+          {cwd && (
+            <button
+              onClick={() => setClaudeMdOpen(true)}
+              className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
+                claudeMdOpen
+                  ? "text-cc-primary bg-cc-active"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              title="Edit CLAUDE.md"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+                <path d="M4 1.5a.5.5 0 01.5-.5h7a.5.5 0 01.354.146l2 2A.5.5 0 0114 3.5v11a.5.5 0 01-.5.5h-11a.5.5 0 01-.5-.5v-13zm1 .5v12h8V4h-1.5a.5.5 0 01-.5-.5V2H5zm6 0v1h1l-1-1zM6.5 7a.5.5 0 000 1h5a.5.5 0 000-1h-5zm0 2a.5.5 0 000 1h5a.5.5 0 000-1h-5zm0 2a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
+              </svg>
+            </button>
+          )}
 
           <button
             onClick={() => setTaskPanelOpen(!taskPanelOpen)}
@@ -102,6 +165,15 @@ export function TopBar() {
             </svg>
           </button>
         </div>
+      )}
+
+      {/* CLAUDE.md editor modal */}
+      {cwd && (
+        <ClaudeMdEditor
+          cwd={cwd}
+          open={claudeMdOpen}
+          onClose={() => setClaudeMdOpen(false)}
+        />
       )}
     </header>
   );

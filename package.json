@@ -1,6 +1,6 @@
 {
-  "name": "the-vibe-companion",
-  "version": "0.17.1",
+  "name": "the-companion",
+  "version": "0.41.0",
   "private": true,
   "description": "Web UI for Claude Code agents",
   "scripts": {
@@ -12,7 +12,7 @@
   "author": "The Vibe Company",
   "license": "MIT",
   "dependencies": {
-    "the-vibe-companion": "^0.2.2"
+    "the-companion": "^0.2.2"
   },
   "devDependencies": {
     "husky": "^9.1.7"

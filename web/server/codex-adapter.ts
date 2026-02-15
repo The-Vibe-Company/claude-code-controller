@@ -2,7 +2,7 @@
  * Codex App-Server Adapter
  *
  * Translates between the Codex app-server JSON-RPC protocol (stdin/stdout)
- * and the Vibe Companion's BrowserIncomingMessage/BrowserOutgoingMessage types.
+ * and The Companion's BrowserIncomingMessage/BrowserOutgoingMessage types.
  *
  * This allows the browser to be completely unaware of which backend is running —
  * it sees the same message types regardless of whether Claude Code or Codex is
@@ -17,7 +17,10 @@ import type {
   SessionState,
   PermissionRequest,
   CLIResultMessage,
+  McpServerDetail,
+  McpServerConfig,
 } from "./session-types.js";
+import type { RecorderManager } from "./recorder.js";
 
 // ─── Codex JSON-RPC Types ─────────────────────────────────────────────────────
 
@@ -47,6 +50,17 @@ interface CodexItem {
   [key: string]: unknown;
 }
 
+/** Safely extract a string kind from a Codex file change entry.
+ *  Codex may send kind as a string ("create") or as an object ({ type: "modify" }). */
+function safeKind(kind: unknown): string {
+  if (typeof kind === "string") return kind;
+  if (kind && typeof kind === "object" && "type" in kind) {
+    const t = (kind as Record<string, unknown>).type;
+    if (typeof t === "string") return t;
+  }
+  return "modify";
+}
+
 interface CodexAgentMessageItem extends CodexItem {
   type: "agentMessage";
   text?: string;
@@ -63,7 +77,7 @@ interface CodexCommandExecutionItem extends CodexItem {
 
 interface CodexFileChangeItem extends CodexItem {
   type: "fileChange";
-  changes?: Array<{ path: string; kind: "create" | "modify" | "delete"; diff?: string }>;
+  changes?: Array<{ path: string; kind: unknown; diff?: string }>;
   status: "inProgress" | "completed" | "failed" | "declined";
 }
 
@@ -93,6 +107,17 @@ interface CodexContextCompactionItem extends CodexItem {
   type: "contextCompaction";
 }
 
+interface CodexMcpServerStatus {
+  name: string;
+  tools?: Record<string, { name?: string; annotations?: unknown }>;
+  authStatus?: "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth";
+}
+
+interface CodexMcpStatusListResponse {
+  data?: CodexMcpServerStatus[];
+  nextCursor?: string | null;
+}
+
 // ─── Adapter Options ──────────────────────────────────────────────────────────
 
 export interface CodexAdapterOptions {
@@ -102,6 +127,8 @@ export interface CodexAdapterOptions {
   sandbox?: "workspace-write" | "danger-full-access";
   /** If provided, resume an existing thread instead of starting a new one. */
   threadId?: string;
+  /** Optional recorder for raw message capture. */
+  recorder?: RecorderManager;
 }
 
 // ─── JSON-RPC Transport ───────────────────────────────────────────────────────
@@ -111,6 +138,8 @@ class JsonRpcTransport {
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private notificationHandler: ((method: string, params: Record<string, unknown>) => void) | null = null;
   private requestHandler: ((method: string, id: number, params: Record<string, unknown>) => void) | null = null;
+  private rawInCb: ((line: string) => void) | null = null;
+  private rawOutCb: ((data: string) => void) | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private connected = true;
   private buffer = "";
@@ -152,6 +181,12 @@ class JsonRpcTransport {
       console.error("[codex-adapter] stdout reader error:", err);
     } finally {
       this.connected = false;
+      // Reject all pending promises so callers don't hang indefinitely
+      // when the Codex process crashes or exits unexpectedly.
+      for (const [id, { reject }] of this.pending) {
+        reject(new Error("Transport closed"));
+      }
+      this.pending.clear();
     }
   }
 
@@ -163,6 +198,9 @@ class JsonRpcTransport {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
+
+      // Record raw incoming line before parsing
+      this.rawInCb?.(trimmed);
 
       let msg: JsonRpcMessage;
       try {
@@ -203,10 +241,15 @@ class JsonRpcTransport {
   /** Send a request and wait for the matching response. */
   async call(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     const id = this.nextId++;
-    const request = JSON.stringify({ method, id, params });
-    await this.writeRaw(request + "\n");
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       this.pending.set(id, { resolve, reject });
+      const request = JSON.stringify({ method, id, params });
+      try {
+        await this.writeRaw(request + "\n");
+      } catch (err) {
+        this.pending.delete(id);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
     });
   }
 
@@ -236,7 +279,22 @@ class JsonRpcTransport {
     return this.connected;
   }
 
+  /** Register callback for raw incoming lines (before JSON parse). */
+  onRawIncoming(cb: (line: string) => void): void {
+    this.rawInCb = cb;
+  }
+
+  /** Register callback for raw outgoing data (before write). */
+  onRawOutgoing(cb: (data: string) => void): void {
+    this.rawOutCb = cb;
+  }
+
   private async writeRaw(data: string): Promise<void> {
+    if (!this.connected) {
+      throw new Error("Transport closed");
+    }
+    // Record raw outgoing data before writing
+    this.rawOutCb?.(data);
     await this.writer.write(new TextEncoder().encode(data));
   }
 }
@@ -259,13 +317,14 @@ export class CodexAdapter {
   private currentTurnId: string | null = null;
   private connected = false;
   private initialized = false;
+  private initFailed = false;
 
   // Streaming accumulator for agent messages
   private streamingText = "";
   private streamingItemId: string | null = null;
 
-  // Track message counter for synthesized IDs
-  private msgCounter = 0;
+  // Track command execution start times for progress indicator
+  private commandStartTimes = new Map<string, number>();
 
   // Accumulate reasoning text by item ID so we can emit final thinking blocks.
   private reasoningTextByItemId = new Map<string, string>();
@@ -284,12 +343,19 @@ export class CodexAdapter {
   // Track request types that need different response formats
   private pendingUserInputQuestionIds = new Map<string, string[]>(); // request_id -> ordered Codex question IDs
   private pendingReviewDecisions = new Set<string>(); // request_ids that need ReviewDecision format
+  private pendingDynamicToolCalls = new Map<string, {
+    jsonRpcId: number;
+    callId: string;
+    toolName: string;
+    timeout: ReturnType<typeof setTimeout>;
+  }>(); // request_id -> pending dynamic tool call metadata
 
   // Codex account rate limits (fetched after init, updated via notification)
   private _rateLimits: {
     primary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
     secondary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
   } | null = null;
+  private static readonly DYNAMIC_TOOL_CALL_TIMEOUT_MS = 120_000;
 
   constructor(proc: Subprocess, sessionId: string, options: CodexAdapterOptions = {}) {
     this.proc = proc;
@@ -309,9 +375,25 @@ export class CodexAdapter {
     this.transport.onNotification((method, params) => this.handleNotification(method, params));
     this.transport.onRequest((method, id, params) => this.handleRequest(method, id, params));
 
+    // Wire raw message recording if a recorder is provided
+    if (options.recorder) {
+      const recorder = options.recorder;
+      const cwd = options.cwd || "";
+      this.transport.onRawIncoming((line) => {
+        recorder.record(sessionId, "in", line, "cli", "codex", cwd);
+      });
+      this.transport.onRawOutgoing((data) => {
+        recorder.record(sessionId, "out", data.trimEnd(), "cli", "codex", cwd);
+      });
+    }
+
     // Monitor process exit
     proc.exited.then(() => {
       this.connected = false;
+      for (const pending of this.pendingDynamicToolCalls.values()) {
+        clearTimeout(pending.timeout);
+      }
+      this.pendingDynamicToolCalls.clear();
       this.disconnectCb?.();
     });
 
@@ -326,9 +408,21 @@ export class CodexAdapter {
   }
 
   sendBrowserMessage(msg: BrowserOutgoingMessage): boolean {
+    // If initialization failed, reject all new messages
+    if (this.initFailed) {
+      return false;
+    }
+
     // Queue messages if not yet initialized (init is async)
     if (!this.initialized || !this.threadId) {
-      if (msg.type === "user_message" || msg.type === "permission_response") {
+      if (
+        msg.type === "user_message"
+        || msg.type === "permission_response"
+        || msg.type === "mcp_get_status"
+        || msg.type === "mcp_toggle"
+        || msg.type === "mcp_reconnect"
+        || msg.type === "mcp_set_servers"
+      ) {
         console.log(`[codex-adapter] Queuing ${msg.type} — adapter not yet initialized`);
         this.pendingOutgoing.push(msg);
         return true; // accepted, will be sent after init
@@ -357,6 +451,18 @@ export class CodexAdapter {
       case "set_permission_mode":
         console.warn("[codex-adapter] Runtime permission mode switching not supported by Codex");
         return false;
+      case "mcp_get_status":
+        this.handleOutgoingMcpGetStatus();
+        return true;
+      case "mcp_toggle":
+        this.handleOutgoingMcpToggle(msg.serverName, msg.enabled);
+        return true;
+      case "mcp_reconnect":
+        this.handleOutgoingMcpReconnect();
+        return true;
+      case "mcp_set_servers":
+        this.handleOutgoingMcpSetServers(msg.servers);
+        return true;
       default:
         return false;
     }
@@ -404,8 +510,8 @@ export class CodexAdapter {
       // Step 1: Send initialize request
       const result = await this.transport.call("initialize", {
         clientInfo: {
-          name: "vibe-companion",
-          title: "The Vibe Companion",
+          name: "thecompanion",
+          title: "The Companion",
           version: "1.0.0",
         },
         capabilities: {
@@ -427,7 +533,7 @@ export class CodexAdapter {
           model: this.options.model,
           cwd: this.options.cwd,
           approvalPolicy: this.mapApprovalPolicy(this.options.approvalMode),
-          sandbox: this.options.sandbox || "workspace-write",
+          sandbox: this.options.sandbox || this.mapSandboxPolicy(this.options.approvalMode),
         }) as { thread: { id: string } };
         this.threadId = resumeResult.thread.id;
       } else {
@@ -436,7 +542,7 @@ export class CodexAdapter {
           model: this.options.model,
           cwd: this.options.cwd,
           approvalPolicy: this.mapApprovalPolicy(this.options.approvalMode),
-          sandbox: this.options.sandbox || "workspace-write",
+          sandbox: this.options.sandbox || this.mapSandboxPolicy(this.options.approvalMode),
         }) as { thread: { id: string } };
         this.threadId = threadResult.thread.id;
       }
@@ -492,8 +598,11 @@ export class CodexAdapter {
     } catch (err) {
       const errorMsg = `Codex initialization failed: ${err}`;
       console.error(`[codex-adapter] ${errorMsg}`);
-      this.emit({ type: "error", message: errorMsg });
+      this.initFailed = true;
       this.connected = false;
+      // Discard any messages queued during the failed init attempt
+      this.pendingOutgoing.length = 0;
+      this.emit({ type: "error", message: errorMsg });
       this.initErrorCb?.(errorMsg);
     }
   }
@@ -542,6 +651,18 @@ export class CodexAdapter {
     const jsonRpcId = this.pendingApprovals.get(msg.request_id);
     if (jsonRpcId === undefined) {
       console.warn(`[codex-adapter] No pending approval for request_id=${msg.request_id}`);
+      return;
+    }
+
+    // Dynamic tool calls (item/tool/call) require a DynamicToolCallResponse payload.
+    const pendingDynamic = this.pendingDynamicToolCalls.get(msg.request_id);
+    if (pendingDynamic) {
+      this.pendingDynamicToolCalls.delete(msg.request_id);
+      this.pendingApprovals.delete(msg.request_id);
+      clearTimeout(pendingDynamic.timeout);
+
+      const result = this.buildDynamicToolCallResponse(msg, pendingDynamic.toolName);
+      await this.transport.respond(jsonRpcId, result);
       return;
     }
 
@@ -598,6 +719,110 @@ export class CodexAdapter {
     }
   }
 
+  private async handleOutgoingMcpGetStatus(): Promise<void> {
+    try {
+      const statusEntries = await this.listAllMcpServerStatuses();
+      const configMap = await this.readMcpServersConfig();
+
+      const names = new Set<string>([
+        ...statusEntries.map((s) => s.name),
+        ...Object.keys(configMap),
+      ]);
+
+      const statusByName = new Map(statusEntries.map((s) => [s.name, s]));
+      const servers: McpServerDetail[] = Array.from(names).sort().map((name) => {
+        const status = statusByName.get(name);
+        const config = this.toMcpServerConfig(configMap[name]);
+        const isEnabled = this.isMcpServerEnabled(configMap[name]);
+        const serverStatus: McpServerDetail["status"] =
+          !isEnabled
+            ? "disabled"
+            : (status?.authStatus === "notLoggedIn" ? "failed" : "connected");
+
+        return {
+          name,
+          status: serverStatus,
+          error: status?.authStatus === "notLoggedIn" ? "MCP server requires login" : undefined,
+          config,
+          scope: "user",
+          tools: this.mapMcpTools(status?.tools),
+        };
+      });
+
+      this.emit({ type: "mcp_status", servers });
+    } catch (err) {
+      this.emit({ type: "error", message: `Failed to get MCP status: ${err}` });
+    }
+  }
+
+  private async handleOutgoingMcpToggle(serverName: string, enabled: boolean): Promise<void> {
+    try {
+      if (serverName.includes(".")) {
+        throw new Error("Server names containing '.' are not supported for toggle");
+      }
+      await this.transport.call("config/value/write", {
+        keyPath: `mcp_servers.${serverName}.enabled`,
+        value: enabled,
+        mergeStrategy: "upsert",
+      });
+      await this.reloadMcpServers();
+      await this.handleOutgoingMcpGetStatus();
+    } catch (err) {
+      // Some existing configs may contain legacy/foreign fields (e.g. `transport`)
+      // that fail on reload when touched. If so, remove this server entry entirely.
+      const msg = String(err);
+      if (msg.includes("invalid transport")) {
+        try {
+          await this.transport.call("config/value/write", {
+            keyPath: `mcp_servers.${serverName}`,
+            value: null,
+            mergeStrategy: "replace",
+          });
+          await this.reloadMcpServers();
+          await this.handleOutgoingMcpGetStatus();
+          return;
+        } catch {
+          // fall through to user-visible error below
+        }
+      }
+      this.emit({ type: "error", message: `Failed to toggle MCP server "${serverName}": ${err}` });
+    }
+  }
+
+  private async handleOutgoingMcpReconnect(): Promise<void> {
+    try {
+      await this.reloadMcpServers();
+      await this.handleOutgoingMcpGetStatus();
+    } catch (err) {
+      this.emit({ type: "error", message: `Failed to reload MCP servers: ${err}` });
+    }
+  }
+
+  private async handleOutgoingMcpSetServers(servers: Record<string, McpServerConfig>): Promise<void> {
+    try {
+      const edits: Array<{ keyPath: string; value: Record<string, unknown>; mergeStrategy: "upsert" }> = [];
+      for (const [name, config] of Object.entries(servers)) {
+        if (name.includes(".")) {
+          throw new Error(`Server names containing '.' are not supported: ${name}`);
+        }
+        edits.push({
+          keyPath: `mcp_servers.${name}`,
+          value: this.fromMcpServerConfig(config),
+          mergeStrategy: "upsert",
+        });
+      }
+      if (edits.length > 0) {
+        await this.transport.call("config/batchWrite", {
+          edits,
+        });
+      }
+      await this.reloadMcpServers();
+      await this.handleOutgoingMcpGetStatus();
+    } catch (err) {
+      this.emit({ type: "error", message: `Failed to configure MCP servers: ${err}` });
+    }
+  }
+
   // ── Incoming notification handlers ──────────────────────────────────────
 
   private handleNotification(method: string, params: Record<string, unknown>): void {
@@ -616,8 +841,9 @@ export class CodexAdapter {
         this.handleAgentMessageDelta(params);
         break;
       case "item/commandExecution/outputDelta":
-        // Streaming command output (stdout/stderr). Not critical for rendering
-        // since item/completed provides the full output, but log for debugging.
+        // Streaming command output — emit as tool_progress so the browser
+        // shows a live elapsed-time indicator while the command runs.
+        this.emitCommandProgress(params);
         break;
       case "item/fileChange/outputDelta":
         // Streaming file change output. Same as above.
@@ -627,9 +853,20 @@ export class CodexAdapter {
       case "item/reasoning/summaryPartAdded":
         this.handleReasoningDelta(params);
         break;
-      case "item/mcpToolCall/progress":
-        // MCP tool call progress — could map to tool_progress.
+      case "item/mcpToolCall/progress": {
+        // MCP tool call progress — map to tool_progress
+        const itemId = params.itemId as string | undefined;
+        const threadId = params.threadId as string | undefined;
+        if (itemId) {
+          this.emit({
+            type: "tool_progress",
+            tool_use_id: itemId,
+            tool_name: "mcp_tool_call",
+            elapsed_time_seconds: 0,
+          });
+        }
         break;
+      }
       case "item/plan/delta":
         // Plan updates — could display in future.
         break;
@@ -667,6 +904,21 @@ export class CodexAdapter {
       case "account/rateLimits/updated":
         this.updateRateLimits(params);
         break;
+      case "codex/event/stream_error": {
+        const msg = params.msg as { message?: string } | undefined;
+        if (msg?.message) {
+          console.log(`[codex-adapter] Stream error: ${msg.message}`);
+        }
+        break;
+      }
+      case "codex/event/error": {
+        const msg = params.msg as { message?: string } | undefined;
+        if (msg?.message) {
+          console.error(`[codex-adapter] Codex error: ${msg.message}`);
+          this.emit({ type: "error", message: msg.message });
+        }
+        break;
+      }
       default:
         // Unknown notification, log for debugging
         if (!method.startsWith("account/") && !method.startsWith("codex/event/")) {
@@ -791,22 +1043,90 @@ export class CodexAdapter {
     const callId = params.callId as string || `dynamic-${randomUUID()}`;
     const toolName = params.tool as string || "unknown_dynamic_tool";
     const toolArgs = params.arguments as Record<string, unknown> || {};
+    const requestId = `codex-dynamic-${randomUUID()}`;
 
     console.log(`[codex-adapter] Dynamic tool call received: ${toolName} (callId=${callId})`);
 
-    // Emit tool_use + tool_result to browser so the user sees what was attempted
+    // Emit tool_use so the browser sees this custom tool invocation.
     this.emitToolUseTracked(callId, `dynamic:${toolName}`, toolArgs);
-    this.emitToolResult(
+
+    this.pendingApprovals.set(requestId, jsonRpcId);
+    const timeout = setTimeout(() => {
+      this.resolveDynamicToolCallTimeout(requestId);
+    }, CodexAdapter.DYNAMIC_TOOL_CALL_TIMEOUT_MS);
+
+    this.pendingDynamicToolCalls.set(requestId, {
+      jsonRpcId,
       callId,
-      `Dynamic tool "${toolName}" is not supported by this client.`,
+      toolName,
+      timeout,
+    });
+
+    const perm: PermissionRequest = {
+      request_id: requestId,
+      tool_name: `dynamic:${toolName}`,
+      input: {
+        ...toolArgs,
+        call_id: callId,
+      },
+      description: `Custom tool call: ${toolName}`,
+      tool_use_id: callId,
+      timestamp: Date.now(),
+    };
+
+    this.emit({ type: "permission_request", request: perm });
+  }
+
+  private async resolveDynamicToolCallTimeout(requestId: string): Promise<void> {
+    const pending = this.pendingDynamicToolCalls.get(requestId);
+    if (!pending) return;
+
+    this.pendingDynamicToolCalls.delete(requestId);
+    this.pendingApprovals.delete(requestId);
+
+    this.emitToolResult(
+      pending.callId,
+      `Dynamic tool "${pending.toolName}" timed out waiting for output.`,
       true,
     );
 
-    // Respond to Codex with a valid DynamicToolCallResponse
-    this.transport.respond(jsonRpcId, {
-      contentItems: [{ type: "inputText", text: "Dynamic tool execution is not supported by this client" }],
-      success: false,
-    });
+    try {
+      await this.transport.respond(pending.jsonRpcId, {
+        contentItems: [{ type: "inputText", text: `Timed out waiting for dynamic tool output: ${pending.toolName}` }],
+        success: false,
+      });
+    } catch (err) {
+      console.warn(`[codex-adapter] Failed to send dynamic tool timeout response: ${err}`);
+    }
+  }
+
+  private buildDynamicToolCallResponse(
+    msg: { behavior: "allow" | "deny"; updated_input?: Record<string, unknown> },
+    toolName: string,
+  ): { contentItems: unknown[]; success: boolean; structuredContent?: unknown } {
+    if (msg.behavior === "deny") {
+      return {
+        contentItems: [{ type: "inputText", text: `Dynamic tool "${toolName}" was denied by user` }],
+        success: false,
+      };
+    }
+
+    const rawContentItems = msg.updated_input?.contentItems;
+    const contentItems = Array.isArray(rawContentItems) && rawContentItems.length > 0
+      ? rawContentItems
+      : [{ type: "inputText", text: String(msg.updated_input?.text || "Dynamic tool call completed") }];
+
+    const success = typeof msg.updated_input?.success === "boolean"
+      ? msg.updated_input.success
+      : true;
+
+    const structuredContent = msg.updated_input?.structuredContent;
+
+    return {
+      contentItems,
+      success,
+      ...(structuredContent !== undefined ? { structuredContent } : {}),
+    };
   }
 
   private handleUserInputRequest(jsonRpcId: number, params: Record<string, unknown>): void {
@@ -909,7 +1229,7 @@ export class CodexAdapter {
           event: {
             type: "message_start",
             message: {
-              id: `codex-msg-${++this.msgCounter}`,
+              id: this.makeMessageId("agent", item.id),
               type: "message",
               role: "assistant",
               model: this.options.model || "",
@@ -935,6 +1255,7 @@ export class CodexAdapter {
       case "commandExecution": {
         const cmd = item as CodexCommandExecutionItem;
         const commandStr = Array.isArray(cmd.command) ? cmd.command.join(" ") : (cmd.command || "");
+        this.commandStartTimes.set(item.id, Date.now());
         this.emitToolUseStart(item.id, "Bash", { command: commandStr });
         break;
       }
@@ -943,10 +1264,10 @@ export class CodexAdapter {
         const fc = item as CodexFileChangeItem;
         const changes = fc.changes || [];
         const firstChange = changes[0];
-        const toolName = firstChange?.kind === "create" ? "Write" : "Edit";
+        const toolName = safeKind(firstChange?.kind) === "create" ? "Write" : "Edit";
         const toolInput = {
           file_path: firstChange?.path || "",
-          changes: changes.map((c) => ({ path: c.path, kind: c.kind })),
+          changes: changes.map((c) => ({ path: c.path, kind: safeKind(c.kind) })),
         };
         this.emitToolUseStart(item.id, toolName, toolInput);
         break;
@@ -1065,7 +1386,7 @@ export class CodexAdapter {
         this.emit({
           type: "assistant",
           message: {
-            id: `codex-msg-${++this.msgCounter}`,
+            id: this.makeMessageId("agent", item.id),
             type: "message",
             role: "assistant",
             model: this.options.model || "",
@@ -1074,6 +1395,7 @@ export class CodexAdapter {
             usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
           },
           parent_tool_use_id: null,
+          timestamp: Date.now(),
         });
 
         // Reset streaming state
@@ -1087,16 +1409,18 @@ export class CodexAdapter {
         const commandStr = Array.isArray(cmd.command) ? cmd.command.join(" ") : (cmd.command || "");
         // Ensure tool_use was emitted (may be skipped when auto-approved)
         this.ensureToolUseEmitted(item.id, "Bash", { command: commandStr });
+        // Clean up progress tracking
+        this.commandStartTimes.delete(item.id);
         // Emit tool result
         const output = (item as Record<string, unknown>).stdout as string || "";
         const stderr = (item as Record<string, unknown>).stderr as string || "";
         const combinedOutput = [output, stderr].filter(Boolean).join("\n").trim();
         const exitCode = typeof cmd.exitCode === "number" ? cmd.exitCode : 0;
+        const durationMs = typeof cmd.durationMs === "number" ? cmd.durationMs : undefined;
         const failed = cmd.status === "failed" || cmd.status === "declined" || exitCode !== 0;
 
-        // Always emit tool_result so the browser shows a complete tool block.
+        // Keep successful no-output commands silent in the chat feed.
         if (!combinedOutput && !failed) {
-          this.emitToolResult(item.id, "Command completed successfully.", false);
           break;
         }
 
@@ -1105,6 +1429,13 @@ export class CodexAdapter {
           resultText = `Exit code: ${exitCode}`;
         } else if (exitCode !== 0) {
           resultText = `${resultText}\nExit code: ${exitCode}`;
+        }
+        // Append duration if available and significant (>100ms)
+        if (durationMs !== undefined && durationMs >= 100) {
+          const durationStr = durationMs >= 1000
+            ? `${(durationMs / 1000).toFixed(1)}s`
+            : `${durationMs}ms`;
+          resultText = `${resultText}\n(${durationStr})`;
         }
 
         this.emitToolResult(item.id, resultText, failed);
@@ -1115,13 +1446,13 @@ export class CodexAdapter {
         const fc = item as CodexFileChangeItem;
         const changes = fc.changes || [];
         const firstChange = changes[0];
-        const toolName = firstChange?.kind === "create" ? "Write" : "Edit";
+        const toolName = safeKind(firstChange?.kind) === "create" ? "Write" : "Edit";
         // Ensure tool_use was emitted
         this.ensureToolUseEmitted(item.id, toolName, {
           file_path: firstChange?.path || "",
-          changes: changes.map((c) => ({ path: c.path, kind: c.kind })),
+          changes: changes.map((c) => ({ path: c.path, kind: safeKind(c.kind) })),
         });
-        const summary = changes.map((c) => `${c.kind}: ${c.path}`).join("\n");
+        const summary = changes.map((c) => `${safeKind(c.kind)}: ${c.path}`).join("\n");
         this.emitToolResult(item.id, summary || "File changes applied", fc.status === "failed");
         break;
       }
@@ -1155,7 +1486,7 @@ export class CodexAdapter {
           this.emit({
             type: "assistant",
             message: {
-              id: `codex-msg-${++this.msgCounter}`,
+              id: this.makeMessageId("reasoning", item.id),
               type: "message",
               role: "assistant",
               model: this.options.model || "",
@@ -1164,6 +1495,7 @@ export class CodexAdapter {
               usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
             },
             parent_tool_use_id: null,
+            timestamp: Date.now(),
           });
         }
 
@@ -1223,30 +1555,52 @@ export class CodexAdapter {
       primary: rl.primary as { usedPercent: number; windowDurationMins: number; resetsAt: number } | null,
       secondary: rl.secondary as { usedPercent: number; windowDurationMins: number; resetsAt: number } | null,
     };
+    // Forward rate limits to browser for UI display
+    this.emit({
+      type: "session_update",
+      session: {
+        codex_rate_limits: {
+          primary: this._rateLimits.primary,
+          secondary: this._rateLimits.secondary,
+        },
+      },
+    });
   }
 
   private handleTokenUsageUpdated(params: Record<string, unknown>): void {
     // Codex sends: { threadId, turnId, tokenUsage: {
     //   total: { totalTokens, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens },
-    //   last: { ... },
+    //   last: { totalTokens, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens },
     //   modelContextWindow: 258400
     // }}
+    // IMPORTANT: `total` is cumulative across all turns and can far exceed the context window.
+    // `last` is the most recent turn — its inputTokens reflects what's actually in context.
     const tokenUsage = params.tokenUsage as Record<string, unknown> | undefined;
     if (!tokenUsage) return;
 
     const total = tokenUsage.total as Record<string, number> | undefined;
+    const last = tokenUsage.last as Record<string, number> | undefined;
     const contextWindow = tokenUsage.modelContextWindow as number | undefined;
 
-    const updates: Partial<{ total_cost_usd: number; context_used_percent: number }> = {};
+    const updates: Partial<SessionState> = {};
 
-    if (total && contextWindow && contextWindow > 0) {
-      const used = (total.inputTokens || 0) + (total.outputTokens || 0);
-      const pct = Math.round((used / contextWindow) * 100);
+    // Use last turn's input tokens for context usage — that's what's actually in the window
+    if (last && contextWindow && contextWindow > 0) {
+      const usedInContext = (last.inputTokens || 0) + (last.outputTokens || 0);
+      const pct = Math.round((usedInContext / contextWindow) * 100);
       updates.context_used_percent = Math.max(0, Math.min(pct, 100));
     }
 
-    // Codex doesn't seem to provide cost data directly in tokenUsage
-    // (no cost field observed), so we skip cost for now.
+    // Forward cumulative token breakdown for display in the UI
+    if (total) {
+      updates.codex_token_details = {
+        inputTokens: total.inputTokens || 0,
+        outputTokens: total.outputTokens || 0,
+        cachedInputTokens: total.cachedInputTokens || 0,
+        reasoningOutputTokens: total.reasoningOutputTokens || 0,
+        modelContextWindow: contextWindow || 0,
+      };
+    }
 
     if (Object.keys(updates).length > 0) {
       this.emit({
@@ -1254,6 +1608,21 @@ export class CodexAdapter {
         session: updates,
       });
     }
+  }
+
+  // ── Command progress tracking ─────────────────────────────────────────
+
+  private emitCommandProgress(params: Record<string, unknown>): void {
+    const itemId = params.itemId as string | undefined;
+    if (!itemId) return;
+    const startTime = this.commandStartTimes.get(itemId);
+    const elapsed = startTime ? Math.round((Date.now() - startTime) / 1000) : 0;
+    this.emit({
+      type: "tool_progress",
+      tool_use_id: itemId,
+      tool_name: "Bash",
+      elapsed_time_seconds: elapsed,
+    });
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────
@@ -1268,7 +1637,7 @@ export class CodexAdapter {
     this.emit({
       type: "assistant",
       message: {
-        id: `codex-msg-${++this.msgCounter}`,
+        id: this.makeMessageId("tool_use", toolUseId),
         type: "message",
         role: "assistant",
         model: this.options.model || "",
@@ -1284,6 +1653,7 @@ export class CodexAdapter {
         usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
       },
       parent_tool_use_id: null,
+      timestamp: Date.now(),
     });
   }
 
@@ -1321,11 +1691,12 @@ export class CodexAdapter {
   }
 
   /** Emit an assistant message with a tool_result content block. */
-  private emitToolResult(toolUseId: string, content: string, isError: boolean): void {
+  private emitToolResult(toolUseId: string, content: unknown, isError: boolean): void {
+    const safeContent = typeof content === "string" ? content : JSON.stringify(content);
     this.emit({
       type: "assistant",
       message: {
-        id: `codex-msg-${++this.msgCounter}`,
+        id: this.makeMessageId("tool_result", toolUseId),
         type: "message",
         role: "assistant",
         model: this.options.model || "",
@@ -1333,7 +1704,7 @@ export class CodexAdapter {
           {
             type: "tool_result",
             tool_use_id: toolUseId,
-            content,
+            content: safeContent,
             is_error: isError,
           },
         ],
@@ -1341,7 +1712,13 @@ export class CodexAdapter {
         usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
       },
       parent_tool_use_id: null,
+      timestamp: Date.now(),
     });
+  }
+
+  private makeMessageId(kind: string, sourceId?: string): string {
+    if (sourceId) return `codex-${kind}-${sourceId}`;
+    return `codex-${kind}-${randomUUID()}`;
   }
 
   private mapApprovalPolicy(mode?: string): string {
@@ -1354,5 +1731,162 @@ export class CodexAdapter {
       default:
         return "untrusted";
     }
+  }
+
+  private mapSandboxPolicy(mode?: string): string {
+    switch (mode) {
+      case "bypassPermissions":
+        return "danger-full-access";
+      default:
+        return "workspace-write";
+    }
+  }
+
+  private async listAllMcpServerStatuses(): Promise<CodexMcpServerStatus[]> {
+    const out: CodexMcpServerStatus[] = [];
+    let cursor: string | null = null;
+    let page = 0;
+
+    while (page < 50) {
+      const response = await this.transport.call("mcpServerStatus/list", {
+        cursor,
+        limit: 100,
+      }) as CodexMcpStatusListResponse;
+      if (Array.isArray(response.data)) {
+        out.push(...response.data);
+      }
+      cursor = typeof response.nextCursor === "string" ? response.nextCursor : null;
+      if (!cursor) break;
+      page++;
+    }
+
+    return out;
+  }
+
+  private async readMcpServersConfig(): Promise<Record<string, unknown>> {
+    const response = await this.transport.call("config/read", {}) as {
+      config?: Record<string, unknown>;
+    };
+    const config = this.asRecord(response?.config) || {};
+    return this.asRecord(config.mcp_servers) || {};
+  }
+
+  private async reloadMcpServers(): Promise<void> {
+    await this.transport.call("config/mcpServer/reload", {});
+  }
+
+  private isMcpServerEnabled(value: unknown): boolean {
+    const cfg = this.asRecord(value);
+    if (!cfg) return true;
+    return cfg.enabled !== false;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null;
+  }
+
+  private toMcpServerConfig(value: unknown): McpServerConfig {
+    const cfg = this.asRecord(value) || {};
+    const args = Array.isArray(cfg.args)
+      ? cfg.args.filter((a): a is string => typeof a === "string")
+      : undefined;
+    const env = this.asRecord(cfg.env) as Record<string, string> | null;
+
+    let type: McpServerConfig["type"] = "sdk";
+    if (cfg.type === "stdio" || cfg.type === "sse" || cfg.type === "http" || cfg.type === "sdk") {
+      type = cfg.type;
+    } else if (typeof cfg.command === "string") {
+      type = "stdio";
+    } else if (typeof cfg.url === "string") {
+      type = "http";
+    }
+
+    return {
+      type,
+      command: typeof cfg.command === "string" ? cfg.command : undefined,
+      args,
+      env: env || undefined,
+      url: typeof cfg.url === "string" ? cfg.url : undefined,
+    };
+  }
+
+  private fromMcpServerConfig(config: McpServerConfig): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (typeof config.command === "string") out.command = config.command;
+    if (Array.isArray(config.args)) out.args = config.args;
+    if (config.env) out.env = config.env;
+    if (typeof config.url === "string") out.url = config.url;
+    return out;
+  }
+
+  private normalizeRawMcpServerConfig(value: unknown): Record<string, unknown> {
+    const cfg = this.asRecord(value) || {};
+    const out: Record<string, unknown> = {};
+
+    // Keep only fields supported by Codex raw MCP config schema
+    if (typeof cfg.command === "string") out.command = cfg.command;
+    if (Array.isArray(cfg.args)) out.args = cfg.args.filter((a) => typeof a === "string");
+    if (typeof cfg.cwd === "string") out.cwd = cfg.cwd;
+    if (typeof cfg.url === "string") out.url = cfg.url;
+    if (typeof cfg.enabled === "boolean") out.enabled = cfg.enabled;
+    if (typeof cfg.required === "boolean") out.required = cfg.required;
+
+    const env = this.asRecord(cfg.env);
+    if (env) out.env = Object.fromEntries(
+      Object.entries(env).filter(([, v]) => typeof v === "string"),
+    );
+
+    const envHttpHeaders = this.asRecord(cfg.env_http_headers);
+    if (envHttpHeaders) out.env_http_headers = Object.fromEntries(
+      Object.entries(envHttpHeaders).filter(([, v]) => typeof v === "string"),
+    );
+
+    const httpHeaders = this.asRecord(cfg.http_headers);
+    if (httpHeaders) out.http_headers = Object.fromEntries(
+      Object.entries(httpHeaders).filter(([, v]) => typeof v === "string"),
+    );
+
+    const asStringArray = (arr: unknown): string[] | undefined =>
+      Array.isArray(arr)
+        ? arr.filter((x): x is string => typeof x === "string")
+        : undefined;
+
+    const disabledTools = asStringArray(cfg.disabled_tools);
+    if (disabledTools) out.disabled_tools = disabledTools;
+    const enabledTools = asStringArray(cfg.enabled_tools);
+    if (enabledTools) out.enabled_tools = enabledTools;
+    const envVars = asStringArray(cfg.env_vars);
+    if (envVars) out.env_vars = envVars;
+    const scopes = asStringArray(cfg.scopes);
+    if (scopes) out.scopes = scopes;
+
+    if (typeof cfg.startup_timeout_ms === "number") out.startup_timeout_ms = cfg.startup_timeout_ms;
+    if (typeof cfg.startup_timeout_sec === "number") out.startup_timeout_sec = cfg.startup_timeout_sec;
+    if (typeof cfg.tool_timeout_sec === "number") out.tool_timeout_sec = cfg.tool_timeout_sec;
+    if (typeof cfg.bearer_token === "string") out.bearer_token = cfg.bearer_token;
+    if (typeof cfg.bearer_token_env_var === "string") out.bearer_token_env_var = cfg.bearer_token_env_var;
+
+    return out;
+  }
+
+  private mapMcpTools(
+    tools: Record<string, { name?: string; annotations?: unknown }> | undefined,
+  ): McpServerDetail["tools"] {
+    if (!tools) return [];
+    return Object.entries(tools).map(([key, tool]) => {
+      const ann = this.asRecord(tool.annotations);
+      const annotations = ann ? {
+        readOnly: (ann.readOnly ?? ann.readOnlyHint) === true,
+        destructive: (ann.destructive ?? ann.destructiveHint) === true,
+        openWorld: (ann.openWorld ?? ann.openWorldHint) === true,
+      } : undefined;
+
+      return {
+        name: typeof tool.name === "string" ? tool.name : key,
+        annotations,
+      };
+    });
   }
 }

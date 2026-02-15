@@ -1,13 +1,19 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useStore } from "./store.js";
 import { connectSession } from "./ws.js";
+import { api } from "./api.js";
+import { capturePageView } from "./analytics.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ChatView } from "./components/ChatView.js";
 import { TopBar } from "./components/TopBar.js";
 import { HomePage } from "./components/HomePage.js";
 import { TaskPanel } from "./components/TaskPanel.js";
-import { EditorPanel } from "./components/EditorPanel.js";
+import { DiffPanel } from "./components/DiffPanel.js";
 import { Playground } from "./components/Playground.js";
+import { UpdateBanner } from "./components/UpdateBanner.js";
+import { SettingsPage } from "./components/SettingsPage.js";
+import { EnvManager } from "./components/EnvManager.js";
+import { TerminalPage } from "./components/TerminalPage.js";
 
 function useHash() {
   return useSyncExternalStore(
@@ -24,6 +30,14 @@ export default function App() {
   const homeResetKey = useStore((s) => s.homeResetKey);
   const activeTab = useStore((s) => s.activeTab);
   const hash = useHash();
+  const isSettingsPage = hash === "#/settings";
+  const isTerminalPage = hash === "#/terminal";
+  const isEnvironmentsPage = hash === "#/environments";
+  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
+
+  useEffect(() => {
+    capturePageView(hash || "#/");
+  }, [hash]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -35,6 +49,18 @@ export default function App() {
     if (restoredId) {
       connectSession(restoredId);
     }
+  }, []);
+
+  // Poll for updates
+  useEffect(() => {
+    const check = () => {
+      api.checkForUpdate().then((info) => {
+        useStore.getState().setUpdateInfo(info);
+      }).catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   if (hash === "#/playground") {
@@ -66,27 +92,50 @@ export default function App() {
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar />
+        <UpdateBanner />
         <div className="flex-1 overflow-hidden relative">
-          {/* Chat tab — visible when activeTab is "chat" or no session */}
-          <div className={`absolute inset-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
-            {currentSessionId ? (
-              <ChatView sessionId={currentSessionId} />
-            ) : (
-              <HomePage key={homeResetKey} />
-            )}
-          </div>
-
-          {/* Editor tab */}
-          {currentSessionId && activeTab === "editor" && (
+          {isSettingsPage && (
             <div className="absolute inset-0">
-              <EditorPanel sessionId={currentSessionId} />
+              <SettingsPage embedded />
             </div>
+          )}
+
+          {isTerminalPage && (
+            <div className="absolute inset-0">
+              <TerminalPage />
+            </div>
+          )}
+
+          {isEnvironmentsPage && (
+            <div className="absolute inset-0">
+              <EnvManager embedded />
+            </div>
+          )}
+
+          {isSessionView && (
+            <>
+              {/* Chat tab — visible when activeTab is "chat" or no session */}
+              <div className={`absolute inset-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
+                {currentSessionId ? (
+                  <ChatView sessionId={currentSessionId} />
+                ) : (
+                  <HomePage key={homeResetKey} />
+                )}
+              </div>
+
+              {/* Diff tab */}
+              {currentSessionId && activeTab === "diff" && (
+                <div className="absolute inset-0">
+                  <DiffPanel sessionId={currentSessionId} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
       {/* Task panel — overlay on mobile, inline on desktop */}
-      {currentSessionId && (
+      {currentSessionId && isSessionView && (
         <>
           {/* Mobile overlay backdrop */}
           {taskPanelOpen && (

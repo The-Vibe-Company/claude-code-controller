@@ -1,180 +1,166 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
-// Mock Bun.spawn before importing the module
-const mockProc = {
-  exited: Promise.resolve(0),
-  stdout: new ReadableStream(),
-  stderr: new ReadableStream(),
-  kill: vi.fn(),
-};
-
-const mockSpawn = vi.fn(() => mockProc);
-vi.stubGlobal("Bun", { spawn: mockSpawn });
-
-// Mock execSync for binary resolution
-const mockExecSync = vi.hoisted(() => vi.fn());
-vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
+vi.mock("./settings-manager.js", () => ({
+  DEFAULT_OPENROUTER_MODEL: "openrouter/free",
+  getSettings: vi.fn(),
+}));
 
 import { generateSessionTitle } from "./auto-namer.js";
+import * as settingsManager from "./settings-manager.js";
 
-function makeStdout(text: string): ReadableStream {
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(text));
-      controller.close();
-    },
-  });
-}
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockExecSync.mockReturnValue("/usr/bin/claude\n");
+  vi.mocked(settingsManager.getSettings).mockReturnValue({
+    openrouterApiKey: "or-key",
+    openrouterModel: "openrouter/free",
+    updatedAt: 0,
+  });
 });
 
 describe("generateSessionTitle", () => {
-  it("returns parsed title from JSON output", async () => {
-    mockProc.stdout = makeStdout(JSON.stringify({ result: "Fix Auth Flow" }));
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Fix the login bug", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
+  it("returns parsed title from OpenRouter response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "Fix Auth Flow" } }],
+      }),
     });
+
+    const title = await generateSessionTitle("Fix login", "claude-sonnet-4-5-20250929");
 
     expect(title).toBe("Fix Auth Flow");
   });
 
-  it("strips surrounding quotes from the title", async () => {
-    mockProc.stdout = makeStdout(JSON.stringify({ result: '"Refactor API Layer"' }));
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Refactor the API", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
+  it("returns null when OpenRouter key is not configured", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      updatedAt: 0,
     });
 
+    const title = await generateSessionTitle("Fix login", "claude-sonnet-4-5-20250929");
+
+    expect(title).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("truncates message to 500 chars", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "Short Title" } }] }),
+    });
+
+    await generateSessionTitle("X".repeat(1000), "claude-sonnet-4-5-20250929");
+
+    const [, req] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(req.body)) as { messages: Array<{ role: string; content: string }> };
+    const user = body.messages.find((m) => m.role === "user");
+    expect(user?.content).toContain("Request:");
+    expect(user?.content).toContain("X".repeat(500));
+    expect(user?.content).not.toContain("X".repeat(501));
+  });
+
+  it("uses configured OpenRouter model", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "or-key",
+      openrouterModel: "openai/gpt-4o-mini",
+      updatedAt: 0,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "Title" } }] }),
+    });
+
+    await generateSessionTitle("Fix login", "ignored");
+
+    const [, req] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(req.body)) as { model: string };
+    expect(body.model).toBe("openai/gpt-4o-mini");
+  });
+
+  it("returns null when response is non-ok", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 401, statusText: "Unauthorized" });
+
+    const title = await generateSessionTitle("Fix login", "claude-sonnet-4-5-20250929");
+
+    expect(title).toBeNull();
+  });
+
+  it("returns null when fetch throws", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network"));
+
+    const title = await generateSessionTitle("Fix login", "claude-sonnet-4-5-20250929");
+
+    expect(title).toBeNull();
+  });
+
+  it("strips surrounding quotes from returned title", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "\"Refactor API Layer\"" } }],
+      }),
+    });
+
+    const title = await generateSessionTitle("Refactor API", "ignored");
     expect(title).toBe("Refactor API Layer");
   });
 
-  it("returns null for empty result", async () => {
-    mockProc.stdout = makeStdout(JSON.stringify({ result: "" }));
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Do something", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
+  it("parses array content blocks from OpenRouter response", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: [{ text: "Improve Task Panel" }] } }],
+      }),
     });
 
+    const title = await generateSessionTitle("Improve task panel", "ignored");
+    expect(title).toBe("Improve Task Panel");
+  });
+
+  it("returns null for titles >= 100 chars", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: "A".repeat(100) } }],
+      }),
+    });
+
+    const title = await generateSessionTitle("Do a thing", "ignored");
     expect(title).toBeNull();
   });
 
-  it("returns null for title exceeding 100 characters", async () => {
-    const longTitle = "A".repeat(101);
-    mockProc.stdout = makeStdout(JSON.stringify({ result: longTitle }));
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Do something", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
+  it("uses default model when configured model is empty", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "or-key",
+      openrouterModel: "",
+      updatedAt: 0,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "Title" } }] }),
     });
 
-    expect(title).toBeNull();
+    await generateSessionTitle("Fix login", "ignored");
+
+    const [, req] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(req.body)) as { model: string };
+    expect(body.model).toBe("openrouter/free");
   });
 
-  it("falls back to raw stdout when JSON parsing fails", async () => {
-    mockProc.stdout = makeStdout("Plain Text Title");
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Build the thing", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
+  it("calls OpenRouter endpoint with bearer auth header", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "Title" } }] }),
     });
 
-    expect(title).toBe("Plain Text Title");
-  });
+    await generateSessionTitle("Fix login", "ignored");
 
-  it("returns null when raw stdout is empty", async () => {
-    mockProc.stdout = makeStdout("");
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Empty response", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    expect(title).toBeNull();
-  });
-
-  it("returns null when raw stdout exceeds 100 characters", async () => {
-    mockProc.stdout = makeStdout("B".repeat(101));
-    mockProc.exited = Promise.resolve(0);
-
-    const title = await generateSessionTitle("Long response", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    expect(title).toBeNull();
-  });
-
-  it("truncates the user message to 500 characters for the prompt", async () => {
-    const longMessage = "X".repeat(1000);
-    mockProc.stdout = makeStdout(JSON.stringify({ result: "Short Title" }));
-    mockProc.exited = Promise.resolve(0);
-
-    await generateSessionTitle(longMessage, "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    // The prompt should contain only first 500 characters of the message
-    const spawnArgs = (mockSpawn.mock.calls as unknown as string[][][])[0]?.[0];
-    const promptArg = spawnArgs?.[2]; // [binary, "-p", PROMPT, ...]
-    expect(promptArg).toContain("X".repeat(500));
-    expect(promptArg).not.toContain("X".repeat(501));
-  });
-
-  it("passes the correct model to the CLI", async () => {
-    mockProc.stdout = makeStdout(JSON.stringify({ result: "Title" }));
-    mockProc.exited = Promise.resolve(0);
-
-    await generateSessionTitle("Hello", "claude-opus-4-20250514", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    const spawnArgs = (mockSpawn.mock.calls as unknown as string[][][])[0]?.[0];
-    expect(spawnArgs).toContain("--model");
-    expect(spawnArgs).toContain("claude-opus-4-20250514");
-  });
-
-  it("returns null on timeout", async () => {
-    // Make proc.exited never resolve so timeout wins
-    mockProc.exited = new Promise(() => {});
-    mockProc.stdout = makeStdout("");
-
-    const title = await generateSessionTitle("Slow request", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-      timeoutMs: 50,
-    });
-
-    expect(title).toBeNull();
-    expect(mockProc.kill).toHaveBeenCalledWith("SIGTERM");
-  });
-
-  it("returns null when Bun.spawn throws", async () => {
-    mockSpawn.mockImplementationOnce(() => {
-      throw new Error("spawn failed");
-    });
-
-    const title = await generateSessionTitle("Crash", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    expect(title).toBeNull();
-  });
-
-  it("uses --output-format json flag", async () => {
-    mockProc.stdout = makeStdout(JSON.stringify({ result: "Title" }));
-    mockProc.exited = Promise.resolve(0);
-
-    await generateSessionTitle("Hello", "claude-sonnet-4-5-20250929", {
-      claudeBinary: "/usr/bin/claude",
-    });
-
-    const spawnArgs = (mockSpawn.mock.calls as unknown as string[][][])[0]?.[0];
-    expect(spawnArgs).toContain("--output-format");
-    expect(spawnArgs).toContain("json");
+    const [url, req] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect((req.headers as Record<string, string>).Authorization).toBe("Bearer or-key");
   });
 });

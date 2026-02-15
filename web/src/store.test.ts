@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-// jsdom does not implement window.matchMedia, which the store uses for initial dark mode detection.
-// vi.hoisted runs before any imports, ensuring matchMedia is available when store.ts initializes.
+// vi.hoisted runs before any imports, ensuring browser globals are available when store.ts initializes.
 vi.hoisted(() => {
+  // jsdom does not implement matchMedia
   Object.defineProperty(globalThis.window, "matchMedia", {
     writable: true,
     configurable: true,
@@ -17,6 +17,27 @@ vi.hoisted(() => {
       dispatchEvent: () => false,
     }),
   });
+
+  // Node.js 22+ native localStorage may be broken (invalid --localstorage-file).
+  // Polyfill before store.ts import triggers getInitialSessionId().
+  if (
+    typeof globalThis.localStorage === "undefined" ||
+    typeof globalThis.localStorage.getItem !== "function"
+  ) {
+    const store = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => { store.set(key, String(value)); },
+        removeItem: (key: string) => { store.delete(key); },
+        clear: () => { store.clear(); },
+        get length() { return store.size; },
+        key: (index: number) => [...store.keys()][index] ?? null,
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
 });
 
 import { useStore } from "./store.js";
@@ -224,6 +245,27 @@ describe("Messages", () => {
     const msg = makeMessage({ content: "orphan" });
     useStore.getState().appendMessage("s1", msg);
     expect(useStore.getState().messages.get("s1")).toHaveLength(1);
+  });
+
+  it("appendMessage: deduplicates by ID", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    const msg = makeMessage({ id: "dup-1", content: "first" });
+    useStore.getState().appendMessage("s1", msg);
+    useStore.getState().appendMessage("s1", { ...msg, content: "duplicate" });
+
+    const messages = useStore.getState().messages.get("s1")!;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("first");
+  });
+
+  it("appendMessage: allows messages without IDs (no dedup)", () => {
+    useStore.getState().addSession(makeSession("s1"));
+    const msg1 = makeMessage({ id: "", content: "a" });
+    const msg2 = makeMessage({ id: "", content: "b" });
+    useStore.getState().appendMessage("s1", msg1);
+    useStore.getState().appendMessage("s1", msg2);
+
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
   });
 
   it("setMessages: replaces all messages for a session", () => {
@@ -497,5 +539,34 @@ describe("reset", () => {
     expect(state.sessionTasks.size).toBe(0);
     expect(state.sessionNames.size).toBe(0);
     expect(state.recentlyRenamed.size).toBe(0);
+    expect(state.mcpServers.size).toBe(0);
+  });
+});
+
+// ─── MCP Servers ──────────────────────────────────────────────────────────────
+
+describe("MCP Servers", () => {
+  it("setMcpServers: stores servers for a session", () => {
+    const servers = [
+      { name: "test-server", status: "connected" as const, config: { type: "stdio" }, scope: "project" },
+    ];
+    useStore.getState().setMcpServers("s1", servers);
+    expect(useStore.getState().mcpServers.get("s1")).toEqual(servers);
+  });
+
+  it("setMcpServers: replaces existing servers", () => {
+    const first = [{ name: "old", status: "connected" as const, config: { type: "stdio" }, scope: "project" }];
+    const second = [{ name: "new", status: "failed" as const, config: { type: "sse" }, scope: "user" }];
+    useStore.getState().setMcpServers("s1", first);
+    useStore.getState().setMcpServers("s1", second);
+    expect(useStore.getState().mcpServers.get("s1")).toEqual(second);
+  });
+
+  it("removeSession: clears mcpServers", () => {
+    const servers = [{ name: "test", status: "connected" as const, config: { type: "stdio" }, scope: "project" }];
+    useStore.getState().addSession(makeSession("s1"));
+    useStore.getState().setMcpServers("s1", servers);
+    useStore.getState().removeSession("s1");
+    expect(useStore.getState().mcpServers.has("s1")).toBe(false);
   });
 });

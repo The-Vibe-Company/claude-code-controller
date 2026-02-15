@@ -114,6 +114,17 @@ describe("connectSession", () => {
     // lastWs should still be the first one (no new constructor call)
     expect(lastWs).toBe(first);
   });
+
+  it("sends session_subscribe with last_seq on open", () => {
+    localStorage.setItem("companion:last-seq:s1", "12");
+    wsModule.connectSession("s1");
+
+    lastWs.onopen?.(new Event("open"));
+
+    expect(lastWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "session_subscribe", last_seq: 12 }),
+    );
+  });
 });
 
 // ===========================================================================
@@ -126,12 +137,36 @@ describe("sendToSession", () => {
 
     wsModule.sendToSession("s1", msg);
 
-    expect(lastWs.send).toHaveBeenCalledWith(JSON.stringify(msg));
+    const payload = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(payload.type).toBe("user_message");
+    expect(payload.content).toBe("hello");
+    expect(typeof payload.client_msg_id).toBe("string");
   });
 
   it("does nothing when session has no socket", () => {
     // Should not throw
     wsModule.sendToSession("nonexistent", { type: "interrupt" });
+  });
+
+  it("preserves provided client_msg_id", () => {
+    wsModule.connectSession("s1");
+    wsModule.sendToSession("s1", {
+      type: "user_message",
+      content: "hello",
+      client_msg_id: "fixed-id-1",
+    });
+
+    const payload = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(payload.client_msg_id).toBe("fixed-id-1");
+  });
+
+  it("adds client_msg_id for interrupt control message", () => {
+    wsModule.connectSession("s1");
+    wsModule.sendToSession("s1", { type: "interrupt" });
+
+    const payload = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(payload.type).toBe("interrupt");
+    expect(typeof payload.client_msg_id).toBe("string");
   });
 });
 
@@ -194,6 +229,67 @@ describe("handleMessage: session_update", () => {
   });
 });
 
+describe("handleMessage: event_replay", () => {
+  it("replays sequenced stream events and stores latest seq", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "event_replay",
+      events: [
+        {
+          seq: 1,
+          message: {
+            type: "stream_event",
+            event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello" } },
+            parent_tool_use_id: null,
+          },
+        },
+      ],
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Hello");
+    expect(localStorage.getItem("companion:last-seq:s1")).toBe("1");
+    expect(lastWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "session_ack", last_seq: 1 }),
+    );
+  });
+
+  it("acks only once using the latest replayed seq", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+    lastWs.send.mockClear();
+
+    fireMessage({
+      type: "event_replay",
+      events: [
+        {
+          seq: 1,
+          message: {
+            type: "stream_event",
+            event: { type: "content_block_delta", delta: { type: "text_delta", text: "A" } },
+            parent_tool_use_id: null,
+          },
+        },
+        {
+          seq: 2,
+          message: {
+            type: "stream_event",
+            event: { type: "content_block_delta", delta: { type: "text_delta", text: "B" } },
+            parent_tool_use_id: null,
+          },
+        },
+      ],
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("AB");
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    expect(lastWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "session_ack", last_seq: 2 }),
+    );
+  });
+});
+
 // ===========================================================================
 // handleMessage: assistant
 // ===========================================================================
@@ -227,6 +323,93 @@ describe("handleMessage: assistant", () => {
     expect(msgs[0].id).toBe("msg-1");
     expect(state.streaming.has("s1")).toBe(false);
     expect(state.sessionStatus.get("s1")).toBe("running");
+  });
+
+  it("tracks changed files using session cwd for relative tool paths", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-tool-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-1",
+            name: "Edit",
+            input: { file_path: "web/server/index.ts" },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const changed = useStore.getState().changedFiles.get("s1");
+    expect(changed?.has("/home/user/web/server/index.ts")).toBe(true);
+  });
+
+  it("ignores changed files outside the session cwd", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-tool-2",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-2",
+            name: "Write",
+            input: { file_path: "/Users/test/.claude/plans/example.md" },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const changed = useStore.getState().changedFiles.get("s1");
+    expect(changed).toBeUndefined();
+  });
+
+  it("tracks changed files with absolute paths when inside cwd", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-tool-3",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [
+          {
+            type: "tool_use",
+            id: "tool-3",
+            name: "Write",
+            input: { file_path: "/home/user/README.md" },
+          },
+        ],
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const changed = useStore.getState().changedFiles.get("s1");
+    expect(changed?.has("/home/user/README.md")).toBe(true);
   });
 });
 
@@ -513,6 +696,103 @@ describe("handleMessage: message_history", () => {
     expect(msgs[0].role).toBe("system");
     expect(msgs[0].content).toBe("Error: Timed out");
   });
+
+  it("assigns stable IDs to error results based on history index", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        { type: "user_message", content: "hi", timestamp: 1000 },
+        {
+          type: "result",
+          data: {
+            type: "result",
+            subtype: "error_during_execution",
+            is_error: true,
+            errors: ["Timed out"],
+            duration_ms: 100,
+            duration_api_ms: 50,
+            num_turns: 1,
+            total_cost_usd: 0,
+            stop_reason: null,
+            usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+            uuid: "u1",
+            session_id: "s1",
+          },
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    const errorMsg = msgs.find((m) => m.role === "system")!;
+    expect(errorMsg.id).toBe("hist-error-1");
+  });
+
+  it("deduplicates messages on reconnection (replayed history)", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    const history = {
+      type: "message_history",
+      messages: [
+        { type: "user_message", id: "user-1", content: "hello", timestamp: 1000 },
+        {
+          type: "assistant",
+          message: {
+            id: "msg-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "text", text: "hi" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 2000,
+        },
+      ],
+    };
+
+    // Initial connect
+    fireMessage(history);
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
+
+    // Simulate reconnect: same history replayed
+    fireMessage(history);
+    expect(useStore.getState().messages.get("s1")).toHaveLength(2);
+  });
+
+  it("preserves original timestamps from history instead of using Date.now()", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        { type: "user_message", content: "hello", timestamp: 42000 },
+        {
+          type: "assistant",
+          message: {
+            id: "msg-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "text", text: "hi" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 43000,
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs[0].timestamp).toBe(42000);
+    expect(msgs[1].timestamp).toBe(43000);
+  });
 });
 
 // ===========================================================================
@@ -774,5 +1054,204 @@ describe("handleMessage: session_name_update", () => {
     useStore.getState().clearRecentlyRenamed("s1");
     fireMessage({ type: "session_name_update", name: "Another Auto Title" });
     expect(useStore.getState().sessionNames.get("s1")).toBe("My Cool Project");
+  });
+});
+
+// ===========================================================================
+// MCP Status
+// ===========================================================================
+
+describe("MCP status messages", () => {
+  it("mcp_status: stores servers in store", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    const servers = [
+      {
+        name: "test-mcp",
+        status: "connected",
+        config: { type: "stdio", command: "node", args: ["server.js"] },
+        scope: "project",
+        tools: [{ name: "myTool" }],
+      },
+      {
+        name: "disabled-mcp",
+        status: "disabled",
+        config: { type: "sse", url: "http://localhost:3000" },
+        scope: "user",
+      },
+    ];
+
+    fireMessage({ type: "mcp_status", servers });
+
+    const stored = useStore.getState().mcpServers.get("s1");
+    expect(stored).toHaveLength(2);
+    expect(stored![0].name).toBe("test-mcp");
+    expect(stored![0].status).toBe("connected");
+    expect(stored![0].tools).toHaveLength(1);
+    expect(stored![1].name).toBe("disabled-mcp");
+    expect(stored![1].status).toBe("disabled");
+  });
+
+  it("sendMcpGetStatus: sends mcp_get_status message", () => {
+    wsModule.connectSession("s1");
+    lastWs.send.mockClear();
+
+    wsModule.sendMcpGetStatus("s1");
+
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(sent.type).toBe("mcp_get_status");
+    expect(typeof sent.client_msg_id).toBe("string");
+  });
+
+  it("sendMcpToggle: sends mcp_toggle message", () => {
+    wsModule.connectSession("s1");
+    lastWs.send.mockClear();
+
+    wsModule.sendMcpToggle("s1", "my-server", false);
+
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(sent.type).toBe("mcp_toggle");
+    expect(sent.serverName).toBe("my-server");
+    expect(sent.enabled).toBe(false);
+    expect(typeof sent.client_msg_id).toBe("string");
+  });
+
+  it("sendMcpReconnect: sends mcp_reconnect message", () => {
+    wsModule.connectSession("s1");
+    lastWs.send.mockClear();
+
+    wsModule.sendMcpReconnect("s1", "failing-server");
+
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(sent.type).toBe("mcp_reconnect");
+    expect(sent.serverName).toBe("failing-server");
+    expect(typeof sent.client_msg_id).toBe("string");
+  });
+
+  it("sendMcpSetServers: sends mcp_set_servers message", () => {
+    wsModule.connectSession("s1");
+    lastWs.send.mockClear();
+
+    const servers = {
+      "notes-server": {
+        type: "stdio" as const,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-memory"],
+      },
+    };
+    wsModule.sendMcpSetServers("s1", servers);
+
+    expect(lastWs.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(lastWs.send.mock.calls[0][0]);
+    expect(sent.type).toBe("mcp_set_servers");
+    expect(sent.servers).toEqual(servers);
+    expect(typeof sent.client_msg_id).toBe("string");
+  });
+});
+
+// ===========================================================================
+// handleMessage: tool_progress
+// ===========================================================================
+describe("handleMessage: tool_progress", () => {
+  it("stores tool progress in the store", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 5,
+    });
+
+    const progress = useStore.getState().toolProgress.get("s1");
+    expect(progress).toBeDefined();
+    expect(progress!.get("tu-123")).toEqual({
+      toolName: "Bash",
+      elapsedSeconds: 5,
+    });
+  });
+
+  it("updates elapsed time on subsequent messages", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 2,
+    });
+    fireMessage({
+      type: "tool_progress",
+      tool_use_id: "tu-123",
+      tool_name: "Bash",
+      elapsed_time_seconds: 7,
+    });
+
+    const entry = useStore.getState().toolProgress.get("s1")!.get("tu-123");
+    expect(entry!.elapsedSeconds).toBe(7);
+  });
+});
+
+// ===========================================================================
+// handleMessage: tool_use_summary
+// ===========================================================================
+describe("handleMessage: tool_use_summary", () => {
+  it("appends a system message with the summary text", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "tool_use_summary",
+      summary: "Ran 3 tools: Bash, Read, Grep",
+      tool_use_ids: ["tu-1", "tu-2", "tu-3"],
+    });
+
+    const msgs = useStore.getState().messages.get("s1");
+    expect(msgs).toBeDefined();
+    const systemMsg = msgs!.find((m) => m.role === "system" && m.content === "Ran 3 tools: Bash, Read, Grep");
+    expect(systemMsg).toBeDefined();
+  });
+});
+
+// ===========================================================================
+// assistant message: per-tool progress clearing (not blanket clear)
+// ===========================================================================
+describe("handleMessage: assistant clears only completed tool progress", () => {
+  it("clears progress for tool_result blocks but keeps others", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    // Set up progress for two concurrent tools
+    useStore.getState().setToolProgress("s1", "tu-a", { toolName: "Grep", elapsedSeconds: 3 });
+    useStore.getState().setToolProgress("s1", "tu-b", { toolName: "Glob", elapsedSeconds: 2 });
+
+    // Simulate assistant message with tool_result for only tu-a
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [
+          { type: "tool_result", tool_use_id: "tu-a", content: "3 matches" },
+        ] as ContentBlock[],
+        stop_reason: null,
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const progress = useStore.getState().toolProgress.get("s1");
+    // tu-a should be cleared (its result arrived)
+    expect(progress?.has("tu-a")).toBeFalsy();
+    // tu-b should still be present (still running)
+    expect(progress?.get("tu-b")).toEqual({ toolName: "Glob", elapsedSeconds: 2 });
   });
 });

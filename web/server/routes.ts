@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
+import { resolveBinary } from "./path-resolver.js";
 import { readdir, readFile, writeFile, stat } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -8,16 +9,73 @@ import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
 import type { WorktreeTracker } from "./worktree-tracker.js";
+import type { TerminalManager } from "./terminal-manager.js";
 import * as envManager from "./env-manager.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import { containerManager, type ContainerConfig, type ContainerInfo } from "./container-manager.js";
+import { DEFAULT_OPENROUTER_MODEL, getSettings, updateSettings } from "./settings-manager.js";
 import { getUsageLimits } from "./usage-limits.js";
+import {
+  getUpdateState,
+  checkForUpdate,
+  isUpdateAvailable,
+  setUpdateInProgress,
+} from "./update-checker.js";
+import { refreshServiceDefinition } from "./service.js";
+
+const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
+
+function execCaptureStdout(
+  command: string,
+  options: { cwd: string; encoding: "utf-8"; timeout: number },
+): string {
+  try {
+    return execSync(command, options);
+  } catch (err: unknown) {
+    const maybe = err as { stdout?: Buffer | string };
+    if (typeof maybe.stdout === "string") return maybe.stdout;
+    if (maybe.stdout && Buffer.isBuffer(maybe.stdout)) {
+      return maybe.stdout.toString("utf-8");
+    }
+    throw err;
+  }
+}
+
+function resolveBranchDiffBases(
+  repoRoot: string,
+): string[] {
+  const options = { cwd: repoRoot, encoding: "utf-8", timeout: 5000 } as const;
+
+  try {
+    const originHead = execSync("git symbolic-ref refs/remotes/origin/HEAD", options).trim();
+    const match = originHead.match(/^refs\/remotes\/origin\/(.+)$/);
+    if (match?.[1]) {
+      return [`origin/${match[1]}`, match[1]];
+    }
+  } catch {
+    // No remote HEAD ref available, fallback to common local defaults.
+  }
+
+  try {
+    const branches = execSync("git branch --list main master", options).trim();
+    if (branches.includes("main")) return ["main"];
+    if (branches.includes("master")) return ["master"];
+  } catch {
+    // Ignore and use a conservative fallback below.
+  }
+
+  return ["main"];
+}
 
 export function createRoutes(
   launcher: CliLauncher,
   wsBridge: WsBridge,
   sessionStore: SessionStore,
   worktreeTracker: WorktreeTracker,
+  terminalManager: TerminalManager,
+  prPoller?: import("./pr-poller.js").PRPoller,
+  recorder?: import("./recorder.js").RecorderManager,
 ) {
   const api = new Hono();
 
@@ -84,9 +142,38 @@ export function createRoutes(
       } else if (body.branch && cwd) {
         // Non-worktree: checkout the selected branch in-place
         const repoInfo = gitUtils.getRepoInfo(cwd);
-        if (repoInfo && repoInfo.currentBranch !== body.branch) {
-          gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+        if (repoInfo) {
+          const fetchResult = gitUtils.gitFetch(repoInfo.repoRoot);
+          if (!fetchResult.success) {
+            throw new Error(`git fetch failed before session create: ${fetchResult.output}`);
+          }
+
+          if (repoInfo.currentBranch !== body.branch) {
+            gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+          }
+
+          const pullResult = gitUtils.gitPull(repoInfo.repoRoot);
+          if (!pullResult.success) {
+            // Don't fail session creation if pull fails (e.g. no upstream tracking)
+            console.warn(`[routes] git pull warning (non-fatal): ${pullResult.output}`);
+          }
         }
+      }
+
+      // If container mode requested, create and start the container
+      let containerInfo: ContainerInfo | undefined;
+      if (body.container && backend === "claude") {
+        const cConfig: ContainerConfig = {
+          image: body.container.image || "companion-dev:latest",
+          ports: Array.isArray(body.container.ports)
+            ? body.container.ports.map(Number).filter((n: number) => n > 0)
+            : [],
+          volumes: body.container.volumes,
+          env: body.container.env,
+        };
+        // Use cwd-based name since we don't have sessionId yet
+        const containerId = crypto.randomUUID().slice(0, 8);
+        containerInfo = containerManager.createContainer(containerId, cwd, cConfig);
       }
 
       const session = launcher.launch({
@@ -95,6 +182,7 @@ export function createRoutes(
         cwd,
         claudeBinary: body.claudeBinary,
         codexBinary: body.codexBinary,
+        codexInternetAccess: backend === "codex" && body.codexInternetAccess === true,
         codexSandbox: backend === "codex" && body.codexInternetAccess === true
           ? "danger-full-access"
           : "workspace-write",
@@ -103,6 +191,12 @@ export function createRoutes(
         backendType: backend,
         worktreeInfo,
       });
+
+      // Re-track container with real session ID
+      if (containerInfo) {
+        // The container was created with a temp ID; re-register under the real session ID
+        containerManager.retrack(containerInfo.containerId, session.sessionId);
+      }
 
       // Track the worktree mapping
       if (worktreeInfo) {
@@ -169,6 +263,9 @@ export function createRoutes(
     if (!killed)
       return c.json({ error: "Session not found or already exited" }, 404);
 
+    // Clean up container if any
+    containerManager.removeContainer(id);
+
     return c.json({ ok: true });
   });
 
@@ -183,9 +280,13 @@ export function createRoutes(
     const id = c.req.param("id");
     await launcher.kill(id);
 
+    // Clean up container if any
+    containerManager.removeContainer(id);
+
     // Clean up worktree if no other sessions use it (force: delete is destructive)
     const worktreeResult = cleanupWorktree(id, true);
 
+    prPoller?.unwatch(id);
     launcher.removeSession(id);
     wsBridge.closeSession(id);
     return c.json({ ok: true, worktree: worktreeResult });
@@ -195,6 +296,12 @@ export function createRoutes(
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => ({}));
     await launcher.kill(id);
+
+    // Clean up container if any
+    containerManager.removeContainer(id);
+
+    // Stop PR polling for this session
+    prPoller?.unwatch(id);
 
     // Clean up worktree if no other sessions use it
     const worktreeResult = cleanupWorktree(id, body.force);
@@ -211,26 +318,44 @@ export function createRoutes(
     return c.json({ ok: true });
   });
 
+  // ─── Recording Management ──────────────────────────────────
+
+  api.post("/sessions/:id/recording/start", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ error: "Recording not available" }, 501);
+    recorder.enableForSession(id);
+    return c.json({ ok: true, recording: true });
+  });
+
+  api.post("/sessions/:id/recording/stop", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ error: "Recording not available" }, 501);
+    recorder.disableForSession(id);
+    return c.json({ ok: true, recording: false });
+  });
+
+  api.get("/sessions/:id/recording/status", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ recording: false, available: false });
+    return c.json({
+      recording: recorder.isRecording(id),
+      available: true,
+      ...recorder.getRecordingStatus(id),
+    });
+  });
+
+  api.get("/recordings", (c) => {
+    if (!recorder) return c.json({ recordings: [] });
+    return c.json({ recordings: recorder.listRecordings() });
+  });
+
   // ─── Available backends ─────────────────────────────────────
 
   api.get("/backends", (c) => {
     const backends: Array<{ id: string; name: string; available: boolean }> = [];
 
-    // Check Claude Code
-    let claudeAvailable = false;
-    try {
-      execSync("which claude", { encoding: "utf-8", timeout: 3000 });
-      claudeAvailable = true;
-    } catch {}
-    backends.push({ id: "claude", name: "Claude Code", available: claudeAvailable });
-
-    // Check Codex
-    let codexAvailable = false;
-    try {
-      execSync("which codex", { encoding: "utf-8", timeout: 3000 });
-      codexAvailable = true;
-    } catch {}
-    backends.push({ id: "codex", name: "Codex", available: codexAvailable });
+    backends.push({ id: "claude", name: "Claude Code", available: resolveBinary("claude") !== null });
+    backends.push({ id: "codex", name: "Codex", available: resolveBinary("codex") !== null });
 
     return c.json(backends);
   });
@@ -274,6 +399,19 @@ export function createRoutes(
     return c.json({ error: "Use frontend defaults for this backend" }, 404);
   });
 
+  // ─── Containers ─────────────────────────────────────────────────
+
+  api.get("/containers/status", (c) => {
+    const available = containerManager.checkDocker();
+    const version = containerManager.getDockerVersion();
+    return c.json({ available, version });
+  });
+
+  api.get("/containers/images", (c) => {
+    const images = containerManager.listImages();
+    return c.json(images);
+  });
+
   // ─── Filesystem browsing ─────────────────────────────────────
 
   api.get("/fs/list", async (c) => {
@@ -303,7 +441,15 @@ export function createRoutes(
   });
 
   api.get("/fs/home", (c) => {
-    return c.json({ home: homedir(), cwd: process.cwd() });
+    const home = homedir();
+    const cwd = process.cwd();
+    // Only report cwd if the user launched companion from a real project directory
+    // (not from the package root or the home directory itself)
+    const packageRoot = process.env.__COMPANION_PACKAGE_ROOT;
+    const isProjectDir =
+      cwd !== home &&
+      (!packageRoot || !cwd.startsWith(packageRoot));
+    return c.json({ home, cwd: isProjectDir ? cwd : home });
   });
 
   // ─── Editor filesystem APIs ─────────────────────────────────────
@@ -401,14 +547,107 @@ export function createRoutes(
     if (!filePath) return c.json({ error: "path required" }, 400);
     const absPath = resolve(filePath);
     try {
-      const diff = execSync(`git diff HEAD -- "${absPath}"`, {
+      const repoRoot = execSync("git rev-parse --show-toplevel", {
         cwd: dirname(absPath),
         encoding: "utf-8",
         timeout: 5000,
-      });
+      }).trim();
+      const relPath = execSync(`git -C "${repoRoot}" ls-files --full-name -- "${absPath}"`, {
+        encoding: "utf-8",
+        timeout: 5000,
+      }).trim() || absPath;
+
+      let diff = "";
+      const diffBases = resolveBranchDiffBases(repoRoot);
+      for (const base of diffBases) {
+        try {
+          diff = execCaptureStdout(`git diff ${base} -- "${relPath}"`, {
+            cwd: repoRoot,
+            encoding: "utf-8",
+            timeout: 5000,
+          });
+          break;
+        } catch {
+          // If a base ref is unavailable, try the next candidate.
+        }
+      }
+
+      // For untracked files, base-branch diff is empty. Show full file as added.
+      if (!diff.trim()) {
+        const untracked = execSync(`git ls-files --others --exclude-standard -- "${relPath}"`, {
+          cwd: repoRoot,
+          encoding: "utf-8",
+          timeout: 5000,
+        }).trim();
+        if (untracked) {
+          diff = execCaptureStdout(`git diff --no-index -- /dev/null "${absPath}"`, {
+            cwd: repoRoot,
+            encoding: "utf-8",
+            timeout: 5000,
+          });
+        }
+      }
+
       return c.json({ path: absPath, diff });
     } catch {
       return c.json({ path: absPath, diff: "" });
+    }
+  });
+
+  /** Find CLAUDE.md files for a project (root + .claude/) */
+  api.get("/fs/claude-md", async (c) => {
+    const cwd = c.req.query("cwd");
+    if (!cwd) return c.json({ error: "cwd required" }, 400);
+
+    // Resolve to absolute path to prevent path traversal
+    const resolvedCwd = resolve(cwd);
+
+    const candidates = [
+      join(resolvedCwd, "CLAUDE.md"),
+      join(resolvedCwd, ".claude", "CLAUDE.md"),
+    ];
+
+    const files: { path: string; content: string }[] = [];
+    for (const p of candidates) {
+      try {
+        const content = await readFile(p, "utf-8");
+        files.push({ path: p, content });
+      } catch {
+        // file doesn't exist — skip
+      }
+    }
+
+    return c.json({ cwd: resolvedCwd, files });
+  });
+
+  /** Create or update a CLAUDE.md file */
+  api.put("/fs/claude-md", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { path: filePath, content } = body;
+    if (!filePath || typeof content !== "string") {
+      return c.json({ error: "path and content required" }, 400);
+    }
+    // Only allow writing CLAUDE.md files
+    const base = filePath.split("/").pop();
+    if (base !== "CLAUDE.md") {
+      return c.json({ error: "Can only write CLAUDE.md files" }, 400);
+    }
+    const absPath = resolve(filePath);
+    // Verify the resolved path ends with CLAUDE.md or .claude/CLAUDE.md
+    if (!absPath.endsWith("/CLAUDE.md") && !absPath.endsWith("/.claude/CLAUDE.md")) {
+      return c.json({ error: "Invalid CLAUDE.md path" }, 400);
+    }
+    try {
+      // Ensure parent directory exists
+      const { mkdir } = await import("node:fs/promises");
+      await mkdir(dirname(absPath), { recursive: true });
+      await writeFile(absPath, content, "utf-8");
+      return c.json({ ok: true, path: absPath });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Cannot write file" },
+        500,
+      );
     }
   });
 
@@ -457,6 +696,45 @@ export function createRoutes(
     const deleted = envManager.deleteEnv(c.req.param("slug"));
     if (!deleted) return c.json({ error: "Environment not found" }, 404);
     return c.json({ ok: true });
+  });
+
+  // ─── Settings (~/.companion/settings.json) ────────────────────────
+
+  api.get("/settings", (c) => {
+    const settings = getSettings();
+    return c.json({
+      openrouterApiKeyConfigured: !!settings.openrouterApiKey.trim(),
+      openrouterModel: settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
+    });
+  });
+
+  api.put("/settings", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    if (body.openrouterApiKey !== undefined && typeof body.openrouterApiKey !== "string") {
+      return c.json({ error: "openrouterApiKey must be a string" }, 400);
+    }
+    if (body.openrouterModel !== undefined && typeof body.openrouterModel !== "string") {
+      return c.json({ error: "openrouterModel must be a string" }, 400);
+    }
+    if (body.openrouterApiKey === undefined && body.openrouterModel === undefined) {
+      return c.json({ error: "At least one settings field is required" }, 400);
+    }
+
+    const settings = updateSettings({
+      openrouterApiKey:
+        typeof body.openrouterApiKey === "string"
+          ? body.openrouterApiKey.trim()
+          : undefined,
+      openrouterModel:
+        typeof body.openrouterModel === "string"
+          ? (body.openrouterModel.trim() || DEFAULT_OPENROUTER_MODEL)
+          : undefined,
+    });
+
+    return c.json({
+      openrouterApiKeyConfigured: !!settings.openrouterApiKey.trim(),
+      openrouterModel: settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
+    });
   });
 
   // ─── Git operations ─────────────────────────────────────────────────
@@ -547,6 +825,28 @@ export function createRoutes(
     return c.json({ ...result, git_ahead, git_behind });
   });
 
+  // ─── GitHub PR Status ────────────────────────────────────────────────
+
+  api.get("/git/pr-status", async (c) => {
+    const cwd = c.req.query("cwd");
+    const branch = c.req.query("branch");
+    if (!cwd || !branch) return c.json({ error: "cwd and branch required" }, 400);
+
+    // Check poller cache first for instant response
+    if (prPoller) {
+      const cached = prPoller.getCached(cwd, branch);
+      if (cached) return c.json(cached);
+    }
+
+    const { isGhAvailable, fetchPRInfoAsync } = await import("./github-pr.js");
+    if (!isGhAvailable()) {
+      return c.json({ available: false, pr: null });
+    }
+
+    const pr = await fetchPRInfoAsync(cwd, branch);
+    return c.json({ available: true, pr });
+  });
+
   // ─── Usage Limits ─────────────────────────────────────────────────────
 
   api.get("/usage-limits", async (c) => {
@@ -579,6 +879,131 @@ export function createRoutes(
     // Claude sessions: use existing logic
     const limits = await getUsageLimits();
     return c.json(limits);
+  });
+
+  // ─── Update checking ─────────────────────────────────────────────────
+
+  api.get("/update-check", async (c) => {
+    const initialState = getUpdateState();
+    const needsRefresh =
+      initialState.lastChecked === 0
+      || Date.now() - initialState.lastChecked > UPDATE_CHECK_STALE_MS;
+    if (needsRefresh) {
+      await checkForUpdate();
+    }
+
+    const state = getUpdateState();
+    return c.json({
+      currentVersion: state.currentVersion,
+      latestVersion: state.latestVersion,
+      updateAvailable: isUpdateAvailable(),
+      isServiceMode: state.isServiceMode,
+      updateInProgress: state.updateInProgress,
+      lastChecked: state.lastChecked,
+    });
+  });
+
+  api.post("/update-check", async (c) => {
+    await checkForUpdate();
+    const state = getUpdateState();
+    return c.json({
+      currentVersion: state.currentVersion,
+      latestVersion: state.latestVersion,
+      updateAvailable: isUpdateAvailable(),
+      isServiceMode: state.isServiceMode,
+      updateInProgress: state.updateInProgress,
+      lastChecked: state.lastChecked,
+    });
+  });
+
+  api.post("/update", async (c) => {
+    const state = getUpdateState();
+    if (!state.isServiceMode) {
+      return c.json(
+        { error: "Update & restart is only available in service mode" },
+        400,
+      );
+    }
+    if (!isUpdateAvailable()) {
+      return c.json({ error: "No update available" }, 400);
+    }
+    if (state.updateInProgress) {
+      return c.json({ error: "Update already in progress" }, 409);
+    }
+
+    setUpdateInProgress(true);
+
+    // Respond immediately, then perform update async
+    setTimeout(async () => {
+      try {
+        console.log(
+          `[update] Updating the-companion to ${state.latestVersion}...`,
+        );
+        const proc = Bun.spawn(
+          ["bun", "install", "-g", `the-companion@${state.latestVersion}`],
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        const exitCode = await proc.exited;
+        if (exitCode !== 0) {
+          const stderr = await new Response(proc.stderr).text();
+          console.error(
+            `[update] bun install failed (code ${exitCode}):`,
+            stderr,
+          );
+          setUpdateInProgress(false);
+          return;
+        }
+
+        // Refresh the service definition so the new unit/plist template
+        // (e.g. Restart=always) takes effect for existing installations.
+        try {
+          refreshServiceDefinition();
+          console.log("[update] Service definition refreshed.");
+        } catch (err) {
+          console.warn("[update] Failed to refresh service definition:", err);
+        }
+
+        console.log(
+          "[update] Update successful, restarting service...",
+        );
+
+        // Explicitly restart via the service manager in a detached process
+        // so the restart survives our own exit.
+        const isLinux = process.platform === "linux";
+        const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+        const restartCmd = isLinux
+          ? ["systemctl", "--user", "restart", "the-companion.service"]
+          : uid !== undefined
+            ? ["launchctl", "kickstart", "-k", `gui/${uid}/sh.thecompanion.app`]
+            : ["launchctl", "kickstart", "-k", "sh.thecompanion.app"];
+
+        Bun.spawn(restartCmd, {
+          stdout: "ignore",
+          stderr: "ignore",
+          stdin: "ignore",
+          env: isLinux
+            ? {
+                ...process.env,
+                XDG_RUNTIME_DIR:
+                  process.env.XDG_RUNTIME_DIR ||
+                  `/run/user/${uid ?? 1000}`,
+              }
+            : undefined,
+        });
+
+        // Give the spawn a moment to dispatch, then exit cleanly.
+        // The service manager restart will kill us if we haven't exited yet.
+        setTimeout(() => process.exit(0), 500);
+      } catch (err) {
+        console.error("[update] Update failed:", err);
+        setUpdateInProgress(false);
+      }
+    }, 100);
+
+    return c.json({
+      ok: true,
+      message: "Update started. Server will restart shortly.",
+    });
   });
 
   // ─── Helper ─────────────────────────────────────────────────────────
@@ -625,6 +1050,26 @@ export function createRoutes(
     }
     return { cleaned: result.removed, path: mapping.worktreePath };
   }
+
+  // ─── Terminal ──────────────────────────────────────────────────────
+
+  api.get("/terminal", (c) => {
+    const info = terminalManager.getInfo();
+    if (!info) return c.json({ active: false });
+    return c.json({ active: true, terminalId: info.id, cwd: info.cwd });
+  });
+
+  api.post("/terminal/spawn", async (c) => {
+    const body = await c.req.json<{ cwd: string; cols?: number; rows?: number }>();
+    if (!body.cwd) return c.json({ error: "cwd is required" }, 400);
+    const terminalId = terminalManager.spawn(body.cwd, body.cols, body.rows);
+    return c.json({ terminalId });
+  });
+
+  api.post("/terminal/kill", (c) => {
+    terminalManager.kill();
+    return c.json({ ok: true });
+  });
 
   return api;
 }

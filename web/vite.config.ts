@@ -8,9 +8,9 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5174,
     proxy: {
-      "/api": "http://localhost:3456",
+      "/api": "http://localhost:3457",
       "/ws": {
-        target: "ws://localhost:3456",
+        target: "ws://localhost:3457",
         ws: true,
       },
     },

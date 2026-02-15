@@ -52,7 +52,7 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
       <div
-        className="w-full max-w-lg h-[min(480px,90vh)] mx-0 sm:mx-4 flex flex-col bg-cc-bg border border-cc-border rounded-t-[14px] sm:rounded-[14px] shadow-2xl overflow-hidden"
+        className="w-full max-w-lg h-[min(480px,90dvh)] mx-0 sm:mx-4 flex flex-col bg-cc-bg border border-cc-border rounded-t-[14px] sm:rounded-[14px] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -76,7 +76,7 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
               <button
                 key={dir}
                 onClick={() => selectDir(dir)}
-                className="w-full px-4 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 text-cc-fg"
+                className="w-full px-4 py-2 sm:py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 text-cc-fg"
               >
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-30 shrink-0">
                   <path d="M8 3.5a.5.5 0 00-1 0V8a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 7.71V3.5z" />
@@ -162,21 +162,34 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
                 <div className="px-4 py-6 text-xs text-cc-muted text-center">No subdirectories</div>
               ) : (
                 browseDirs.map((d) => (
-                  <button
+                  <div
                     key={d.path}
-                    onClick={() => loadDirs(d.path)}
-                    onDoubleClick={() => selectDir(d.path)}
-                    className="w-full px-4 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer font-mono-code flex items-center gap-2 text-cc-fg"
-                    title={d.path}
+                    className="flex items-center hover:bg-cc-hover transition-colors"
                   >
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-40 shrink-0">
-                      <path d="M1 3.5A1.5 1.5 0 012.5 2h3.379a1.5 1.5 0 011.06.44l.622.621a.5.5 0 00.353.146H13.5A1.5 1.5 0 0115 4.707V12.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z" />
-                    </svg>
-                    <span className="truncate">{d.name}</span>
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-30 shrink-0 ml-auto">
-                      <path d="M6 4l4 4-4 4" />
-                    </svg>
-                  </button>
+                    <button
+                      onClick={() => loadDirs(d.path)}
+                      onDoubleClick={() => selectDir(d.path)}
+                      className="flex-1 min-w-0 px-4 py-2 sm:py-1.5 text-xs text-left cursor-pointer font-mono-code flex items-center gap-2 text-cc-fg"
+                      title={d.path}
+                    >
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-40 shrink-0">
+                        <path d="M1 3.5A1.5 1.5 0 012.5 2h3.379a1.5 1.5 0 011.06.44l.622.621a.5.5 0 00.353.146H13.5A1.5 1.5 0 0115 4.707V12.5a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 12.5v-9z" />
+                      </svg>
+                      <span className="truncate">{d.name}</span>
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-30 shrink-0 ml-auto">
+                        <path d="M6 4l4 4-4 4" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => selectDir(d.path)}
+                      className="shrink-0 w-8 h-8 sm:w-6 sm:h-6 mr-2 flex items-center justify-center rounded-md text-cc-muted hover:text-cc-primary hover:bg-cc-primary/10 transition-colors cursor-pointer"
+                      title={`Select ${d.name}`}
+                    >
+                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                        <path d="M12.416 3.376a.75.75 0 01.208 1.04l-5 7.5a.75.75 0 01-1.154.114l-3-3a.75.75 0 011.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 011.04-.207z" />
+                      </svg>
+                    </button>
+                  </div>
                 ))
               )}
             </div>

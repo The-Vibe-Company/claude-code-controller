@@ -120,3 +120,124 @@
 .font-mono-code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
+
+/* Eliminate 300ms tap delay on interactive elements */
+button,
+[role="button"],
+a,
+input,
+textarea,
+select {
+  touch-action: manipulation;
+}
+
+/* ─── DiffViewer ──────────────────────────────────────────────────────────── */
+.diff-viewer {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-cc-border);
+  background: var(--color-cc-code-bg);
+  color: var(--color-cc-code-fg);
+}
+.diff-compact {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.diff-full {
+  overflow-y: auto;
+}
+.diff-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-cc-card);
+}
+.diff-file + .diff-file {
+  border-top: 1px solid var(--color-cc-border);
+}
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(0,0,0,0.15);
+  font-size: 11px;
+  border-bottom: 1px solid var(--color-cc-border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.dark .diff-file-header {
+  background: rgba(255,255,255,0.04);
+}
+.diff-hunk-header {
+  padding: 4px 12px;
+  color: var(--color-cc-primary);
+  font-size: 11px;
+  background: rgba(174, 86, 48, 0.06);
+}
+.diff-line {
+  display: flex;
+  min-height: 20px;
+}
+.diff-gutter {
+  flex-shrink: 0;
+  width: 44px;
+  text-align: right;
+  padding: 0 6px;
+  color: var(--color-cc-muted);
+  opacity: 0.5;
+  user-select: none;
+  font-size: 11px;
+}
+.diff-marker {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  user-select: none;
+}
+.diff-content {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding-right: 12px;
+}
+.diff-line-add {
+  background: rgba(45, 125, 70, 0.1);
+}
+.diff-line-add .diff-marker {
+  color: var(--color-cc-success);
+}
+.diff-line-del {
+  background: rgba(197, 48, 48, 0.1);
+}
+.diff-line-del .diff-marker {
+  color: var(--color-cc-error);
+}
+.dark .diff-line-add {
+  background: rgba(72, 187, 120, 0.08);
+}
+.dark .diff-line-del {
+  background: rgba(252, 129, 129, 0.08);
+}
+.diff-word-add {
+  background: rgba(45, 125, 70, 0.25);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.diff-word-del {
+  background: rgba(197, 48, 48, 0.25);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dark .diff-word-add {
+  background: rgba(72, 187, 120, 0.2);
+}
+.dark .diff-word-del {
+  background: rgba(252, 129, 129, 0.2);
+}

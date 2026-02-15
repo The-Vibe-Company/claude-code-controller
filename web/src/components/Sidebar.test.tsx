@@ -31,11 +31,6 @@ vi.mock("../api.js", () => ({
   },
 }));
 
-// Mock EnvManager to avoid rendering complexity
-vi.mock("./EnvManager.js", () => ({
-  EnvManager: () => <div data-testid="env-manager">EnvManager</div>,
-}));
-
 // ─── Store mock helpers ──────────────────────────────────────────────────────
 
 // We need to mock the store. The Sidebar uses `useStore((s) => s.xxx)` selector pattern.
@@ -45,14 +40,14 @@ interface MockStoreState {
   sessions: Map<string, SessionState>;
   sdkSessions: SdkSessionInfo[];
   currentSessionId: string | null;
-  darkMode: boolean;
   cliConnected: Map<string, boolean>;
   sessionStatus: Map<string, "idle" | "running" | "compacting" | null>;
   sessionNames: Map<string, string>;
   recentlyRenamed: Set<string>;
   pendingPermissions: Map<string, Map<string, unknown>>;
+  collapsedProjects: Set<string>;
   setCurrentSession: ReturnType<typeof vi.fn>;
-  toggleDarkMode: ReturnType<typeof vi.fn>;
+  toggleProjectCollapse: ReturnType<typeof vi.fn>;
   removeSession: ReturnType<typeof vi.fn>;
   newSession: ReturnType<typeof vi.fn>;
   setSidebarOpen: ReturnType<typeof vi.fn>;
@@ -60,6 +55,7 @@ interface MockStoreState {
   markRecentlyRenamed: ReturnType<typeof vi.fn>;
   clearRecentlyRenamed: ReturnType<typeof vi.fn>;
   setSdkSessions: ReturnType<typeof vi.fn>;
+  closeTerminal: ReturnType<typeof vi.fn>;
 }
 
 function makeSession(id: string, overrides: Partial<SessionState> = {}): SessionState {
@@ -107,14 +103,14 @@ function createMockState(overrides: Partial<MockStoreState> = {}): MockStoreStat
     sessions: new Map(),
     sdkSessions: [],
     currentSessionId: null,
-    darkMode: false,
     cliConnected: new Map(),
     sessionStatus: new Map(),
     sessionNames: new Map(),
     recentlyRenamed: new Set(),
     pendingPermissions: new Map(),
+    collapsedProjects: new Set(),
     setCurrentSession: vi.fn(),
-    toggleDarkMode: vi.fn(),
+    toggleProjectCollapse: vi.fn(),
     removeSession: vi.fn(),
     newSession: vi.fn(),
     setSidebarOpen: vi.fn(),
@@ -122,6 +118,7 @@ function createMockState(overrides: Partial<MockStoreState> = {}): MockStoreStat
     markRecentlyRenamed: vi.fn(),
     clearRecentlyRenamed: vi.fn(),
     setSdkSessions: vi.fn(),
+    closeTerminal: vi.fn(),
     ...overrides,
   };
 }
@@ -147,6 +144,7 @@ import { Sidebar } from "./Sidebar.js";
 beforeEach(() => {
   vi.clearAllMocks();
   mockState = createMockState();
+  window.location.hash = "";
 });
 
 describe("Sidebar", () => {
@@ -196,7 +194,7 @@ describe("Sidebar", () => {
     expect(screen.getByText("abcdef12")).toBeInTheDocument();
   });
 
-  it("session items show directory name from cwd", () => {
+  it("session items show project name in group header (not in session row)", () => {
     const session = makeSession("s1", { cwd: "/home/user/projects/myapp" });
     const sdk = makeSdkSession("s1");
     mockState = createMockState({
@@ -205,6 +203,7 @@ describe("Sidebar", () => {
     });
 
     render(<Sidebar />);
+    // "myapp" appears in the project group header
     expect(screen.getByText("myapp")).toBeInTheDocument();
   });
 
@@ -339,6 +338,40 @@ describe("Sidebar", () => {
     expect(archiveButton).toBeInTheDocument();
   });
 
+  it("archive action button is visible by default on mobile and hover-only on desktop", () => {
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+
+    render(<Sidebar />);
+    const archiveButton = screen.getByTitle("Archive session");
+
+    expect(archiveButton).toHaveClass("opacity-100");
+    expect(archiveButton).toHaveClass("sm:opacity-0");
+    expect(archiveButton).toHaveClass("sm:group-hover:opacity-100");
+  });
+
+  it("permission badge uses mobile-friendly positioning and hover behavior", () => {
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+      pendingPermissions: new Map([["s1", new Map([["p1", {}]])]]),
+    });
+
+    render(<Sidebar />);
+    const mobilePermissionBadge = screen.getAllByText("1").find((node) =>
+      node.classList.contains("bg-cc-warning") && node.classList.contains("px-1"),
+    )!;
+    expect(mobilePermissionBadge).toHaveClass("right-8");
+    expect(mobilePermissionBadge).toHaveClass("sm:right-2");
+    expect(mobilePermissionBadge).toHaveClass("sm:group-hover:opacity-0");
+  });
+
   it("archived sessions section shows count", () => {
     const sdk1 = makeSdkSession("s1", { archived: false });
     const sdk2 = makeSdkSession("s2", { archived: true });
@@ -374,14 +407,28 @@ describe("Sidebar", () => {
     expect(screen.getByText("archived-model")).toBeInTheDocument();
   });
 
-  it("dark mode button toggles theme", () => {
-    mockState = createMockState({ darkMode: false });
-
+  it("does not render settings controls directly in sidebar", () => {
     render(<Sidebar />);
-    const darkModeButton = screen.getByText("Dark mode").closest("button")!;
-    fireEvent.click(darkModeButton);
+    expect(screen.queryByText("Notification")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dark mode")).not.toBeInTheDocument();
+  });
 
-    expect(mockState.toggleDarkMode).toHaveBeenCalled();
+  it("navigates to environments page when Environments is clicked", () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByText("Environments").closest("button")!);
+    expect(window.location.hash).toBe("#/environments");
+  });
+
+  it("navigates to settings page when Settings is clicked", () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByText("Settings").closest("button")!);
+    expect(window.location.hash).toBe("#/settings");
+  });
+
+  it("navigates to terminal page when Terminal is clicked", () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByText("Terminal").closest("button")!);
+    expect(window.location.hash).toBe("#/terminal");
   });
 
   it("session name shows animate-name-appear class when recently renamed", () => {
@@ -425,9 +472,31 @@ describe("Sidebar", () => {
       recentlyRenamed: new Set(["s1"]),
     });
 
-    render(<Sidebar />);
-    const nameElement = screen.getByText("Animated Name");
-    fireEvent.animationEnd(nameElement);
+    const { container } = render(<Sidebar />);
+    // The animated span has the animate-name-appear class and an onAnimationEnd
+    // handler that calls onClearRecentlyRenamed(sessionId).
+    const animatedSpan = container.querySelector(".animate-name-appear");
+    expect(animatedSpan).toBeTruthy();
+
+    // JSDOM does not define AnimationEvent in all environments, which
+    // causes fireEvent.animationEnd to silently fail. We traverse the
+    // React fiber tree to invoke the onAnimationEnd handler directly.
+    const fiberKey = Object.keys(animatedSpan!).find((k) =>
+      k.startsWith("__reactFiber$"),
+    );
+    expect(fiberKey).toBeDefined();
+    let fiber = (animatedSpan as unknown as Record<string, unknown>)[fiberKey!] as Record<string, unknown> | null;
+    let called = false;
+    while (fiber) {
+      const props = fiber.memoizedProps as Record<string, unknown> | undefined;
+      if (props?.onAnimationEnd) {
+        (props.onAnimationEnd as () => void)();
+        called = true;
+        break;
+      }
+      fiber = fiber.return as Record<string, unknown> | null;
+    }
+    expect(called).toBe(true);
     expect(mockState.clearRecentlyRenamed).toHaveBeenCalledWith("s1");
   });
 
@@ -514,7 +583,7 @@ describe("Sidebar", () => {
     expect(screen.queryByText("from-rest")).not.toBeInTheDocument();
   });
 
-  it("codex session preserves backendType when bridgeState is missing", () => {
+  it("codex session shows Codex pill when bridgeState is missing", () => {
     // Only sdkInfo available (no WS session_init received yet)
     const sdk = makeSdkSession("s1", { backendType: "codex" });
     mockState = createMockState({
@@ -522,12 +591,12 @@ describe("Sidebar", () => {
       sdkSessions: [sdk],
     });
 
-    const { container } = render(<Sidebar />);
-    const avatar = container.querySelector("button img");
-    expect(avatar?.getAttribute("src")).toBe("/logo-codex.svg");
+    render(<Sidebar />);
+    // Should show "Codex" pill text
+    expect(screen.getByText("Codex")).toBeInTheDocument();
   });
 
-  it("session avatar shows correct logo based on backendType", () => {
+  it("session shows correct backend pill based on backendType", () => {
     const session1 = makeSession("s1", { backend_type: "claude" });
     const session2 = makeSession("s2", { backend_type: "codex" });
     const sdk1 = makeSdkSession("s1", { backendType: "claude" });
@@ -537,12 +606,60 @@ describe("Sidebar", () => {
       sdkSessions: [sdk1, sdk2],
     });
 
-    const { container } = render(<Sidebar />);
-    // Find avatar images inside session buttons
-    const avatars = container.querySelectorAll("button img");
-    expect(avatars).toHaveLength(2);
-    const srcs = Array.from(avatars).map((img) => img.getAttribute("src"));
-    expect(srcs).toContain("/logo.svg");
-    expect(srcs).toContain("/logo-codex.svg");
+    render(<Sidebar />);
+    // Both backend pills should be present
+    const claudePills = screen.getAllByText("Claude");
+    const codexPills = screen.getAllByText("Codex");
+    expect(claudePills.length).toBeGreaterThanOrEqual(1);
+    expect(codexPills.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("sessions are grouped by project directory", () => {
+    const session1 = makeSession("s1", { cwd: "/home/user/project-a" });
+    const session2 = makeSession("s2", { cwd: "/home/user/project-a" });
+    const session3 = makeSession("s3", { cwd: "/home/user/project-b" });
+    const sdk1 = makeSdkSession("s1", { cwd: "/home/user/project-a" });
+    const sdk2 = makeSdkSession("s2", { cwd: "/home/user/project-a" });
+    const sdk3 = makeSdkSession("s3", { cwd: "/home/user/project-b" });
+    mockState = createMockState({
+      sessions: new Map([["s1", session1], ["s2", session2], ["s3", session3]]),
+      sdkSessions: [sdk1, sdk2, sdk3],
+    });
+
+    render(<Sidebar />);
+    // Project group headers should be visible (also appears as dirName in session items)
+    expect(screen.getAllByText("project-a").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("project-b").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("project group header shows running count", () => {
+    const session1 = makeSession("s1", { cwd: "/home/user/myapp" });
+    const session2 = makeSession("s2", { cwd: "/home/user/myapp" });
+    const sdk1 = makeSdkSession("s1", { cwd: "/home/user/myapp" });
+    const sdk2 = makeSdkSession("s2", { cwd: "/home/user/myapp" });
+    mockState = createMockState({
+      sessions: new Map([["s1", session1], ["s2", session2]]),
+      sdkSessions: [sdk1, sdk2],
+      sessionStatus: new Map([["s1", "running"], ["s2", "running"]]),
+    });
+
+    render(<Sidebar />);
+    expect(screen.getByText("2 running")).toBeInTheDocument();
+  });
+
+  it("collapsing a project group hides its sessions", () => {
+    const session = makeSession("s1", { cwd: "/home/user/myapp", model: "hidden-model" });
+    const sdk = makeSdkSession("s1", { cwd: "/home/user/myapp" });
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+      collapsedProjects: new Set(["/home/user/myapp"]),
+    });
+
+    render(<Sidebar />);
+    // Group header should still be visible
+    expect(screen.getByText("myapp")).toBeInTheDocument();
+    // But the session inside it should be hidden
+    expect(screen.queryByText("hidden-model")).not.toBeInTheDocument();
   });
 });

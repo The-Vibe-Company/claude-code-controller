@@ -1,7 +1,7 @@
 {
   "packages": {
     ".": {
-      "package-name": "the-vibe-companion",
+      "package-name": "the-companion",
       "release-type": "node",
       "changelog-path": "CHANGELOG.md",
       "bump-minor-pre-major": true,

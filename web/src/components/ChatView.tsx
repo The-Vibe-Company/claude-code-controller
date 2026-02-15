@@ -48,7 +48,7 @@ export function ChatView({ sessionId }: { sessionId: string }) {
 
       {/* Permission banners */}
       {perms.length > 0 && (
-        <div className="shrink-0 max-h-[60vh] overflow-y-auto border-t border-cc-border bg-cc-card">
+        <div className="shrink-0 max-h-[60dvh] overflow-y-auto border-t border-cc-border bg-cc-card">
           {perms.map((p) => (
             <PermissionBanner key={p.request_id} permission={p} sessionId={sessionId} />
           ))}

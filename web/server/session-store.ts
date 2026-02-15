@@ -1,7 +1,12 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { SessionState, BrowserIncomingMessage, PermissionRequest } from "./session-types.js";
+import type {
+  SessionState,
+  BrowserIncomingMessage,
+  PermissionRequest,
+  BufferedBrowserEvent,
+} from "./session-types.js";
 
 // ─── Serializable session shape ─────────────────────────────────────────────
 
@@ -11,6 +16,10 @@ export interface PersistedSession {
   messageHistory: BrowserIncomingMessage[];
   pendingMessages: string[];
   pendingPermissions: [string, PermissionRequest][];
+  eventBuffer?: BufferedBrowserEvent[];
+  nextEventSeq?: number;
+  lastAckSeq?: number;
+  processedClientMessageIds?: string[];
   archived?: boolean;
 }
 

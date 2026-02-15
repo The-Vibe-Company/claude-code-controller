@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { api, type CompanionEnv } from "../api.js";
 
 interface Props {
-  onClose: () => void;
+  onClose?: () => void;
+  embedded?: boolean;
 }
 
 interface VarRow {
@@ -11,7 +12,7 @@ interface VarRow {
   value: string;
 }
 
-export function EnvManager({ onClose }: Props) {
+export function EnvManager({ onClose, embedded = false }: Props) {
   const [envs, setEnvs] = useState<CompanionEnv[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
@@ -28,7 +29,9 @@ export function EnvManager({ onClose }: Props) {
     api.listEnvs().then(setEnvs).catch(() => {}).finally(() => setLoading(false));
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    refresh();
+  }, []);
 
   function startEdit(env: CompanionEnv) {
     setEditingSlug(env.slug);
@@ -93,15 +96,154 @@ export function EnvManager({ onClose }: Props) {
     }
   }
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="w-full max-w-lg max-h-[90vh] sm:max-h-[80vh] mx-0 sm:mx-4 flex flex-col bg-cc-bg border border-cc-border rounded-t-[14px] sm:rounded-[14px] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-cc-border">
-          <h2 className="text-sm font-semibold text-cc-fg">Manage Environments</h2>
+  const errorBanner = error && (
+    <div className="px-3 py-2 rounded-lg bg-cc-error/10 border border-cc-error/20 text-xs text-cc-error">
+      {error}
+    </div>
+  );
+
+  const environmentsList = loading ? (
+    <div className="text-sm text-cc-muted text-center py-6">Loading environments...</div>
+  ) : envs.length === 0 ? (
+    <div className="text-sm text-cc-muted text-center py-6">No environments yet.</div>
+  ) : (
+    <div className="space-y-3">
+      {envs.map((env) => (
+        <div key={env.slug} className="border border-cc-border rounded-[10px] overflow-hidden bg-cc-card">
+          {/* Env header row */}
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-cc-card border-b border-cc-border">
+            <span className="text-sm font-medium text-cc-fg flex-1">{env.name}</span>
+            <span className="text-xs text-cc-muted">
+              {Object.keys(env.variables).length} var{Object.keys(env.variables).length !== 1 ? "s" : ""}
+            </span>
+            {editingSlug === env.slug ? (
+              <button
+                onClick={cancelEdit}
+                className="text-xs text-cc-muted hover:text-cc-fg cursor-pointer"
+              >
+                Cancel
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => startEdit(env)}
+                  className="text-xs text-cc-muted hover:text-cc-fg cursor-pointer"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(env.slug)}
+                  className="text-xs text-cc-muted hover:text-cc-error cursor-pointer"
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Edit form */}
+          {editingSlug === env.slug && (
+            <div className="px-3 py-3 space-y-2">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Environment name"
+                className="w-full px-3 py-2 text-sm bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
+              />
+              <VarEditor rows={editVars} onChange={setEditVars} />
+              <button
+                onClick={saveEdit}
+                className="px-3 py-2 text-xs font-medium bg-cc-primary hover:bg-cc-primary-hover text-white rounded-lg transition-colors cursor-pointer"
+              >
+                Save
+              </button>
+            </div>
+          )}
+
+          {/* Variable preview (collapsed) */}
+          {editingSlug !== env.slug && Object.keys(env.variables).length > 0 && (
+            <div className="px-3 py-2.5 space-y-1">
+              {Object.entries(env.variables).map(([k, v]) => (
+                <div key={k} className="flex items-center gap-1.5 text-xs leading-5">
+                  <span className="font-mono-code text-cc-fg">{k}</span>
+                  <span className="text-cc-muted">=</span>
+                  <span className="font-mono-code text-cc-muted truncate">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const createForm = (
+    <div className="border border-cc-border rounded-[10px] overflow-hidden bg-cc-card">
+      <div className="px-3 py-2.5 bg-cc-card border-b border-cc-border">
+        <span className="text-sm font-medium text-cc-fg">New Environment</span>
+      </div>
+      <div className="px-3 py-3 space-y-2.5">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Environment name (e.g. production)"
+          className="w-full px-3 py-2 text-sm bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && newName.trim()) handleCreate();
+          }}
+        />
+        <VarEditor rows={newVars} onChange={setNewVars} />
+        <button
+          onClick={handleCreate}
+          disabled={!newName.trim() || creating}
+          className={`px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+            newName.trim() && !creating
+              ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
+              : "bg-cc-hover text-cc-muted cursor-not-allowed"
+          }`}
+        >
+          {creating ? "Creating..." : "Create"}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full bg-cc-bg overflow-y-auto">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold text-cc-fg">Environments</h1>
+            <p className="mt-1 text-sm text-cc-muted">
+              Create and manage reusable environment profiles for new sessions.
+            </p>
+          </div>
+          {errorBanner}
+          <div className={`mt-4 grid gap-4 ${envs.length > 0 ? "xl:grid-cols-[1.45fr_1fr]" : ""}`}>
+            <section className="bg-cc-card border border-cc-border rounded-xl p-4 sm:p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-cc-fg">Profiles</h2>
+              {environmentsList}
+            </section>
+            <section className="bg-cc-card border border-cc-border rounded-xl p-4 sm:p-5 space-y-3 h-fit xl:sticky xl:top-4">
+              <h2 className="text-sm font-semibold text-cc-fg">Create</h2>
+              {createForm}
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const panel = (
+    <div
+      className="w-full max-w-lg max-h-[90dvh] sm:max-h-[80dvh] mx-0 sm:mx-4 flex flex-col bg-cc-bg border border-cc-border rounded-t-[14px] sm:rounded-[14px] shadow-2xl overflow-hidden"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-cc-border">
+        <h2 className="text-sm font-semibold text-cc-fg">Manage Environments</h2>
+        {onClose && (
           <button
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
@@ -110,124 +252,19 @@ export function EnvManager({ onClose }: Props) {
               <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
             </svg>
           </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 space-y-4">
-          {/* Error */}
-          {error && (
-            <div className="px-3 py-2 rounded-lg bg-cc-error/10 border border-cc-error/20 text-xs text-cc-error">
-              {error}
-            </div>
-          )}
-
-          {/* Existing environments */}
-          {loading ? (
-            <div className="text-xs text-cc-muted text-center py-4">Loading...</div>
-          ) : envs.length === 0 ? (
-            <div className="text-xs text-cc-muted text-center py-4">No environments yet. Create one below.</div>
-          ) : (
-            envs.map((env) => (
-              <div key={env.slug} className="border border-cc-border rounded-[10px] overflow-hidden">
-                {/* Env header row */}
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-cc-card">
-                  <span className="text-xs font-medium text-cc-fg flex-1">{env.name}</span>
-                  <span className="text-[10px] text-cc-muted">
-                    {Object.keys(env.variables).length} var{Object.keys(env.variables).length !== 1 ? "s" : ""}
-                  </span>
-                  {editingSlug === env.slug ? (
-                    <button
-                      onClick={cancelEdit}
-                      className="text-[10px] text-cc-muted hover:text-cc-fg cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => startEdit(env)}
-                        className="text-[10px] text-cc-muted hover:text-cc-fg cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(env.slug)}
-                        className="text-[10px] text-cc-muted hover:text-cc-error cursor-pointer"
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {/* Edit form */}
-                {editingSlug === env.slug && (
-                  <div className="px-3 py-3 space-y-2 border-t border-cc-border">
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      placeholder="Environment name"
-                      className="w-full px-2 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
-                    />
-                    <VarEditor rows={editVars} onChange={setEditVars} />
-                    <button
-                      onClick={saveEdit}
-                      className="px-3 py-1.5 text-xs font-medium bg-cc-primary hover:bg-cc-primary-hover text-white rounded-lg transition-colors cursor-pointer"
-                    >
-                      Save
-                    </button>
-                  </div>
-                )}
-
-                {/* Variable preview (collapsed) */}
-                {editingSlug !== env.slug && Object.keys(env.variables).length > 0 && (
-                  <div className="px-3 py-2 border-t border-cc-border space-y-0.5">
-                    {Object.entries(env.variables).map(([k, v]) => (
-                      <div key={k} className="flex items-center gap-1 text-[11px]">
-                        <span className="font-mono-code text-cc-fg">{k}</span>
-                        <span className="text-cc-muted">=</span>
-                        <span className="font-mono-code text-cc-muted truncate">{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-
-          {/* Create new environment */}
-          <div className="border border-cc-border rounded-[10px] overflow-hidden">
-            <div className="px-3 py-2.5 bg-cc-card">
-              <span className="text-xs font-medium text-cc-muted">New Environment</span>
-            </div>
-            <div className="px-3 py-3 space-y-2 border-t border-cc-border">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Environment name (e.g. production)"
-                className="w-full px-2 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && newName.trim()) handleCreate();
-                }}
-              />
-              <VarEditor rows={newVars} onChange={setNewVars} />
-              <button
-                onClick={handleCreate}
-                disabled={!newName.trim() || creating}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  newName.trim() && !creating
-                    ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
-                    : "bg-cc-hover text-cc-muted cursor-not-allowed"
-                }`}
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
+      <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-3 sm:py-4 space-y-4">
+        {errorBanner}
+        {environmentsList}
+        {createForm}
+      </div>
+    </div>
+  );
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={onClose}>
+      {panel}
     </div>,
     document.body,
   );
