@@ -1,6 +1,6 @@
 {
   "name": "the-companion",
-  "version": "0.39.1",
+  "version": "0.40.1",
   "type": "module",
   "description": "Web UI for launching and interacting with Claude Code agents",
   "license": "MIT",
@@ -34,8 +34,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:codex-contract": "vitest run server/codex-protocol-*.test.ts",
-    "plugin:new": "bun server/plugins/new-plugin.ts"
+    "test:codex-contract": "vitest run server/codex-protocol-*.test.ts"
   },
   "dependencies": {
     "diff": "^8.0.3",

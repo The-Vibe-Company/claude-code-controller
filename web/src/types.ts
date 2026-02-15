@@ -7,10 +7,9 @@ import type {
   BackendType,
   McpServerDetail,
   McpServerConfig,
-  PluginInsight,
 } from "../server/session-types.js";
 
-export type { SessionState, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage, BackendType, McpServerDetail, McpServerConfig, PluginInsight };
+export type { SessionState, PermissionRequest, ContentBlock, BrowserIncomingMessage, BrowserOutgoingMessage, BackendType, McpServerDetail, McpServerConfig };
 
 export interface ChatMessage {
   id: string;

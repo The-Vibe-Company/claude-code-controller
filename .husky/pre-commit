@@ -1,6 +1,1 @@
-#!/usr/bin/env sh
-set -eu
-
-cd web
-bun run typecheck
-bun run test -- --coverage
+cd web && bun run typecheck && bun run test -- --coverage

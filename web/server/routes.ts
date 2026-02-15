@@ -26,8 +26,6 @@ import {
   setUpdateInProgress,
 } from "./update-checker.js";
 import { refreshServiceDefinition } from "./service.js";
-import { PluginConfigValidationError, type PluginManager } from "./plugins/manager.js";
-import type { PluginEvent } from "./plugins/types.js";
 
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 
@@ -80,15 +78,8 @@ export function createRoutes(
   worktreeTracker: WorktreeTracker,
   terminalManager: TerminalManager,
   prPoller?: import("./pr-poller.js").PRPoller,
-  pluginManager?: PluginManager,
 ) {
   const api = new Hono();
-  const emitRoutePluginEvent = (event: PluginEvent): void => {
-    if (!pluginManager) return;
-    void pluginManager.emit(event).catch((err) => {
-      console.error(`[routes] Plugin emit failed for ${event.name}:`, err);
-    });
-  };
 
   // ─── SDK Sessions (--sdk-url) ─────────────────────────────────────
 
@@ -221,34 +212,6 @@ export function createRoutes(
         });
       }
 
-      if (pluginManager) {
-        const bridgeSession = wsBridge.getOrCreateSession(session.sessionId, backend);
-        if (typeof body.model === "string" && body.model.trim().length > 0) {
-          bridgeSession.state.model = body.model;
-        }
-        if (typeof cwd === "string" && cwd.trim().length > 0) {
-          bridgeSession.state.cwd = cwd;
-        }
-        if (typeof body.permissionMode === "string" && body.permissionMode.trim().length > 0) {
-          bridgeSession.state.permissionMode = body.permissionMode;
-        }
-        if (Array.isArray(body.allowedTools)) {
-          bridgeSession.state.tools = body.allowedTools.filter((tool: unknown): tool is string => typeof tool === "string");
-        }
-        emitRoutePluginEvent({
-          name: "session.created",
-          meta: {
-            eventId: crypto.randomUUID(),
-            eventVersion: 2,
-            timestamp: Date.now(),
-            source: "routes",
-            sessionId: bridgeSession.id,
-            backendType: bridgeSession.backendType,
-          },
-          data: { session: bridgeSession.state },
-        });
-      }
-
       return c.json(session);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -304,19 +267,6 @@ export function createRoutes(
 
     // Clean up container if any
     containerManager.removeContainer(id);
-    if (killed && pluginManager) {
-      emitRoutePluginEvent({
-        name: "session.killed",
-        meta: {
-          eventId: crypto.randomUUID(),
-          eventVersion: 2,
-          timestamp: Date.now(),
-          source: "routes",
-          sessionId: id,
-        },
-        data: { sessionId: id },
-      });
-    }
 
     return c.json({ ok: true });
   });
@@ -341,19 +291,6 @@ export function createRoutes(
     prPoller?.unwatch(id);
     launcher.removeSession(id);
     wsBridge.closeSession(id);
-    if (pluginManager) {
-      emitRoutePluginEvent({
-        name: "session.deleted",
-        meta: {
-          eventId: crypto.randomUUID(),
-          eventVersion: 2,
-          timestamp: Date.now(),
-          source: "routes",
-          sessionId: id,
-        },
-        data: { sessionId: id },
-      });
-    }
     return c.json({ ok: true, worktree: worktreeResult });
   });
 
@@ -373,60 +310,7 @@ export function createRoutes(
 
     launcher.setArchived(id, true);
     sessionStore.setArchived(id, true);
-    if (pluginManager) {
-      emitRoutePluginEvent({
-        name: "session.archived",
-        meta: {
-          eventId: crypto.randomUUID(),
-          eventVersion: 2,
-          timestamp: Date.now(),
-          source: "routes",
-          sessionId: id,
-        },
-        data: { sessionId: id },
-      });
-    }
     return c.json({ ok: true, worktree: worktreeResult });
-  });
-
-  // ─── Plugins ───────────────────────────────────────────────────────
-
-  api.get("/plugins", (c) => {
-    if (!pluginManager) return c.json([]);
-    return c.json(pluginManager.list());
-  });
-
-  api.post("/plugins/:id/enable", (c) => {
-    if (!pluginManager) return c.json({ error: "Plugins unavailable" }, 503);
-    const id = c.req.param("id");
-    const plugin = pluginManager.setEnabled(id, true);
-    if (!plugin) return c.json({ error: "Plugin not found" }, 404);
-    return c.json(plugin);
-  });
-
-  api.post("/plugins/:id/disable", (c) => {
-    if (!pluginManager) return c.json({ error: "Plugins unavailable" }, 503);
-    const id = c.req.param("id");
-    const plugin = pluginManager.setEnabled(id, false);
-    if (!plugin) return c.json({ error: "Plugin not found" }, 404);
-    return c.json(plugin);
-  });
-
-  api.put("/plugins/:id/config", async (c) => {
-    if (!pluginManager) return c.json({ error: "Plugins unavailable" }, 503);
-    const id = c.req.param("id");
-    const body = await c.req.json().catch(() => ({}));
-    let plugin;
-    try {
-      plugin = pluginManager.updateConfig(id, body.config);
-    } catch (err) {
-      if (err instanceof PluginConfigValidationError) {
-        return c.json({ error: err.message }, 400);
-      }
-      throw err;
-    }
-    if (!plugin) return c.json({ error: "Plugin not found" }, 404);
-    return c.json(plugin);
   });
 
   api.post("/sessions/:id/unarchive", (c) => {
