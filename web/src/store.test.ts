@@ -41,7 +41,7 @@ vi.hoisted(() => {
 });
 
 import { useStore } from "./store.js";
-import type { SessionState, PermissionRequest, ChatMessage, TaskItem, SdkSessionInfo } from "./types.js";
+import type { SessionState, PermissionRequest, ChatMessage, TaskItem, SdkSessionInfo, AgentInfo } from "./types.js";
 
 function makeSession(id: string): SessionState {
   return {
@@ -568,5 +568,172 @@ describe("MCP Servers", () => {
     useStore.getState().setMcpServers("s1", servers);
     useStore.getState().removeSession("s1");
     expect(useStore.getState().mcpServers.has("s1")).toBe(false);
+  });
+});
+
+// ─── Agent State ──────────────────────────────────────────────────────────────
+
+describe("Agent state", () => {
+  it("addAgent: adds agent to sessionAgents map", () => {
+    // Test that agents can be added to session-specific agent list
+    // This is called when the WebSocket receives agent_spawned events
+    const agent = {
+      agentId: "agent-1",
+      agentType: "researcher",
+      agentName: "Research Agent",
+      parentToolUseId: "task-123",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", agent);
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(1);
+    expect(agents?.[0]).toEqual(agent);
+  });
+
+  it("addAgent: deduplicates by agentId", () => {
+    // Edge case: prevent duplicate agents with same ID
+    // Important for handling duplicate WebSocket messages
+    const agent = {
+      agentId: "agent-1",
+      agentType: "coder",
+      agentName: "Coding Agent",
+      parentToolUseId: "task-456",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", agent);
+    useStore.getState().addAgent("s1", { ...agent, agentName: "Modified Name" });
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(1);
+    expect(agents?.[0].agentName).toBe("Coding Agent"); // Original preserved
+  });
+
+  it("addAgent: accumulates multiple agents", () => {
+    // Test that multiple agents can be tracked for a single session
+    const agent1 = {
+      agentId: "agent-1",
+      agentType: "researcher",
+      parentToolUseId: "task-1",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+    const agent2 = {
+      agentId: "agent-2",
+      agentType: "coder",
+      parentToolUseId: "task-2",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", agent1);
+    useStore.getState().addAgent("s1", agent2);
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(2);
+    expect(agents?.map(a => a.agentId)).toEqual(["agent-1", "agent-2"]);
+  });
+
+  it("removeAgent: removes agent by agentId", () => {
+    // Test agent removal by ID
+    // Used when agents complete or are explicitly stopped
+    const agent1 = {
+      agentId: "agent-1",
+      agentType: "researcher",
+      parentToolUseId: "task-1",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+    const agent2 = {
+      agentId: "agent-2",
+      agentType: "coder",
+      parentToolUseId: "task-2",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", agent1);
+    useStore.getState().addAgent("s1", agent2);
+    useStore.getState().removeAgent("s1", "agent-1");
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(1);
+    expect(agents?.[0].agentId).toBe("agent-2");
+  });
+
+  it("removeAgent: no-op when agent not found", () => {
+    // Edge case: removing non-existent agent should not throw
+    const agent = {
+      agentId: "agent-1",
+      agentType: "researcher",
+      parentToolUseId: "task-1",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", agent);
+    useStore.getState().removeAgent("s1", "nonexistent");
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(1);
+    expect(agents?.[0].agentId).toBe("agent-1");
+  });
+
+  it("setAgents: replaces entire agents array for session", () => {
+    // Test batch replacement of agents
+    // Used when receiving full state from server (e.g., on reconnect)
+    const initial = {
+      agentId: "agent-old",
+      agentType: "researcher",
+      parentToolUseId: "task-old",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addAgent("s1", initial);
+
+    const newAgents = [
+      {
+        agentId: "agent-new-1",
+        agentType: "coder",
+        parentToolUseId: "task-new-1",
+        status: "running" as const,
+        spawnedAt: Date.now(),
+      },
+      {
+        agentId: "agent-new-2",
+        agentType: "reviewer",
+        parentToolUseId: "task-new-2",
+        status: "stopped" as const,
+        spawnedAt: Date.now() - 10000,
+      },
+    ];
+
+    useStore.getState().setAgents("s1", newAgents);
+
+    const agents = useStore.getState().sessionAgents.get("s1");
+    expect(agents).toHaveLength(2);
+    expect(agents?.map(a => a.agentId)).toEqual(["agent-new-1", "agent-new-2"]);
+  });
+
+  it("removeSession: clears sessionAgents", () => {
+    // Test that agent state is cleaned up when session is removed
+    const agent = {
+      agentId: "agent-1",
+      agentType: "researcher",
+      parentToolUseId: "task-1",
+      status: "running" as const,
+      spawnedAt: Date.now(),
+    };
+
+    useStore.getState().addSession(makeSession("s1"));
+    useStore.getState().addAgent("s1", agent);
+    useStore.getState().removeSession("s1");
+
+    expect(useStore.getState().sessionAgents.has("s1")).toBe(false);
   });
 });

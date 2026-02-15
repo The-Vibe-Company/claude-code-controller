@@ -58,6 +58,12 @@ export interface SdkSessionInfo {
   codexInternetAccess?: boolean;
   /** Sandbox mode selected for Codex sessions */
   codexSandbox?: "workspace-write" | "danger-full-access";
+  /** Parent session ID for agent team sessions */
+  parentSessionId?: string;
+  /** Team name for team sessions */
+  teamName?: string;
+  /** Agent role in the team */
+  agentRole?: string;
 }
 
 export interface LaunchOptions {

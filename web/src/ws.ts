@@ -1,5 +1,5 @@
 import { useStore } from "./store.js";
-import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
+import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig, AgentInfo } from "./types.js";
 import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
@@ -240,6 +240,10 @@ function handleParsedMessage(
         const existingNames = new Set(store.sessionNames.values());
         const name = generateUniqueSessionName(existingNames);
         store.setSessionName(sessionId, name);
+      }
+      // Hydrate active agents so agent tabs opened after spawn show correct metadata
+      if (data.session.agents_active?.length) {
+        store.setAgents(sessionId, data.session.agents_active);
       }
       break;
     }
@@ -536,6 +540,34 @@ function handleParsedMessage(
       }
       if (typeof latestProcessed === "number") {
         ackSeq(sessionId, latestProcessed);
+      }
+      break;
+    }
+
+    case "agent_spawned": {
+      const agent = (data as { agent: AgentInfo }).agent;
+      store.addAgent(sessionId, agent);
+      break;
+    }
+
+    case "agent_stopped": {
+      const agentId = (data as { agentId: string }).agentId;
+      // Update status to "stopped" instead of removing, so open agent tabs retain metadata
+      const currentAgents = store.sessionAgents.get(sessionId) || [];
+      store.setAgents(sessionId, currentAgents.map(a =>
+        a.agentId === agentId ? { ...a, status: "stopped" as const } : a
+      ));
+      break;
+    }
+
+    case "agent_idle": {
+      const { agentId: idleAgentId } = data as { agentId: string };
+      const agents = store.sessionAgents.get(sessionId) || [];
+      const agent = agents.find(a => a.agentId === idleAgentId);
+      if (agent) {
+        store.setAgents(sessionId, agents.map(a =>
+          a.agentId === idleAgentId ? { ...a, status: "idle" as const } : a
+        ));
       }
       break;
     }

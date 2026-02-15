@@ -204,7 +204,10 @@ export type BrowserIncomingMessageBase =
   | { type: "event_replay"; events: BufferedBrowserEvent[] }
   | { type: "session_name_update"; name: string }
   | { type: "pr_status_update"; pr: import("./github-pr.js").GitHubPRInfo | null; available: boolean }
-  | { type: "mcp_status"; servers: McpServerDetail[] };
+  | { type: "mcp_status"; servers: McpServerDetail[] }
+  | { type: "agent_spawned"; agent: AgentInfo }
+  | { type: "agent_stopped"; agentId: string }
+  | { type: "agent_idle"; agentId: string; agentName?: string };
 
 export type BrowserIncomingMessage = BrowserIncomingMessageBase & { seq?: number };
 
@@ -242,6 +245,7 @@ export interface SessionState {
   git_behind: number;
   total_lines_added: number;
   total_lines_removed: number;
+  agents_active?: AgentInfo[];
 }
 
 // ─── MCP Types ───────────────────────────────────────────────────────────────
@@ -287,4 +291,15 @@ export interface PermissionRequest {
   tool_use_id: string;
   agent_id?: string;
   timestamp: number;
+}
+
+// ─── Team / Agent Types ──────────────────────────────────────────────────────
+
+export interface AgentInfo {
+  agentId: string;
+  agentType: string;
+  agentName?: string;
+  parentToolUseId: string;
+  status: "running" | "idle" | "stopped";
+  spawnedAt: number;
 }

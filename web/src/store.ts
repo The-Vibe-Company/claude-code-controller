@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { SessionState, PermissionRequest, ChatMessage, SdkSessionInfo, TaskItem, McpServerDetail } from "./types.js";
+import type { SessionState, PermissionRequest, ChatMessage, SdkSessionInfo, TaskItem, McpServerDetail, AgentInfo } from "./types.js";
 import type { UpdateInfo, PRStatusResponse } from "./api.js";
 
 interface AppState {
@@ -47,6 +47,9 @@ interface AppState {
 
   // MCP servers per session
   mcpServers: Map<string, McpServerDetail[]>;
+
+  // Team / agent state per session
+  sessionAgents: Map<string, AgentInfo[]>;
 
   // Sidebar project grouping
   collapsedProjects: Set<string>;
@@ -113,6 +116,11 @@ interface AppState {
 
   // MCP actions
   setMcpServers: (sessionId: string, servers: McpServerDetail[]) => void;
+
+  // Agent actions
+  addAgent: (sessionId: string, agent: AgentInfo) => void;
+  removeAgent: (sessionId: string, agentId: string) => void;
+  setAgents: (sessionId: string, agents: AgentInfo[]) => void;
 
   // Sidebar project grouping actions
   toggleProjectCollapse: (projectKey: string) => void;
@@ -216,6 +224,7 @@ export const useStore = create<AppState>((set) => ({
   recentlyRenamed: new Set(),
   prStatus: new Map(),
   mcpServers: new Map(),
+  sessionAgents: new Map(),
   collapsedProjects: getInitialCollapsedProjects(),
   updateInfo: null,
   updateDismissedVersion: getInitialDismissedVersion(),
@@ -330,6 +339,8 @@ export const useStore = create<AppState>((set) => ({
       mcpServers.delete(sessionId);
       const prStatus = new Map(s.prStatus);
       prStatus.delete(sessionId);
+      const sessionAgents = new Map(s.sessionAgents);
+      sessionAgents.delete(sessionId);
       localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
       if (s.currentSessionId === sessionId) {
         localStorage.removeItem("cc-current-session");
@@ -352,6 +363,7 @@ export const useStore = create<AppState>((set) => ({
         diffPanelSelectedFile,
         mcpServers,
         prStatus,
+        sessionAgents,
         sdkSessions: s.sdkSessions.filter((sdk) => sdk.sessionId !== sessionId),
         currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
       };
@@ -518,6 +530,32 @@ export const useStore = create<AppState>((set) => ({
       return { mcpServers };
     }),
 
+  addAgent: (sessionId, agent) =>
+    set((s) => {
+      const sessionAgents = new Map(s.sessionAgents);
+      const agents = [...(sessionAgents.get(sessionId) || [])];
+      if (!agents.some(a => a.agentId === agent.agentId)) {
+        agents.push(agent);
+      }
+      sessionAgents.set(sessionId, agents);
+      return { sessionAgents };
+    }),
+
+  removeAgent: (sessionId, agentId) =>
+    set((s) => {
+      const sessionAgents = new Map(s.sessionAgents);
+      const agents = (sessionAgents.get(sessionId) || []).filter(a => a.agentId !== agentId);
+      sessionAgents.set(sessionId, agents);
+      return { sessionAgents };
+    }),
+
+  setAgents: (sessionId, agents) =>
+    set((s) => {
+      const sessionAgents = new Map(s.sessionAgents);
+      sessionAgents.set(sessionId, agents);
+      return { sessionAgents };
+    }),
+
   toggleProjectCollapse: (projectKey) =>
     set((s) => {
       const collapsedProjects = new Set(s.collapsedProjects);
@@ -603,6 +641,7 @@ export const useStore = create<AppState>((set) => ({
       recentlyRenamed: new Set(),
       mcpServers: new Map(),
       prStatus: new Map(),
+      sessionAgents: new Map(),
       activeTab: "chat" as const,
       diffPanelSelectedFile: new Map(),
       terminalOpen: false,

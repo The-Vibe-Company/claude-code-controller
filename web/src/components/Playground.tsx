@@ -1056,6 +1056,29 @@ export function Playground() {
             </Card>
           </div>
         </Section>
+
+        {/* ─── Agent UI Components ──────────────────────────────── */}
+        <Section title="Agent Tab Bar" description="Horizontal bar showing all active agents with status indicators">
+          <div className="space-y-4 max-w-3xl">
+            <Card label="Multiple agents with mixed states">
+              <PlaygroundAgentTabBar />
+            </Card>
+          </div>
+        </Section>
+
+        <Section title="Agent Header" description="Header bar displayed at the top of agent chat views">
+          <div className="space-y-4">
+            <Card label="Running agent">
+              <PlaygroundAgentHeader name="coder" type="coder" status="running" />
+            </Card>
+            <Card label="Idle agent">
+              <PlaygroundAgentHeader name="researcher" type="researcher" status="idle" />
+            </Card>
+            <Card label="Stopped agent">
+              <PlaygroundAgentHeader name="reviewer" type="reviewer" status="stopped" />
+            </Card>
+          </div>
+        </Section>
       </div>
     </div>
   );
@@ -1372,6 +1395,121 @@ function TaskRow({ task }: { task: TaskItem }) {
           <span>blocked by {task.blockedBy.map((b) => `#${b}`).join(", ")}</span>
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Inline AgentTabBar (avoids store dependency, renders static mock) ──────
+
+function PlaygroundAgentTabBar() {
+  // Mock agent data: 1 running, 1 idle, 1 stopped
+  const mockAgents = [
+    { agentId: "agent-1", agentName: "Coder", agentType: "coder", status: "running" as const },
+    { agentId: "agent-2", agentName: "Researcher", agentType: "researcher", status: "idle" as const },
+    { agentId: "agent-3", agentName: "Reviewer", agentType: "reviewer", status: "stopped" as const },
+  ];
+
+  function agentIcon(type: string): string {
+    const icons: Record<string, string> = {
+      "coder": "C",
+      "architect": "A",
+      "reviewer": "R",
+      "tdd": "T",
+      "researcher": "Rs",
+      "debugger": "D",
+      "documenter": "Dc",
+      "security-auditor": "S",
+      "deploy-runner": "Dr",
+      "explore": "Ex",
+      "plan": "Pl",
+      "general-purpose": "G",
+    };
+    return icons[type.toLowerCase()] || type.charAt(0).toUpperCase();
+  }
+
+  function statusColor(status: "running" | "idle" | "stopped"): string {
+    switch (status) {
+      case "running": return "bg-green-500";
+      case "idle": return "bg-yellow-500";
+      case "stopped": return "bg-cc-muted";
+      default: return "bg-cc-muted";
+    }
+  }
+
+  const runningCount = mockAgents.filter(a => a.status === "running").length;
+  const idleCount = mockAgents.filter(a => a.status === "idle").length;
+
+  return (
+    <div className="flex items-center gap-1 px-3 py-1.5 bg-cc-card border border-cc-border rounded-lg overflow-x-auto">
+      {/* Agent count summary */}
+      <span className="text-[10px] text-cc-muted shrink-0 mr-1">
+        {mockAgents.length} agents
+        {runningCount > 0 && <span className="text-green-500 ml-1">{runningCount} running</span>}
+        {idleCount > 0 && <span className="text-yellow-500 ml-1">{idleCount} idle</span>}
+      </span>
+
+      <div className="w-px h-4 bg-cc-border mx-1" />
+
+      {/* Agent tabs */}
+      {mockAgents.map((agent) => (
+        <button
+          key={agent.agentId}
+          className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+          title={`${agent.agentName || agent.agentType} (${agent.status})`}
+        >
+          <span className="relative">
+            <span className="w-4 h-4 rounded-full bg-cc-hover flex items-center justify-center text-[10px] font-bold">
+              {agentIcon(agent.agentType)}
+            </span>
+            <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${statusColor(agent.status)} ring-1 ring-cc-card`} />
+          </span>
+          <span className="max-w-[100px] truncate">
+            {agent.agentName || agent.agentType}
+          </span>
+          {/* External link icon */}
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-2.5 h-2.5 opacity-40">
+            <path d="M4.5 1.5H2a.5.5 0 00-.5.5v8a.5.5 0 00.5.5h8a.5.5 0 00.5-.5V7.5M7.5 1.5h3v3M6 6l4.5-4.5" />
+          </svg>
+        </button>
+      ))}
+
+      {/* Open All button */}
+      <div className="w-px h-4 bg-cc-border mx-1" />
+      <button
+        className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors cursor-pointer text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+        title="Open all agents in separate tabs"
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+          <rect x="1" y="2" width="14" height="12" rx="1" />
+          <line x1="8" y1="2" x2="8" y2="14" />
+        </svg>
+        <span>Open All</span>
+      </button>
+    </div>
+  );
+}
+
+// ─── Inline AgentHeader (static mock of agent view header) ──────────────────
+
+function PlaygroundAgentHeader({ name, type, status }: { name: string; type?: string; status: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-2.5 bg-cc-card border border-cc-border rounded-lg">
+      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+        status === "running" ? "bg-green-500 animate-pulse" :
+        status === "idle" ? "bg-yellow-500" : "bg-cc-muted"
+      }`} />
+      <span className="text-sm font-medium text-cc-fg truncate">{name}</span>
+      {type && (
+        <span className="text-[11px] text-cc-muted px-1.5 py-0.5 rounded bg-cc-hover shrink-0">
+          {type}
+        </span>
+      )}
+      <span className={`text-[11px] ml-auto shrink-0 ${
+        status === "running" ? "text-green-500" :
+        status === "idle" ? "text-yellow-500" : "text-cc-muted"
+      }`}>
+        {status}
+      </span>
     </div>
   );
 }

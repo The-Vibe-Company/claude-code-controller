@@ -475,6 +475,65 @@ describe("GET /api/sessions/:id", () => {
   });
 });
 
+describe("GET /api/sessions/:id/agents", () => {
+  it("returns agents_active from session state", async () => {
+    // Test that the agents endpoint returns active agents from the bridge session
+    // This enables the frontend to fetch agent state for a specific session
+    const agents = [
+      {
+        agentId: "agent-1",
+        agentType: "researcher",
+        agentName: "Research Agent",
+        parentToolUseId: "task-123",
+        status: "running" as const,
+        spawnedAt: Date.now(),
+      },
+      {
+        agentId: "agent-2",
+        agentType: "coder",
+        agentName: "Coding Agent",
+        parentToolUseId: "task-456",
+        status: "stopped" as const,
+        spawnedAt: Date.now() - 10000,
+      },
+    ];
+
+    bridge.getSession.mockReturnValue({
+      state: { agents_active: agents },
+    } as any);
+
+    const res = await app.request("/api/sessions/s1/agents", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.agents).toEqual(agents);
+  });
+
+  it("returns empty array when session has no agents_active", async () => {
+    // Edge case: session exists but has no agents yet
+    bridge.getSession.mockReturnValue({
+      state: {},
+    } as any);
+
+    const res = await app.request("/api/sessions/s1/agents", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.agents).toEqual([]);
+  });
+
+  it("returns 404 for unknown session", async () => {
+    // Test error handling when session doesn't exist
+    bridge.getSession.mockReturnValue(null);
+
+    const res = await app.request("/api/sessions/unknown/agents", { method: "GET" });
+
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toBe("Session not found");
+  });
+});
+
 describe("POST /api/sessions/:id/kill", () => {
   it("returns ok when session is killed", async () => {
     launcher.kill.mockResolvedValue(true);
