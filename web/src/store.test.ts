@@ -570,3 +570,30 @@ describe("MCP Servers", () => {
     expect(useStore.getState().mcpServers.has("s1")).toBe(false);
   });
 });
+
+// ─── Plugin taskbar integration ─────────────────────────────────────────────
+
+describe("Plugin taskbar integration", () => {
+  it("setTaskbarPluginPinned: persists pin in localStorage", () => {
+    useStore.getState().setTaskbarPluginPinned("notifications", true);
+
+    expect(useStore.getState().taskbarPluginPins.has("notifications")).toBe(true);
+    expect(JSON.parse(localStorage.getItem("cc-taskbar-plugin-pins") || "[]")).toEqual(["notifications"]);
+  });
+
+  it("setTaskbarPluginPinned: unpins plugin", () => {
+    useStore.getState().setTaskbarPluginPinned("notifications", true);
+    useStore.getState().setTaskbarPluginPinned("notifications", false);
+
+    expect(useStore.getState().taskbarPluginPins.has("notifications")).toBe(false);
+    expect(JSON.parse(localStorage.getItem("cc-taskbar-plugin-pins") || "[]")).toEqual([]);
+  });
+
+  it("setTaskbarPluginFocus: stores focused plugin for the session panel", () => {
+    useStore.getState().setTaskbarPluginFocus("notifications");
+    expect(useStore.getState().taskbarPluginFocus).toBe("notifications");
+
+    useStore.getState().setTaskbarPluginFocus(null);
+    expect(useStore.getState().taskbarPluginFocus).toBeNull();
+  });
+});

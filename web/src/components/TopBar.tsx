@@ -1,7 +1,10 @@
-import { useState, useSyncExternalStore } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { NotificationPopover } from "./NotificationPopover.js";
+
+const EMPTY_INSIGHTS: Array<{ id: string; plugin_id: string; timestamp: number }> = [];
 
 export function TopBar() {
   const hash = useSyncExternalStore(
@@ -11,7 +14,7 @@ export function TopBar() {
     },
     () => window.location.hash,
   );
-  const isSessionView = hash !== "#/settings" && hash !== "#/terminal" && hash !== "#/environments";
+  const isSessionView = hash !== "#/settings" && hash !== "#/terminal" && hash !== "#/environments" && hash !== "#/plugins";
   const currentSessionId = useStore((s) => s.currentSessionId);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);
@@ -35,6 +38,31 @@ export function TopBar() {
     const prefix = `${cwd}/`;
     return [...files].filter((fp) => fp === cwd || fp.startsWith(prefix)).length;
   });
+  const pluginInsightsCount = useStore((s) => {
+    if (!currentSessionId) return 0;
+    return s.pluginInsights.get(currentSessionId)?.length || 0;
+  });
+  const taskbarPluginPins = useStore((s) => s.taskbarPluginPins);
+  const plugins = useStore((s) => s.plugins);
+  const setTaskbarPluginFocus = useStore((s) => s.setTaskbarPluginFocus);
+  const notificationPopoverOpen = useStore((s) => s.notificationPopoverOpen);
+  const setNotificationPopoverOpen = useStore((s) => s.setNotificationPopoverOpen);
+  const lastReadTs = useStore((s) => currentSessionId ? (s.lastReadInsightTimestamp.get(currentSessionId) ?? 0) : 0);
+  const sessionPluginInsights = useStore((s) => {
+    if (!currentSessionId) return EMPTY_INSIGHTS;
+    return s.pluginInsights.get(currentSessionId) || EMPTY_INSIGHTS;
+  });
+  const pluginInsightCountByPlugin = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const insight of sessionPluginInsights) {
+      counts.set(insight.plugin_id, (counts.get(insight.plugin_id) || 0) + 1);
+    }
+    return counts;
+  }, [sessionPluginInsights]);
+  const unreadInsightCount = useMemo(() => {
+    return sessionPluginInsights.filter((i) => i.timestamp > lastReadTs).length;
+  }, [sessionPluginInsights, lastReadTs]);
+  const pinnedTaskbarPlugins = plugins.filter((plugin) => plugin.enabled && taskbarPluginPins.has(plugin.id));
 
   const cwd = useStore((s) => {
     if (!currentSessionId) return null;
@@ -151,9 +179,48 @@ export function TopBar() {
             </button>
           )}
 
+          {pinnedTaskbarPlugins.map((plugin) => {
+            const isNotificationsPlugin = plugin.id === "notifications";
+            const badgeCount = isNotificationsPlugin ? unreadInsightCount : (pluginInsightCountByPlugin.get(plugin.id) || 0);
+            const compactName = plugin.name.length > 12 ? `${plugin.name.slice(0, 12)}…` : plugin.name;
+            return (
+              <div key={plugin.id} className="relative">
+                <button
+                  onClick={() => {
+                    if (isNotificationsPlugin) {
+                      setNotificationPopoverOpen(!notificationPopoverOpen);
+                    } else {
+                      setTaskPanelOpen(true);
+                      setTaskbarPluginFocus(plugin.id);
+                    }
+                  }}
+                  className={`relative px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                    isNotificationsPlugin && notificationPopoverOpen
+                      ? "text-cc-primary bg-cc-active"
+                      : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+                  }`}
+                  title={isNotificationsPlugin ? "Open notifications" : `Open ${plugin.name} insights in session panel`}
+                >
+                  {compactName}
+                  {badgeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 text-[9px] bg-cc-primary text-white rounded-full min-w-[14px] h-[14px] px-1 flex items-center justify-center font-semibold leading-none">
+                      {Math.min(badgeCount, 99)}
+                    </span>
+                  )}
+                </button>
+                {isNotificationsPlugin && <NotificationPopover />}
+              </div>
+            );
+          })}
+
           <button
-            onClick={() => setTaskPanelOpen(!taskPanelOpen)}
-            className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
+            onClick={() => {
+              setTaskPanelOpen(!taskPanelOpen);
+              if (taskPanelOpen) {
+                setTaskbarPluginFocus(null);
+              }
+            }}
+            className={`relative flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
               taskPanelOpen
                 ? "text-cc-primary bg-cc-active"
                 : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
@@ -163,6 +230,11 @@ export function TopBar() {
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 3a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h4a1 1 0 100-2H7z" clipRule="evenodd" />
             </svg>
+            {pluginInsightsCount > 0 && (
+              <span className="absolute -mt-5 ml-5 text-[9px] bg-cc-primary text-white rounded-full min-w-[14px] h-[14px] px-1 flex items-center justify-center font-semibold leading-none">
+                {Math.min(pluginInsightsCount, 99)}
+              </span>
+            )}
           </button>
         </div>
       )}

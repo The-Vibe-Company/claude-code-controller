@@ -1,0 +1,22 @@
+{
+  "include": [
+    "CLAUDE.md",
+    "README.md",
+    "WEBSOCKET_PROTOCOL_REVERSED.md",
+    "web/CODEX_MAPPING.md"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.min.*",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.svg",
+    "**/*.ico",
+    "**/*.lock",
+    "CHANGELOG.md",
+    "web/CHANGELOG.md",
+    "web/server/protocol/*-upstream/**/*.txt"
+  ]
+}

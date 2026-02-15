@@ -1,1 +1,6 @@
-cd web && bun run typecheck && bun run test
+#!/usr/bin/env sh
+set -eu
+
+cd web
+bun run typecheck
+bun run test -- --coverage

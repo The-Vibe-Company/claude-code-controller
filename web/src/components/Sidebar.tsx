@@ -28,6 +28,7 @@ export function Sidebar() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
+  const isPluginsPage = hash === "#/plugins";
 
   // Poll for SDK sessions on mount
   useEffect(() => {
@@ -385,6 +386,22 @@ export function Sidebar() {
             <path d="M8 1a2 2 0 012 2v1h2a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2h2V3a2 2 0 012-2zm0 1.5a.5.5 0 00-.5.5v1h1V3a.5.5 0 00-.5-.5zM4 5.5a.5.5 0 00-.5.5v6a.5.5 0 00.5.5h8a.5.5 0 00.5-.5V6a.5.5 0 00-.5-.5H4z" />
           </svg>
           <span>Environments</span>
+        </button>
+        <button
+          onClick={() => {
+            useStore.getState().closeTerminal();
+            window.location.hash = "#/plugins";
+          }}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm transition-colors cursor-pointer ${
+            isPluginsPage
+              ? "bg-cc-active text-cc-fg"
+              : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+          }`}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+            <path d="M6.5 1a1 1 0 011 1v1.09a5.006 5.006 0 011 .58L9.77 2.4a1 1 0 011.41 0l.42.42a1 1 0 010 1.41l-1.27 1.27c.22.32.41.66.58 1H12a1 1 0 011 1v.59a1 1 0 01-1 1h-1.09a5.006 5.006 0 01-.58 1l1.27 1.27a1 1 0 010 1.41l-.42.42a1 1 0 01-1.41 0l-1.27-1.27c-.32.22-.66.41-1 .58V14a1 1 0 01-1 1h-.59a1 1 0 01-1-1v-1.09a5.006 5.006 0 01-1-.58L2.64 13.6a1 1 0 01-1.41 0l-.42-.42a1 1 0 010-1.41l1.27-1.27a5.006 5.006 0 01-.58-1H.41a1 1 0 01-1-1v-.59a1 1 0 011-1H1.5c.13-.35.32-.69.58-1L.81 4.64a1 1 0 010-1.41l.42-.42a1 1 0 011.41 0l1.27 1.27c.32-.22.66-.41 1-.58V2a1 1 0 011-1h.59zM6.8 5.2a2 2 0 100 4 2 2 0 000-4z" />
+          </svg>
+          <span>Plugins</span>
         </button>
         <button
           onClick={() => {

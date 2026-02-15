@@ -55,6 +55,7 @@ export class SessionStore {
   /** Immediate write — use for critical state changes. */
   saveSync(session: PersistedSession): void {
     try {
+      mkdirSync(this.dir, { recursive: true });
       writeFileSync(this.filePath(session.id), JSON.stringify(session), "utf-8");
     } catch (err) {
       console.error(`[session-store] Failed to save session ${session.id}:`, err);
@@ -116,6 +117,7 @@ export class SessionStore {
   /** Persist launcher state (separate file). */
   saveLauncher(data: unknown): void {
     try {
+      mkdirSync(this.dir, { recursive: true });
       writeFileSync(join(this.dir, "launcher.json"), JSON.stringify(data), "utf-8");
     } catch (err) {
       console.error("[session-store] Failed to save launcher state:", err);

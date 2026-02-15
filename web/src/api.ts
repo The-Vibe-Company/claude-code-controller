@@ -298,6 +298,20 @@ export interface AppSettings {
   openrouterModel: string;
 }
 
+export interface PluginRuntimeInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  events: string[];
+  priority: number;
+  blocking: boolean;
+  timeoutMs: number;
+  failPolicy: "continue" | "abort_current_action";
+  enabled: boolean;
+  config: unknown;
+}
+
 export interface GitHubPRInfo {
   number: number;
   title: string;
@@ -397,6 +411,15 @@ export const api = {
     post<{ success: boolean; error?: string }>(
       `/notifications/${encodeURIComponent(id)}/test`,
     ),
+
+  // Plugins
+  listPlugins: () => get<PluginRuntimeInfo[]>("/plugins"),
+  enablePlugin: (id: string) =>
+    post<PluginRuntimeInfo>(`/plugins/${encodeURIComponent(id)}/enable`),
+  disablePlugin: (id: string) =>
+    post<PluginRuntimeInfo>(`/plugins/${encodeURIComponent(id)}/disable`),
+  updatePluginConfig: (id: string, config: unknown) =>
+    put<PluginRuntimeInfo>(`/plugins/${encodeURIComponent(id)}/config`, { config }),
 
   // Git operations
   getRepoInfo: (path: string) =>

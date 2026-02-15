@@ -2,7 +2,14 @@ import { vi } from "vitest";
 
 const mockExecSync = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
-vi.mock("node:crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("node:crypto", () => ({
+  randomUUID: () => "test-uuid",
+  createHash: () => ({
+    update: () => ({
+      digest: () => "hash-test",
+    }),
+  }),
+}));
 
 import { WsBridge, type SocketData } from "./ws-bridge.js";
 import { SessionStore } from "./session-store.js";
@@ -1078,6 +1085,59 @@ describe("Browser message routing", () => {
     expect(sent.message.content[1].text).toBe("What's in this image?");
   });
 
+  it("user_message middleware can rewrite content before send", async () => {
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name === "user.message.before_send") {
+          return {
+            insights: [],
+            aborted: false,
+            userMessageMutation: {
+              content: `[x] ${event.data.content}`,
+              pluginId: "rewrite-plugin",
+            },
+          };
+        }
+        return { insights: [], aborted: false };
+      }),
+    } as any);
+
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "hello",
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(cli.send).toHaveBeenCalledTimes(1);
+    const sentRaw = cli.send.mock.calls[0][0] as string;
+    const sent = JSON.parse(sentRaw.trim());
+    expect(sent.message.content).toBe("[x] hello");
+  });
+
+  it("user_message middleware can block send", async () => {
+    bridge.setPluginManager({
+      emit: vi.fn(async () => ({
+        insights: [],
+        aborted: false,
+        userMessageMutation: {
+          blocked: true,
+          message: "blocked by policy",
+          pluginId: "policy-plugin",
+        },
+      })),
+    } as any);
+
+    bridge.handleBrowserMessage(browser, JSON.stringify({
+      type: "user_message",
+      content: "should not send",
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(cli.send).not.toHaveBeenCalled();
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    expect(calls.some((m: any) => m.type === "plugin_insight" && m.insight.title === "User message blocked")).toBe(true);
+  });
+
   it("permission_response allow: sends control_response to CLI", () => {
     // First create a pending permission
     bridge.handleCLIMessage(cli, JSON.stringify({
@@ -1110,6 +1170,103 @@ describe("Browser message routing", () => {
     // Should remove from pending
     const session = bridge.getSession("s1")!;
     expect(session.pendingPermissions.has("req-allow")).toBe(false);
+  });
+
+  it("permission request: plugin abort returns deny control_response to Claude CLI", async () => {
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name === "permission.requested") {
+          return { insights: [], aborted: true };
+        }
+        return { insights: [], aborted: false };
+      }),
+    } as any);
+    cli.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "control_request",
+      request_id: "req-abort-1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "rm -rf /" },
+        tool_use_id: "tu-abort-1",
+      },
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(cli.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse((cli.send.mock.calls[0][0] as string).trim());
+    expect(sent.type).toBe("control_response");
+    expect(sent.response.request_id).toBe("req-abort-1");
+    expect(sent.response.response.behavior).toBe("deny");
+  });
+
+  it("permission request: plugin emit failure falls back to user permission flow", async () => {
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name === "permission.requested") {
+          throw new Error("plugin manager failed");
+        }
+        return { insights: [], aborted: false };
+      }),
+    } as any);
+    cli.send.mockClear();
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "control_request",
+      request_id: "req-emit-fail-1",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "echo test" },
+        tool_use_id: "tu-emit-fail-1",
+      },
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(cli.send).not.toHaveBeenCalled();
+    expect(browser.send).toHaveBeenCalledWith(expect.stringContaining("\"type\":\"permission_request\""));
+    const session = bridge.getSession("s1");
+    expect(session?.pendingPermissions.has("req-emit-fail-1")).toBe(true);
+  });
+
+  it("permission request: does not enqueue stale permission after CLI disconnect during async plugin emit", async () => {
+    let resolveRequested: ((result: any) => void) | undefined;
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name !== "permission.requested") {
+          return { insights: [], aborted: false };
+        }
+        return await new Promise((resolve) => {
+          resolveRequested = resolve;
+        });
+      }),
+    } as any);
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "control_request",
+      request_id: "req-disconnect-race",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        input: { command: "echo race" },
+        tool_use_id: "tu-disconnect-race",
+      },
+    }));
+
+    // Simulate disconnect before plugin pipeline resolves.
+    bridge.handleCLIClose(cli);
+    expect(resolveRequested).toBeDefined();
+    resolveRequested!({ insights: [], aborted: false });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const session = bridge.getSession("s1");
+    expect(session?.pendingPermissions.has("req-disconnect-race")).toBe(false);
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    expect(calls.some((m: any) => m.type === "permission_request" && m.request?.request_id === "req-disconnect-race")).toBe(false);
   });
 
   it("permission_response deny: sends deny response to CLI", () => {
@@ -1297,6 +1454,148 @@ describe("Browser message routing", () => {
     bridge.handleBrowserMessage(browser, JSON.stringify(payload));
     bridge.handleBrowserMessage(browser, JSON.stringify(payload));
     expect(cli.send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Codex permission handling", () => {
+  it("plugin abort returns deny response to Codex adapter", async () => {
+    let onBrowserMessageHandler: ((msg: any) => void) | null = null;
+    const adapter = {
+      onBrowserMessage: (handler: (msg: any) => void) => {
+        onBrowserMessageHandler = handler;
+      },
+      onSessionMeta: (_handler: (meta: any) => void) => {},
+      onDisconnect: (_handler: () => void) => {},
+      onInitError: (_handler: (error: Error) => void) => {},
+      sendBrowserMessage: vi.fn(),
+      isConnected: () => true,
+    };
+
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name === "permission.requested") {
+          return { insights: [], aborted: true };
+        }
+        return { insights: [], aborted: false };
+      }),
+    } as any);
+    bridge.attachCodexAdapter("s-codex-abort", adapter as any);
+
+    expect(onBrowserMessageHandler).toBeTruthy();
+    onBrowserMessageHandler!({
+      type: "permission_request",
+      request: {
+        request_id: "codex-req-1",
+        tool_name: "Bash",
+        input: { command: "rm -rf /" },
+        tool_use_id: "codex-tu-1",
+        timestamp: Date.now(),
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(adapter.sendBrowserMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: "permission_response",
+      request_id: "codex-req-1",
+      behavior: "deny",
+    }));
+  });
+
+  it("plugin emit failure falls back to pending permission for Codex", async () => {
+    let onBrowserMessageHandler: ((msg: any) => void) | null = null;
+    const adapter = {
+      onBrowserMessage: (handler: (msg: any) => void) => {
+        onBrowserMessageHandler = handler;
+      },
+      onSessionMeta: (_handler: (meta: any) => void) => {},
+      onDisconnect: (_handler: () => void) => {},
+      onInitError: (_handler: (error: Error) => void) => {},
+      sendBrowserMessage: vi.fn(),
+      isConnected: () => true,
+    };
+
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name === "permission.requested") {
+          throw new Error("plugin manager failed");
+        }
+        return { insights: [], aborted: false };
+      }),
+    } as any);
+    bridge.attachCodexAdapter("s-codex-emit-fail", adapter as any);
+    expect(onBrowserMessageHandler).toBeTruthy();
+
+    onBrowserMessageHandler!({
+      type: "permission_request",
+      request: {
+        request_id: "codex-req-emit-fail",
+        tool_name: "Bash",
+        input: { command: "echo test" },
+        tool_use_id: "codex-tu-emit-fail",
+        timestamp: Date.now(),
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const session = bridge.getSession("s-codex-emit-fail");
+    expect(session?.pendingPermissions.has("codex-req-emit-fail")).toBe(true);
+    expect(adapter.sendBrowserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not enqueue stale permission after Codex adapter disconnect during async plugin emit", async () => {
+    let onBrowserMessageHandler: ((msg: any) => void) | null = null;
+    let onDisconnectHandler: (() => void) | undefined;
+    let resolveRequested: ((result: any) => void) | undefined;
+    const adapter = {
+      onBrowserMessage: (handler: (msg: any) => void) => {
+        onBrowserMessageHandler = handler;
+      },
+      onSessionMeta: (_handler: (meta: any) => void) => {},
+      onDisconnect: (handler: () => void) => {
+        onDisconnectHandler = handler;
+      },
+      onInitError: (_handler: (error: Error) => void) => {},
+      sendBrowserMessage: vi.fn(),
+      isConnected: () => true,
+    };
+    const browser = makeBrowserSocket("s-codex-disconnect-race");
+
+    bridge.setPluginManager({
+      emit: vi.fn(async (event: any) => {
+        if (event.name !== "permission.requested") {
+          return { insights: [], aborted: false };
+        }
+        return await new Promise((resolve) => {
+          resolveRequested = resolve;
+        });
+      }),
+    } as any);
+    bridge.attachCodexAdapter("s-codex-disconnect-race", adapter as any);
+    bridge.handleBrowserOpen(browser, "s-codex-disconnect-race");
+
+    expect(onBrowserMessageHandler).toBeTruthy();
+    onBrowserMessageHandler!({
+      type: "permission_request",
+      request: {
+        request_id: "codex-req-disconnect-race",
+        tool_name: "Bash",
+        input: { command: "echo race" },
+        tool_use_id: "codex-tu-disconnect-race",
+        timestamp: Date.now(),
+      },
+    });
+
+    // Simulate disconnect before plugin pipeline resolves.
+    expect(onDisconnectHandler).toBeDefined();
+    onDisconnectHandler!();
+    expect(resolveRequested).toBeDefined();
+    resolveRequested!({ insights: [], aborted: false });
+    await new Promise((r) => setTimeout(r, 0));
+
+    const session = bridge.getSession("s-codex-disconnect-race");
+    expect(session?.pendingPermissions.has("codex-req-disconnect-race")).toBe(false);
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    expect(calls.some((m: any) => m.type === "permission_request" && m.request?.request_id === "codex-req-disconnect-race")).toBe(false);
   });
 });
 

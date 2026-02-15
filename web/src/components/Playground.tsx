@@ -674,6 +674,35 @@ export function Playground() {
           </div>
         </Section>
 
+        <Section title="Automations" description="Plugin insights shown in the Session task panel">
+          <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
+            <div className="px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
+              <span className="text-[12px] font-semibold text-cc-fg">Automations</span>
+              <span className="text-[11px] text-cc-muted tabular-nums">3</span>
+            </div>
+            <div className="px-3 py-2 border-b border-cc-border space-y-1">
+              <div className="px-2.5 py-2 rounded-lg bg-cc-hover/50">
+                <div className="flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full mt-1.5 bg-cc-success" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-cc-fg">Permission auto-handled</p>
+                    <p className="text-[11px] text-cc-muted break-words">Read: allow via rule allow-read.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-2.5 py-2 rounded-lg bg-cc-hover/50">
+                <div className="flex items-start gap-2">
+                  <span className="w-2 h-2 rounded-full mt-1.5 bg-cc-warning" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-cc-fg">Session ended</p>
+                    <p className="text-[11px] text-cc-muted break-words">Event session.archived on s1.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Section>
+
         {/* ─── GitHub PR Status ──────────────────────────────── */}
         <Section title="GitHub PR Status" description="PR health shown in the TaskPanel — checks, reviews, unresolved comments">
           <div className="space-y-4">
@@ -1056,6 +1085,36 @@ export function Playground() {
             </Card>
           </div>
         </Section>
+
+        {/* ─── Toast Notifications ──────────────────────────────── */}
+        <Section title="Toast Notifications" description="Slide-in toasts triggered by plugin insight capabilities — any plugin can emit them">
+          <div className="space-y-4 max-w-sm">
+            <Card label="Info toast">
+              <PlaygroundToast level="info" title="Permission requested" message="Bash is waiting for a decision." />
+            </Card>
+            <Card label="Success toast">
+              <PlaygroundToast level="success" title="Execution completed" message="Result received (12 turns)." />
+            </Card>
+            <Card label="Error toast">
+              <PlaygroundToast level="error" title="Execution error" message="Process exited with code 1: ENOENT." />
+            </Card>
+            <Card label="Warning toast with dedup count">
+              <PlaygroundToast level="warning" title="Session ended" message="Event session.killed on abc123." count={3} />
+            </Card>
+          </div>
+        </Section>
+
+        {/* ─── Notification Popover ──────────────────────────────── */}
+        <Section title="Notification Popover" description="Dropdown notification center showing all plugin insights grouped by time">
+          <div className="space-y-4">
+            <Card label="Popover with grouped insights">
+              <PlaygroundNotificationPopover />
+            </Card>
+            <Card label="Empty state">
+              <PlaygroundNotificationPopoverEmpty />
+            </Card>
+          </div>
+        </Section>
       </div>
     </div>
   );
@@ -1372,6 +1431,178 @@ function TaskRow({ task }: { task: TaskItem }) {
           <span>blocked by {task.blockedBy.map((b) => `#${b}`).join(", ")}</span>
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Toast Playground Mocks ────────────────────────────────────────────────
+
+type MockLevel = "info" | "success" | "error" | "warning";
+
+function toastLevelAccent(level: MockLevel): string {
+  switch (level) {
+    case "success": return "bg-cc-success";
+    case "error": return "bg-cc-error";
+    case "warning": return "bg-cc-warning";
+    default: return "bg-cc-primary";
+  }
+}
+
+function ToastLevelIcon({ level }: { level: MockLevel }) {
+  const cls = "w-4 h-4 shrink-0";
+  switch (level) {
+    case "success":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={`${cls} text-cc-success`}>
+          <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm3.354-9.354a.5.5 0 00-.708-.708L7 8.586 5.354 6.94a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4z" clipRule="evenodd" />
+        </svg>
+      );
+    case "error":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={`${cls} text-cc-error`}>
+          <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zM5.354 5.354a.5.5 0 01.707 0L8 7.293l1.94-1.94a.5.5 0 01.707.708L8.707 8l1.94 1.94a.5.5 0 01-.707.707L8 8.707l-1.94 1.94a.5.5 0 01-.707-.707L7.293 8 5.354 6.06a.5.5 0 010-.707z" clipRule="evenodd" />
+        </svg>
+      );
+    case "warning":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={`${cls} text-cc-warning`}>
+          <path fillRule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13a1.02 1.02 0 00.886 1.5h13.953c.367 0 .704-.19.886-.5s.184-.61 0-.92L8.893 1.5zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={`${cls} text-cc-primary`}>
+          <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm.75-10.25a.75.75 0 00-1.5 0v1a.75.75 0 001.5 0v-1zM8 7a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 018 7z" clipRule="evenodd" />
+        </svg>
+      );
+  }
+}
+
+function PlaygroundToast({ level, title, message, count }: { level: MockLevel; title: string; message: string; count?: number }) {
+  return (
+    <div className="group flex overflow-hidden rounded-xl bg-cc-card border border-cc-border shadow-lg">
+      <div className={`w-1 shrink-0 ${toastLevelAccent(level)}`} />
+      <div className="flex items-start gap-2.5 px-3 py-2.5 min-w-0 flex-1">
+        <ToastLevelIcon level={level} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[12px] font-semibold text-cc-fg truncate">{title}</span>
+            {count && count > 1 && (
+              <span className="text-[10px] font-semibold text-cc-muted bg-cc-hover rounded-full px-1.5 leading-[16px]">
+                &times;{count}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-cc-muted mt-0.5 line-clamp-2">{message}</p>
+        </div>
+        <button className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-cc-muted opacity-0 group-hover:opacity-100 hover:text-cc-fg hover:bg-cc-hover transition-all cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Notification Popover Playground Mocks ──────────────────────────────────
+
+function PopoverLevelIcon({ level }: { level: MockLevel }) {
+  const cls = (color: string) => `w-3.5 h-3.5 shrink-0 ${color}`;
+  switch (level) {
+    case "success":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={cls("text-cc-success")}>
+          <path fillRule="evenodd" d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" clipRule="evenodd" />
+        </svg>
+      );
+    case "error":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={cls("text-cc-error")}>
+          <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" />
+        </svg>
+      );
+    case "warning":
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={cls("text-cc-warning")}>
+          <path fillRule="evenodd" d="M8.893 1.5c-.183-.31-.52-.5-.887-.5s-.703.19-.886.5L.138 13a1.02 1.02 0 00.886 1.5h13.953c.367 0 .704-.19.886-.5s.184-.61 0-.92L8.893 1.5zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 100 2 1 1 0 000-2z" clipRule="evenodd" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 16 16" fill="currentColor" className={cls("text-cc-primary")}>
+          <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm.75-10.25a.75.75 0 00-1.5 0v1a.75.75 0 001.5 0v-1zM8 7a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 018 7z" clipRule="evenodd" />
+        </svg>
+      );
+  }
+}
+
+function MockInsightRow({ level, title, message, time, plugin }: { level: MockLevel; title: string; message: string; time: string; plugin?: string }) {
+  return (
+    <div className="flex items-start gap-2.5 px-3 py-2.5 hover:bg-cc-hover/50 rounded-lg transition-colors">
+      <div className="mt-0.5">
+        <PopoverLevelIcon level={level} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-medium text-cc-fg truncate">{title}</span>
+          <span className="text-[10px] text-cc-muted shrink-0">{time}</span>
+        </div>
+        <p className="text-[11px] text-cc-muted mt-0.5 line-clamp-2">{message}</p>
+        {plugin && (
+          <span className="inline-block mt-1 text-[9px] font-medium text-cc-muted bg-cc-hover rounded-full px-1.5 leading-[14px]">
+            {plugin}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlaygroundNotificationPopover() {
+  return (
+    <div className="w-[360px] max-h-[480px] flex flex-col bg-cc-card border border-cc-border rounded-xl shadow-xl overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-cc-border">
+        <span className="text-[13px] font-semibold text-cc-fg">Notifications</span>
+        <button className="text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer">Clear all</button>
+      </div>
+      <div className="flex-1 overflow-y-auto py-1">
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-semibold text-cc-muted uppercase tracking-wider">Just now</span>
+        </div>
+        <MockInsightRow level="info" title="Permission requested" message="Bash is waiting for a decision." time="just now" plugin="Session Notifications" />
+        <MockInsightRow level="success" title="Permission auto-handled" message="Read: allow via rule allow-read." time="just now" plugin="Permission Automation" />
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-semibold text-cc-muted uppercase tracking-wider">Recent</span>
+        </div>
+        <MockInsightRow level="success" title="Execution completed" message="Result received (12 turns)." time="3m ago" plugin="Session Notifications" />
+        <MockInsightRow level="error" title="Execution error" message="Process exited with code 1: ENOENT." time="8m ago" plugin="Session Notifications" />
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-semibold text-cc-muted uppercase tracking-wider">Earlier</span>
+        </div>
+        <MockInsightRow level="warning" title="Session ended" message="Event session.killed on abc123." time="2h ago" />
+      </div>
+      <div className="shrink-0 flex items-center justify-center px-4 py-2.5 border-t border-cc-border">
+        <button className="text-[11px] text-cc-primary hover:text-cc-primary-hover font-medium transition-colors cursor-pointer">View all in panel</button>
+      </div>
+    </div>
+  );
+}
+
+function PlaygroundNotificationPopoverEmpty() {
+  return (
+    <div className="w-[360px] flex flex-col bg-cc-card border border-cc-border rounded-xl shadow-xl overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-cc-border">
+        <span className="text-[13px] font-semibold text-cc-fg">Notifications</span>
+      </div>
+      <div className="flex flex-col items-center justify-center py-12 px-4">
+        <svg viewBox="0 0 48 48" fill="none" className="w-12 h-12 text-cc-muted opacity-30 mb-3">
+          <path d="M24 4C14.06 4 6 12.06 6 22v8l-2 4h40l-2-4v-8C42 12.06 33.94 4 24 4z" stroke="currentColor" strokeWidth="2" fill="none" />
+          <path d="M18 38a6 6 0 0012 0" stroke="currentColor" strokeWidth="2" fill="none" />
+        </svg>
+        <p className="text-[13px] text-cc-muted">No notifications yet</p>
+        <p className="text-[11px] text-cc-muted mt-1">Plugin insights will appear here</p>
+      </div>
     </div>
   );
 }

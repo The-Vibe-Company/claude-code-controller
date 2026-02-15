@@ -67,6 +67,16 @@
   animation: name-appear 0.5s ease-out;
 }
 
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastSlideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%) scale(0.95); }
+}
+
 /* Dark mode overrides */
 .dark {
   --color-cc-bg: #2b2a27;

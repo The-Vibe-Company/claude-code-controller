@@ -109,6 +109,15 @@ describe("saveSync / load", () => {
     expect(loaded!.lastAckSeq).toBe(1);
     expect(loaded!.processedClientMessageIds).toEqual(["client-msg-1", "client-msg-2"]);
   });
+
+  it("recreates storage directory automatically if deleted before save", () => {
+    rmSync(tempDir, { recursive: true, force: true });
+    const session = makeSession("recreate-dir");
+    store.saveSync(session);
+
+    const loaded = store.load("recreate-dir");
+    expect(loaded).toEqual(session);
+  });
 });
 
 // ─── save (debounced) ─────────────────────────────────────────────────────────

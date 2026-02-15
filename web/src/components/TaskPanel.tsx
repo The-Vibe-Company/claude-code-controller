@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useStore } from "../store.js";
 import { api, type UsageLimits, type GitHubPRInfo } from "../api.js";
-import type { TaskItem } from "../types.js";
+import type { TaskItem, PluginInsight } from "../types.js";
 import { McpSection } from "./McpPanel.js";
 
 const EMPTY_TASKS: TaskItem[] = [];
+const EMPTY_PLUGIN_INSIGHTS: PluginInsight[] = [];
 const POLL_INTERVAL = 60_000;
 
 // Module-level cache — survives session switches so limits don't flash empty
@@ -302,6 +303,65 @@ function GitHubPRSection({ sessionId }: { sessionId: string }) {
   return <GitHubPRDisplay pr={prStatus.pr} />;
 }
 
+function insightDot(level: PluginInsight["level"]): string {
+  if (level === "error") return "bg-cc-error";
+  if (level === "warning") return "bg-cc-warning";
+  if (level === "success") return "bg-cc-success";
+  return "bg-cc-primary";
+}
+
+function PluginInsightsSection({ sessionId, focusedPluginId, onClearFocus }: {
+  sessionId: string;
+  focusedPluginId: string | null;
+  onClearFocus: () => void;
+}) {
+  const insights = useStore((s) => s.pluginInsights.get(sessionId) || EMPTY_PLUGIN_INSIGHTS);
+  const plugins = useStore((s) => s.plugins);
+  const pluginNameById = new Map(plugins.map((plugin) => [plugin.id, plugin.name]));
+  const filteredInsights = focusedPluginId
+    ? insights.filter((insight) => insight.plugin_id === focusedPluginId)
+    : insights;
+  if (filteredInsights.length === 0) return null;
+  const focusLabel = focusedPluginId ? (pluginNameById.get(focusedPluginId) || focusedPluginId) : null;
+
+  return (
+    <>
+      <div className="px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold text-cc-fg">Automations</span>
+          {focusLabel && (
+            <span className="text-[11px] text-cc-muted">· {focusLabel}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-cc-muted tabular-nums">{filteredInsights.length}</span>
+          {focusLabel && (
+            <button
+              onClick={onClearFocus}
+              className="text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="px-3 py-2 border-b border-cc-border space-y-1">
+        {filteredInsights.slice(-10).reverse().map((insight) => (
+          <div key={insight.id} className="px-2.5 py-2 rounded-lg bg-cc-hover/50">
+            <div className="flex items-start gap-2">
+              <span className={`w-2 h-2 rounded-full mt-1.5 ${insightDot(insight.level)}`} />
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-cc-fg">{insight.title}</p>
+                <p className="text-[11px] text-cc-muted break-words">{insight.message}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 // ─── Task Panel ──────────────────────────────────────────────────────────────
 
 export function TaskPanel({ sessionId }: { sessionId: string }) {
@@ -310,6 +370,8 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
   const sdkBackendType = useStore((s) => s.sdkSessions.find((x) => x.sessionId === sessionId)?.backendType);
   const taskPanelOpen = useStore((s) => s.taskPanelOpen);
   const setTaskPanelOpen = useStore((s) => s.setTaskPanelOpen);
+  const taskbarPluginFocus = useStore((s) => s.taskbarPluginFocus);
+  const setTaskbarPluginFocus = useStore((s) => s.setTaskbarPluginFocus);
 
   if (!taskPanelOpen) return null;
 
@@ -325,7 +387,11 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
           Session
         </span>
         <button
-          onClick={() => setTaskPanelOpen(false)}
+          onClick={() => {
+            setTaskPanelOpen(false);
+            setTaskbarPluginFocus(null);
+          }}
+          aria-label="Close session panel"
           className="flex items-center justify-center w-6 h-6 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
         >
           <svg
@@ -349,6 +415,13 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
 
         {/* MCP servers */}
         <McpSection sessionId={sessionId} />
+
+        {/* Plugin automation insights */}
+        <PluginInsightsSection
+          sessionId={sessionId}
+          focusedPluginId={taskbarPluginFocus}
+          onClearFocus={() => setTaskbarPluginFocus(null)}
+        />
 
         {showTasks && (
           <>

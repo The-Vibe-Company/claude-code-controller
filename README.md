@@ -70,9 +70,16 @@ bun run typecheck
 bun run test
 ```
 
+Scaffold a built-in plugin contribution:
+```bash
+cd web
+bun run plugin:new my-plugin-id
+```
+
 ## Docs
 - Protocol reverse engineering: [`WEBSOCKET_PROTOCOL_REVERSED.md`](WEBSOCKET_PROTOCOL_REVERSED.md)
 - Contributor and architecture guide: [`CLAUDE.md`](CLAUDE.md)
+- Plugin authoring guide: [`web/server/plugins/README.md`](web/server/plugins/README.md)
 
 ## License
 MIT

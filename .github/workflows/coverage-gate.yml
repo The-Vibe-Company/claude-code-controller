@@ -1,0 +1,25 @@
+name: Coverage Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install
+
+      - name: Run coverage gate on PR changes (min 80%)
+        working-directory: web
+        run: bun run test -- --coverage --changed=origin/${{ github.base_ref }}
