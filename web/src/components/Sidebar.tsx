@@ -22,6 +22,7 @@ export function Sidebar() {
   const removeSession = useStore((s) => s.removeSession);
   const sessionNames = useStore((s) => s.sessionNames);
   const recentlyRenamed = useStore((s) => s.recentlyRenamed);
+  const clearRecentlyRenamed = useStore((s) => s.clearRecentlyRenamed);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const collapsedProjects = useStore((s) => s.collapsedProjects);
   const toggleProjectCollapse = useStore((s) => s.toggleProjectCollapse);
@@ -236,6 +237,7 @@ export function Sidebar() {
     onArchive: handleArchiveSession,
     onUnarchive: handleUnarchiveSession,
     onDelete: handleDeleteSession,
+    onClearRecentlyRenamed: clearRecentlyRenamed,
     editingSessionId,
     editingName,
     setEditingName,

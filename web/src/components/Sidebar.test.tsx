@@ -472,9 +472,31 @@ describe("Sidebar", () => {
       recentlyRenamed: new Set(["s1"]),
     });
 
-    render(<Sidebar />);
-    const nameElement = screen.getByText("Animated Name");
-    fireEvent.animationEnd(nameElement);
+    const { container } = render(<Sidebar />);
+    // The animated span has the animate-name-appear class and an onAnimationEnd
+    // handler that calls onClearRecentlyRenamed(sessionId).
+    const animatedSpan = container.querySelector(".animate-name-appear");
+    expect(animatedSpan).toBeTruthy();
+
+    // JSDOM does not define AnimationEvent in all environments, which
+    // causes fireEvent.animationEnd to silently fail. We traverse the
+    // React fiber tree to invoke the onAnimationEnd handler directly.
+    const fiberKey = Object.keys(animatedSpan!).find((k) =>
+      k.startsWith("__reactFiber$"),
+    );
+    expect(fiberKey).toBeDefined();
+    let fiber = (animatedSpan as unknown as Record<string, unknown>)[fiberKey!] as Record<string, unknown> | null;
+    let called = false;
+    while (fiber) {
+      const props = fiber.memoizedProps as Record<string, unknown> | undefined;
+      if (props?.onAnimationEnd) {
+        (props.onAnimationEnd as () => void)();
+        called = true;
+        break;
+      }
+      fiber = fiber.return as Record<string, unknown> | null;
+    }
+    expect(called).toBe(true);
     expect(mockState.clearRecentlyRenamed).toHaveBeenCalledWith("s1");
   });
 
