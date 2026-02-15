@@ -472,17 +472,31 @@ describe("Sidebar", () => {
       recentlyRenamed: new Set(["s1"]),
     });
 
-    render(<Sidebar />);
-    const nameElement = screen.getByText("Animated Name");
-    expect(nameElement.className).toContain("animate-name-appear");
-    // jsdom lacks AnimationEvent, so fireEvent.animationEnd is unreliable
-    // with React's event delegation. Invoke the handler via React's
-    // internal __reactProps$ which holds the element's React props.
-    const propsKey = Object.keys(nameElement).find((k) => k.startsWith("__reactProps$"));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const props = propsKey ? (nameElement as any)[propsKey] : null;
-    expect(props?.onAnimationEnd).toBeDefined();
-    props.onAnimationEnd();
+    const { container } = render(<Sidebar />);
+    // The animated span has the animate-name-appear class and an onAnimationEnd
+    // handler that calls onClearRecentlyRenamed(sessionId).
+    const animatedSpan = container.querySelector(".animate-name-appear");
+    expect(animatedSpan).toBeTruthy();
+
+    // JSDOM does not define AnimationEvent in all environments, which
+    // causes fireEvent.animationEnd to silently fail. We traverse the
+    // React fiber tree to invoke the onAnimationEnd handler directly.
+    const fiberKey = Object.keys(animatedSpan!).find((k) =>
+      k.startsWith("__reactFiber$"),
+    );
+    expect(fiberKey).toBeDefined();
+    let fiber = (animatedSpan as unknown as Record<string, unknown>)[fiberKey!] as Record<string, unknown> | null;
+    let called = false;
+    while (fiber) {
+      const props = fiber.memoizedProps as Record<string, unknown> | undefined;
+      if (props?.onAnimationEnd) {
+        (props.onAnimationEnd as () => void)();
+        called = true;
+        break;
+      }
+      fiber = fiber.return as Record<string, unknown> | null;
+    }
+    expect(called).toBe(true);
     expect(mockState.clearRecentlyRenamed).toHaveBeenCalledWith("s1");
   });
 

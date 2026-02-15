@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import type { Subprocess } from "bun";
 import type { SessionStore } from "./session-store.js";
 import type { BackendType } from "./session-types.js";
+import type { RecorderManager } from "./recorder.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { resolveBinary, getEnrichedPath } from "./path-resolver.js";
 import {
@@ -93,6 +94,7 @@ export class CliLauncher {
   private processes = new Map<string, Subprocess>();
   private port: number;
   private store: SessionStore | null = null;
+  private recorder: RecorderManager | null = null;
   private onCodexAdapter: ((sessionId: string, adapter: CodexAdapter) => void) | null = null;
 
   constructor(port: number) {
@@ -107,6 +109,11 @@ export class CliLauncher {
   /** Attach a persistent store for surviving server restarts. */
   setStore(store: SessionStore): void {
     this.store = store;
+  }
+
+  /** Attach a recorder for raw message capture. */
+  setRecorder(recorder: RecorderManager): void {
+    this.recorder = recorder;
   }
 
   /** Persist launcher state to disk. */
@@ -472,6 +479,7 @@ export class CliLauncher {
       approvalMode: options.permissionMode,
       threadId: info.cliSessionId,
       sandbox: options.codexSandbox,
+      recorder: this.recorder ?? undefined,
     });
 
     // Handle init errors — mark session as exited so UI shows failure.

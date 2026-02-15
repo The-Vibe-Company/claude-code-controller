@@ -21,6 +21,7 @@ import { generateSessionTitle } from "./auto-namer.js";
 import * as sessionNames from "./session-names.js";
 import { getSettings } from "./settings-manager.js";
 import { PRPoller } from "./pr-poller.js";
+import { RecorderManager } from "./recorder.js";
 import { startPeriodicCheck, setServiceMode } from "./update-checker.js";
 import { isRunningAsService } from "./service.js";
 import * as notificationManager from "./notification-manager.js";
@@ -42,10 +43,13 @@ const launcher = new CliLauncher(port);
 const worktreeTracker = new WorktreeTracker();
 const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
+const recorder = new RecorderManager();
 
 // ── Restore persisted sessions from disk ────────────────────────────────────
 wsBridge.setStore(sessionStore);
+wsBridge.setRecorder(recorder);
 launcher.setStore(sessionStore);
+launcher.setRecorder(recorder);
 launcher.restoreFromDisk();
 wsBridge.restoreFromDisk();
 
@@ -116,11 +120,14 @@ wsBridge.onNotificationTriggerCallback((trigger, sessionId, sessionCwd, message)
 });
 
 console.log(`[server] Session persistence: ${sessionStore.directory}`);
+if (recorder.isGloballyEnabled()) {
+  console.log(`[server] Recording enabled (dir: ${recorder.getRecordingsDir()}, max: ${recorder.getMaxLines()} lines)`);
+}
 
 const app = new Hono();
 
 app.use("/api/*", cors());
-app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller));
+app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
 if (process.env.NODE_ENV === "production") {

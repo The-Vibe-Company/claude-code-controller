@@ -26,6 +26,7 @@ import type {
 } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import type { CodexAdapter } from "./codex-adapter.js";
+import type { RecorderManager } from "./recorder.js";
 
 // ─── WebSocket data tags ──────────────────────────────────────────────────────
 
@@ -180,6 +181,7 @@ export class WsBridge {
   ]);
   private sessions = new Map<string, Session>();
   private store: SessionStore | null = null;
+  private recorder: RecorderManager | null = null;
   private onCLISessionId: ((sessionId: string, cliSessionId: string) => void) | null = null;
   private onCLIRelaunchNeeded: ((sessionId: string) => void) | null = null;
   private onFirstTurnCompleted: ((sessionId: string, firstUserMessage: string) => void) | null = null;
@@ -240,6 +242,11 @@ export class WsBridge {
   /** Attach a persistent store. Call restoreFromDisk() after. */
   setStore(store: SessionStore): void {
     this.store = store;
+  }
+
+  /** Attach a recorder for raw message capture. */
+  setRecorder(recorder: RecorderManager): void {
+    this.recorder = recorder;
   }
 
   /** Restore sessions from disk (call once at startup). */
@@ -570,6 +577,9 @@ export class WsBridge {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
+    // Record raw incoming CLI message before any parsing
+    this.recorder?.record(sessionId, "in", data, "cli", session.backendType, session.state.cwd);
+
     // NDJSON: split on newlines, parse each line
     const lines = data.split("\n").filter((l) => l.trim());
     for (const line of lines) {
@@ -655,6 +665,9 @@ export class WsBridge {
     const sessionId = (ws.data as BrowserSocketData).sessionId;
     const session = this.sessions.get(sessionId);
     if (!session) return;
+
+    // Record raw incoming browser message
+    this.recorder?.record(sessionId, "in", data, "browser", session.backendType, session.state.cwd);
 
     let msg: BrowserOutgoingMessage;
     try {
@@ -1258,11 +1271,14 @@ export class WsBridge {
 
   private sendToCLI(session: Session, ndjson: string) {
     if (!session.cliSocket) {
-      // Queue the message — CLI might still be starting up
+      // Queue the message — CLI might still be starting up.
+      // Don't record here; the message will be recorded when flushed.
       console.log(`[ws-bridge] CLI not yet connected for session ${session.id}, queuing message`);
       session.pendingMessages.push(ndjson);
       return;
     }
+    // Record raw outgoing CLI message (only when actually sending, not when queuing)
+    this.recorder?.record(session.id, "out", ndjson, "cli", session.backendType, session.state.cwd);
     try {
       // NDJSON requires a newline delimiter
       session.cliSocket.send(ndjson + "\n");
@@ -1313,6 +1329,10 @@ export class WsBridge {
       console.log(`[ws-bridge] ⚠ Broadcasting ${msg.type} to 0 browsers for session ${session.id} (stored in history: ${msg.type === "assistant" || msg.type === "result"})`);
     }
     const json = JSON.stringify(this.sequenceEvent(session, msg));
+
+    // Record raw outgoing browser message
+    this.recorder?.record(session.id, "out", json, "browser", session.backendType, session.state.cwd);
+
     for (const ws of session.browserSockets) {
       try {
         ws.send(json);

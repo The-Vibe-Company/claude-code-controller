@@ -78,6 +78,7 @@ export function createRoutes(
   worktreeTracker: WorktreeTracker,
   terminalManager: TerminalManager,
   prPoller?: import("./pr-poller.js").PRPoller,
+  recorder?: import("./recorder.js").RecorderManager,
 ) {
   const api = new Hono();
 
@@ -318,6 +319,37 @@ export function createRoutes(
     launcher.setArchived(id, false);
     sessionStore.setArchived(id, false);
     return c.json({ ok: true });
+  });
+
+  // ─── Recording Management ──────────────────────────────────
+
+  api.post("/sessions/:id/recording/start", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ error: "Recording not available" }, 501);
+    recorder.enableForSession(id);
+    return c.json({ ok: true, recording: true });
+  });
+
+  api.post("/sessions/:id/recording/stop", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ error: "Recording not available" }, 501);
+    recorder.disableForSession(id);
+    return c.json({ ok: true, recording: false });
+  });
+
+  api.get("/sessions/:id/recording/status", (c) => {
+    const id = c.req.param("id");
+    if (!recorder) return c.json({ recording: false, available: false });
+    return c.json({
+      recording: recorder.isRecording(id),
+      available: true,
+      ...recorder.getRecordingStatus(id),
+    });
+  });
+
+  api.get("/recordings", (c) => {
+    if (!recorder) return c.json({ recordings: [] });
+    return c.json({ recordings: recorder.listRecordings() });
   });
 
   // ─── Available backends ─────────────────────────────────────
