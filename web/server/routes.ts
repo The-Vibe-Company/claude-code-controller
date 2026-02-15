@@ -189,6 +189,7 @@ export function createRoutes(
         allowedTools: body.allowedTools,
         env: envVars,
         backendType: backend,
+        effortLevel: body.effortLevel,
         worktreeInfo,
       });
 

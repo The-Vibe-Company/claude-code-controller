@@ -64,6 +64,20 @@ export const CODEX_MODES: ModeOption[] = [
   { value: "plan", label: "Suggest" },
 ];
 
+// ─── Effort levels (Claude Opus only) ─────────────────────────────────────────
+
+export const EFFORT_LEVELS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+] as const;
+
+export type EffortLevel = typeof EFFORT_LEVELS[number]["value"];
+
+export function isOpusModel(model: string): boolean {
+  return model.includes("opus");
+}
+
 // ─── Getters ─────────────────────────────────────────────────────────────────
 
 export function getModelsForBackend(backend: BackendType): ModelOption[] {

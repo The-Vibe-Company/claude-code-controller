@@ -5,7 +5,7 @@ import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
-import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
+import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, EFFORT_LEVELS, isOpusModel, type ModelOption } from "../utils/backends.js";
 import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
@@ -51,6 +51,9 @@ export function HomePage() {
   const [codexInternetAccess, setCodexInternetAccess] = useState(() =>
     localStorage.getItem("cc-codex-internet-access") === "1",
   );
+  const [effortLevel, setEffortLevel] = useState(() =>
+    localStorage.getItem("cc-effort-level") || "medium",
+  );
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -66,6 +69,7 @@ export function HomePage() {
   // Dropdown states
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [showEffortDropdown, setShowEffortDropdown] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
   // Worktree state
@@ -86,6 +90,7 @@ export function HomePage() {
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const envDropdownRef = useRef<HTMLDivElement>(null);
+  const effortDropdownRef = useRef<HTMLDivElement>(null);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
@@ -117,6 +122,8 @@ export function HomePage() {
     setDynamicModels(null);
     setModel(getDefaultModel(newBackend));
     setMode(getDefaultMode(newBackend));
+    setEffortLevel("medium");
+    localStorage.setItem("cc-effort-level", "medium");
   }
 
   // Fetch dynamic models for the selected backend
@@ -150,6 +157,9 @@ export function HomePage() {
       }
       if (envDropdownRef.current && !envDropdownRef.current.contains(e.target as Node)) {
         setShowEnvDropdown(false);
+      }
+      if (effortDropdownRef.current && !effortDropdownRef.current.contains(e.target as Node)) {
+        setShowEffortDropdown(false);
       }
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
         setShowBranchDropdown(false);
@@ -294,6 +304,7 @@ export function HomePage() {
         useWorktree: useWorktree || undefined,
         backend,
         codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
+        effortLevel: backend === "claude" && isOpusModel(model) ? effortLevel : undefined,
       });
       const sessionId = result.sessionId;
 
@@ -843,6 +854,52 @@ export function HomePage() {
               </div>
             )}
           </div>
+
+          {/* Effort level selector (Claude + Opus only) */}
+          {backend === "claude" && isOpusModel(model) && (
+            <div className="relative" ref={effortDropdownRef}>
+              <button
+                onClick={() => setShowEffortDropdown(!showEffortDropdown)}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-cc-muted hover:text-cc-fg rounded-md hover:bg-cc-hover transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-0.5">
+                  {EFFORT_LEVELS.map((l) => (
+                    <div
+                      key={l.value}
+                      className={`w-1 h-3 rounded-sm ${
+                        EFFORT_LEVELS.findIndex(e => e.value === effortLevel) >= EFFORT_LEVELS.findIndex(e => e.value === l.value)
+                          ? "bg-cc-primary/70"
+                          : "bg-cc-border"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span>{EFFORT_LEVELS.find(l => l.value === effortLevel)?.label}</span>
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
+                  <path d="M4 6l4 4 4-4" />
+                </svg>
+              </button>
+              {showEffortDropdown && (
+                <div className="absolute left-0 bottom-full mb-1 w-36 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1">
+                  {EFFORT_LEVELS.map((l) => (
+                    <button
+                      key={l.value}
+                      onClick={() => {
+                        setEffortLevel(l.value);
+                        localStorage.setItem("cc-effort-level", l.value);
+                        setShowEffortDropdown(false);
+                      }}
+                      className={`w-full px-3 py-2 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer ${
+                        l.value === effortLevel ? "text-cc-primary font-medium" : "text-cc-fg"
+                      }`}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Branch behind remote warning */}

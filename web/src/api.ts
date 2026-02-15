@@ -196,6 +196,7 @@ export interface CreateSessionOpts {
   useWorktree?: boolean;
   backend?: "claude" | "codex";
   container?: ContainerCreateOpts;
+  effortLevel?: string;
 }
 
 export interface BackendInfo {

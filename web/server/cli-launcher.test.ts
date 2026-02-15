@@ -192,6 +192,22 @@ describe("launch", () => {
     expect(toolFlags).toEqual(["Read", "Write", "Bash"]);
   });
 
+  it("passes --effort when effortLevel provided", () => {
+    launcher.launch({ effortLevel: "high", cwd: "/tmp" });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    const effortIdx = cmdAndArgs.indexOf("--effort");
+    expect(effortIdx).toBeGreaterThan(-1);
+    expect(cmdAndArgs[effortIdx + 1]).toBe("high");
+  });
+
+  it("does not pass --effort when effortLevel not provided", () => {
+    launcher.launch({ cwd: "/tmp" });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    expect(cmdAndArgs).not.toContain("--effort");
+  });
+
   it("resolves binary path via resolveBinary when not absolute", () => {
     mockResolveBinary.mockReturnValue("/usr/local/bin/claude-dev");
     launcher.launch({ claudeBinary: "claude-dev", cwd: "/tmp" });

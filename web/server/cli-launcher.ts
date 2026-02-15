@@ -75,6 +75,7 @@ export interface LaunchOptions {
   codexInternetAccess?: boolean;
   /** Optional override for CODEX_HOME used by Codex sessions. */
   codexHome?: string;
+  effortLevel?: string;
   /** Pre-resolved worktree info from the session creation flow */
   worktreeInfo?: {
     isWorktree: boolean;
@@ -219,11 +220,11 @@ export class CliLauncher {
           oldProc.exited,
           new Promise((r) => setTimeout(r, 2000)),
         ]);
-      } catch {}
+      } catch { }
       this.processes.delete(sessionId);
     } else if (info.pid) {
       // Process from a previous server instance — kill by PID
-      try { process.kill(info.pid, "SIGTERM"); } catch {}
+      try { process.kill(info.pid, "SIGTERM"); } catch { }
     }
 
     info.state = "starting";
@@ -287,6 +288,10 @@ export class CliLauncher {
       for (const tool of options.allowedTools) {
         args.push("--allowedTools", tool);
       }
+    }
+
+    if (options.effortLevel) {
+      args.push("--effort", options.effortLevel);
     }
 
     // Inject CLAUDE.md guardrails for worktree sessions
