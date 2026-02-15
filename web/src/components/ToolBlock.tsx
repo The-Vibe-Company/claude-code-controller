@@ -10,7 +10,9 @@ const TOOL_ICONS: Record<string, string> = {
   Grep: "search",
   WebFetch: "globe",
   WebSearch: "globe",
-  NotebookEdit: "file-edit",
+  NotebookEdit: "notebook",
+  Task: "agent",
+  TodoWrite: "checklist",
   TaskCreate: "list",
   TaskUpdate: "list",
   SendMessage: "message",
@@ -30,6 +32,12 @@ export function getToolLabel(name: string): string {
   if (name === "Edit") return "Edit File";
   if (name === "Glob") return "Find Files";
   if (name === "Grep") return "Search Content";
+  if (name === "WebSearch") return "Web Search";
+  if (name === "WebFetch") return "Web Fetch";
+  if (name === "Task") return "Subagent";
+  if (name === "TodoWrite") return "Tasks";
+  if (name === "NotebookEdit") return "Notebook";
+  if (name === "SendMessage") return "Message";
   if (name === "web_search") return "Web Search";
   if (name === "mcp_tool_call") return "MCP Tool";
   // Codex MCP tools come as "mcp:server:tool"
@@ -78,26 +86,65 @@ export function ToolBlock({
       {open && (
         <div className="px-3 pb-3 pt-0 border-t border-cc-border">
           <div className="mt-2">
-            {name === "Bash" && typeof input.command === "string" ? (
-              <pre className="px-3 py-2 rounded-lg bg-cc-code-bg text-cc-code-fg text-[12px] font-mono-code leading-relaxed overflow-x-auto">
-                <span className="text-cc-muted select-none">$ </span>
-                {input.command}
-              </pre>
-            ) : name === "Edit" ? (
-              <EditToolDetail input={input} />
-            ) : name === "Write" ? (
-              <WriteToolDetail input={input} />
-            ) : name === "Read" ? (
-              <div className="text-xs text-cc-muted font-mono-code">
-                {String(input.file_path || input.path || "")}
-              </div>
-            ) : (
-              <pre className="text-[11px] text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-                {JSON.stringify(input, null, 2)}
-              </pre>
-            )}
+            <ToolDetail name={name} input={input} />
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Route to custom detail renderer per tool type */
+function ToolDetail({ name, input }: { name: string; input: Record<string, unknown> }) {
+  switch (name) {
+    case "Bash":
+      return <BashDetail input={input} />;
+    case "Edit":
+      return <EditToolDetail input={input} />;
+    case "Write":
+      return <WriteToolDetail input={input} />;
+    case "Read":
+      return <ReadToolDetail input={input} />;
+    case "Glob":
+      return <GlobDetail input={input} />;
+    case "Grep":
+      return <GrepDetail input={input} />;
+    case "WebSearch":
+    case "web_search":
+      return <WebSearchDetail input={input} />;
+    case "WebFetch":
+      return <WebFetchDetail input={input} />;
+    case "Task":
+      return <TaskDetail input={input} />;
+    case "TodoWrite":
+      return <TodoWriteDetail input={input} />;
+    case "NotebookEdit":
+      return <NotebookEditDetail input={input} />;
+    case "SendMessage":
+      return <SendMessageDetail input={input} />;
+    default:
+      return (
+        <pre className="text-[11px] text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+          {JSON.stringify(input, null, 2)}
+        </pre>
+      );
+  }
+}
+
+// ─── Per-tool detail components ─────────────────────────────────────────────
+
+function BashDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1.5">
+      {!!input.description && (
+        <div className="text-[11px] text-cc-muted italic">{String(input.description)}</div>
+      )}
+      <pre className="px-3 py-2 rounded-lg bg-cc-code-bg text-cc-code-fg text-[12px] font-mono-code leading-relaxed overflow-x-auto">
+        <span className="text-cc-muted select-none">$ </span>
+        {String(input.command || "")}
+      </pre>
+      {!!input.timeout && (
+        <div className="text-[10px] text-cc-muted">timeout: {String(input.timeout)}ms</div>
       )}
     </div>
   );
@@ -109,12 +156,14 @@ function EditToolDetail({ input }: { input: Record<string, unknown> }) {
   const newStr = String(input.new_string || "");
 
   return (
-    <DiffViewer
-      oldText={oldStr}
-      newText={newStr}
-      fileName={filePath}
-      mode="compact"
-    />
+    <div className="space-y-1.5">
+      {!!input.replace_all && (
+        <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-cc-warning/10 text-cc-warning">
+          replace all
+        </span>
+      )}
+      <DiffViewer oldText={oldStr} newText={newStr} fileName={filePath} mode="compact" />
+    </div>
   );
 }
 
@@ -122,17 +171,193 @@ function WriteToolDetail({ input }: { input: Record<string, unknown> }) {
   const filePath = String(input.file_path || "");
   const content = String(input.content || "");
 
+  return <DiffViewer newText={content} fileName={filePath} mode="compact" />;
+}
+
+function ReadToolDetail({ input }: { input: Record<string, unknown> }) {
+  const filePath = String(input.file_path || input.path || "");
+  const offset = input.offset as number | undefined;
+  const limit = input.limit as number | undefined;
+
   return (
-    <DiffViewer
-      newText={content}
-      fileName={filePath}
-      mode="compact"
-    />
+    <div className="space-y-1">
+      <div className="text-xs text-cc-muted font-mono-code">{filePath}</div>
+      {(offset || limit) && (
+        <div className="flex gap-2 text-[10px] text-cc-muted">
+          {offset && <span>offset: {offset}</span>}
+          {limit && <span>limit: {limit}</span>}
+        </div>
+      )}
+    </div>
   );
 }
 
+function GlobDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-mono-code text-cc-code-fg">{String(input.pattern || "")}</div>
+      {!!input.path && (
+        <div className="text-[10px] text-cc-muted">
+          in: <span className="font-mono-code">{String(input.path)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GrepDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      <pre className="px-2 py-1.5 rounded bg-cc-code-bg text-cc-code-fg text-[12px] font-mono-code overflow-x-auto">
+        {String(input.pattern || "")}
+      </pre>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-cc-muted">
+        {!!input.path && (
+          <span>path: <span className="font-mono-code">{String(input.path)}</span></span>
+        )}
+        {!!input.glob && (
+          <span>glob: <span className="font-mono-code">{String(input.glob)}</span></span>
+        )}
+        {!!input.output_mode && <span>mode: {String(input.output_mode)}</span>}
+        {!!input.context && <span>context: {String(input.context)}</span>}
+        {!!input.head_limit && <span>limit: {String(input.head_limit)}</span>}
+      </div>
+    </div>
+  );
+}
+
+function WebSearchDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-cc-fg font-medium">{String(input.query || "")}</div>
+      {Array.isArray(input.allowed_domains) && input.allowed_domains.length > 0 && (
+        <div className="text-[10px] text-cc-muted">
+          domains: {(input.allowed_domains as string[]).join(", ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebFetchDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      {!!input.url && (
+        <div className="text-xs font-mono-code text-cc-primary truncate">{String(input.url)}</div>
+      )}
+      {!!input.prompt && (
+        <div className="text-[11px] text-cc-muted italic line-clamp-2">{String(input.prompt)}</div>
+      )}
+    </div>
+  );
+}
+
+function TaskDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1.5">
+      {!!input.description && (
+        <div className="text-xs text-cc-fg font-medium">{String(input.description)}</div>
+      )}
+      {!!input.subagent_type && (
+        <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-cc-primary/10 text-cc-primary">
+          {String(input.subagent_type)}
+        </span>
+      )}
+      {!!input.prompt && (
+        <pre className="text-[11px] text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+          {String(input.prompt)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function TodoWriteDetail({ input }: { input: Record<string, unknown> }) {
+  const todos = input.todos as Array<{ content?: string; status?: string; activeForm?: string }> | undefined;
+  if (!Array.isArray(todos)) {
+    return (
+      <pre className="text-[11px] text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+        {JSON.stringify(input, null, 2)}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5">
+      {todos.map((todo, i) => {
+        const status = todo.status || "pending";
+        return (
+          <div key={i} className="flex items-start gap-2 py-0.5">
+            <span className="shrink-0 mt-0.5">
+              {status === "completed" ? (
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-cc-success">
+                  <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm3.354-9.354a.5.5 0 00-.708-.708L7 8.586 5.354 6.94a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4z" clipRule="evenodd" />
+                </svg>
+              ) : status === "in_progress" ? (
+                <svg className="w-3.5 h-3.5 text-cc-primary animate-spin" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 text-cc-muted">
+                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              )}
+            </span>
+            <span className={`text-[11px] leading-snug ${status === "completed" ? "text-cc-muted line-through" : "text-cc-fg"}`}>
+              {todo.content || "Task"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function NotebookEditDetail({ input }: { input: Record<string, unknown> }) {
+  const path = String(input.notebook_path || "");
+  const cellType = input.cell_type as string | undefined;
+  const editMode = input.edit_mode as string | undefined;
+
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-mono-code text-cc-muted">{path}</div>
+      <div className="flex gap-2 text-[10px] text-cc-muted">
+        {cellType && <span>type: {cellType}</span>}
+        {editMode && <span>mode: {editMode}</span>}
+        {input.cell_number != null && <span>cell: {String(input.cell_number)}</span>}
+      </div>
+      {!!input.new_source && (
+        <pre className="px-2 py-1.5 rounded bg-cc-code-bg text-cc-code-fg text-[11px] font-mono-code leading-relaxed max-h-40 overflow-y-auto">
+          {String(input.new_source)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function SendMessageDetail({ input }: { input: Record<string, unknown> }) {
+  return (
+    <div className="space-y-1">
+      {!!input.recipient && (
+        <div className="text-[11px] text-cc-muted">
+          to: <span className="font-medium text-cc-fg">{String(input.recipient)}</span>
+        </div>
+      )}
+      {!!input.content && (
+        <div className="text-xs text-cc-fg whitespace-pre-wrap">{String(input.content)}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Preview ────────────────────────────────────────────────────────────────
+
 export function getPreview(name: string, input: Record<string, unknown>): string {
   if (name === "Bash" && typeof input.command === "string") {
+    // Prefer description if short enough, otherwise show command
+    if (input.description && typeof input.description === "string" && input.description.length <= 60) {
+      return input.description;
+    }
     return input.command.length > 60 ? input.command.slice(0, 60) + "..." : input.command;
   }
   if ((name === "Read" || name === "Write" || name === "Edit") && input.file_path) {
@@ -140,10 +365,35 @@ export function getPreview(name: string, input: Record<string, unknown>): string
     return path.split("/").slice(-2).join("/");
   }
   if (name === "Glob" && input.pattern) return String(input.pattern);
-  if (name === "Grep" && input.pattern) return String(input.pattern);
-  if (name === "WebSearch" && input.query) return String(input.query);
+  if (name === "Grep" && input.pattern) {
+    const p = String(input.pattern);
+    const suffix = input.path ? ` in ${String(input.path).split("/").slice(-2).join("/")}` : "";
+    const full = p + suffix;
+    return full.length > 60 ? full.slice(0, 60) + "..." : full;
+  }
+  if ((name === "WebSearch" || name === "web_search") && input.query) return String(input.query);
+  if (name === "WebFetch" && input.url) {
+    try {
+      const u = new URL(String(input.url));
+      return u.hostname + u.pathname;
+    } catch {
+      return String(input.url).slice(0, 60);
+    }
+  }
+  if (name === "Task" && input.description) return String(input.description);
+  if (name === "TodoWrite" && Array.isArray(input.todos)) {
+    return `${input.todos.length} task${input.todos.length !== 1 ? "s" : ""}`;
+  }
+  if (name === "NotebookEdit" && input.notebook_path) {
+    return String(input.notebook_path).split("/").pop() || "";
+  }
+  if (name === "SendMessage" && input.recipient) {
+    return `\u2192 ${String(input.recipient)}`;
+  }
   return "";
 }
+
+// ─── Icons ──────────────────────────────────────────────────────────────────
 
 export function ToolIcon({ type }: { type: string }) {
   const cls = "w-3.5 h-3.5 text-cc-primary shrink-0";
@@ -191,6 +441,30 @@ export function ToolIcon({ type }: { type: string }) {
     return (
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={cls}>
         <path d="M3 4h10M3 8h10M3 12h6" />
+      </svg>
+    );
+  }
+  if (type === "agent") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={cls}>
+        <circle cx="8" cy="5" r="3" />
+        <path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (type === "checklist") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={cls}>
+        <path d="M3 4l1.5 1.5L7 3M3 8l1.5 1.5L7 7M3 12l1.5 1.5L7 11" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 4h4M9 8h4M9 12h4" />
+      </svg>
+    );
+  }
+  if (type === "notebook") {
+    return (
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className={cls}>
+        <rect x="3" y="1" width="10" height="14" rx="1" />
+        <path d="M6 1v14M3 5h3M3 9h3M3 13h3" />
       </svg>
     );
   }

@@ -48,6 +48,9 @@ interface AppState {
   // MCP servers per session
   mcpServers: Map<string, McpServerDetail[]>;
 
+  // Tool progress (session → tool_use_id → progress info)
+  toolProgress: Map<string, Map<string, { toolName: string; elapsedSeconds: number }>>;
+
   // Sidebar project grouping
   collapsedProjects: Set<string>;
 
@@ -113,6 +116,10 @@ interface AppState {
 
   // MCP actions
   setMcpServers: (sessionId: string, servers: McpServerDetail[]) => void;
+
+  // Tool progress actions
+  setToolProgress: (sessionId: string, toolUseId: string, data: { toolName: string; elapsedSeconds: number }) => void;
+  clearToolProgress: (sessionId: string, toolUseId?: string) => void;
 
   // Sidebar project grouping actions
   toggleProjectCollapse: (projectKey: string) => void;
@@ -216,6 +223,7 @@ export const useStore = create<AppState>((set) => ({
   recentlyRenamed: new Set(),
   prStatus: new Map(),
   mcpServers: new Map(),
+  toolProgress: new Map(),
   collapsedProjects: getInitialCollapsedProjects(),
   updateInfo: null,
   updateDismissedVersion: getInitialDismissedVersion(),
@@ -328,6 +336,8 @@ export const useStore = create<AppState>((set) => ({
       diffPanelSelectedFile.delete(sessionId);
       const mcpServers = new Map(s.mcpServers);
       mcpServers.delete(sessionId);
+      const toolProgress = new Map(s.toolProgress);
+      toolProgress.delete(sessionId);
       const prStatus = new Map(s.prStatus);
       prStatus.delete(sessionId);
       localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
@@ -351,6 +361,7 @@ export const useStore = create<AppState>((set) => ({
         recentlyRenamed,
         diffPanelSelectedFile,
         mcpServers,
+        toolProgress,
         prStatus,
         sdkSessions: s.sdkSessions.filter((sdk) => sdk.sessionId !== sessionId),
         currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
@@ -518,6 +529,31 @@ export const useStore = create<AppState>((set) => ({
       return { mcpServers };
     }),
 
+  setToolProgress: (sessionId, toolUseId, data) =>
+    set((s) => {
+      const toolProgress = new Map(s.toolProgress);
+      const sessionProgress = new Map(toolProgress.get(sessionId) || []);
+      sessionProgress.set(toolUseId, data);
+      toolProgress.set(sessionId, sessionProgress);
+      return { toolProgress };
+    }),
+
+  clearToolProgress: (sessionId, toolUseId) =>
+    set((s) => {
+      const toolProgress = new Map(s.toolProgress);
+      if (toolUseId) {
+        const sessionProgress = toolProgress.get(sessionId);
+        if (sessionProgress) {
+          const updated = new Map(sessionProgress);
+          updated.delete(toolUseId);
+          toolProgress.set(sessionId, updated);
+        }
+      } else {
+        toolProgress.delete(sessionId);
+      }
+      return { toolProgress };
+    }),
+
   toggleProjectCollapse: (projectKey) =>
     set((s) => {
       const collapsedProjects = new Set(s.collapsedProjects);
@@ -602,6 +638,7 @@ export const useStore = create<AppState>((set) => ({
       sessionNames: new Map(),
       recentlyRenamed: new Set(),
       mcpServers: new Map(),
+      toolProgress: new Map(),
       prStatus: new Map(),
       activeTab: "chat" as const,
       diffPanelSelectedFile: new Map(),
