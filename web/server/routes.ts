@@ -710,6 +710,7 @@ export function createRoutes(
 
   // ─── Notifications (~/.companion/notifications.json) ─────────────────
 
+  const REDACT_SENTINEL = "••••••••";
   const SENSITIVE_KEYS = new Set([
     "webhookUrl", "botToken", "apiKey", "appToken",
     "accessToken", "userKey", "apiToken",
@@ -719,7 +720,7 @@ export function createRoutes(
     const config = { ...provider.config } as Record<string, unknown>;
     for (const key of SENSITIVE_KEYS) {
       if (key in config && typeof config[key] === "string" && (config[key] as string).length > 0) {
-        config[key] = "••••••••";
+        config[key] = REDACT_SENTINEL;
       }
     }
     return { ...provider, config };
@@ -751,7 +752,7 @@ export function createRoutes(
         body.triggers || [],
         body.enabled,
       );
-      return c.json(provider, 201);
+      return c.json(redactProvider(provider), 201);
     } catch (e: unknown) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
@@ -761,6 +762,19 @@ export function createRoutes(
     const id = c.req.param("id");
     const body = await c.req.json().catch(() => ({}));
     try {
+      // Restore redacted sensitive fields from the existing stored config
+      if (body.config) {
+        const existing = notificationManager.getProvider(id);
+        if (existing) {
+          const incoming = body.config as Record<string, unknown>;
+          const stored = existing.config as unknown as Record<string, unknown>;
+          for (const key of SENSITIVE_KEYS) {
+            if (incoming[key] === REDACT_SENTINEL && key in stored) {
+              incoming[key] = stored[key];
+            }
+          }
+        }
+      }
       const provider = notificationManager.updateProvider(id, {
         name: body.name,
         config: body.config,
@@ -768,7 +782,7 @@ export function createRoutes(
         enabled: body.enabled,
       });
       if (!provider) return c.json({ error: "Provider not found" }, 404);
-      return c.json(provider);
+      return c.json(redactProvider(provider));
     } catch (e: unknown) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }

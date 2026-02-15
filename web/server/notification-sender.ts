@@ -93,11 +93,10 @@ async function sendTelegram(
     }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!res.ok)
-    return {
-      success: false,
-      error: `Telegram: ${res.status} ${await res.text()}`,
-    };
+  if (!res.ok) {
+    const body = (await res.text()).replace(config.botToken, "***");
+    return { success: false, error: `Telegram: ${res.status} ${body}` };
+  }
   return { success: true };
 }
 
@@ -193,7 +192,7 @@ async function sendNtfy(
   config: NtfyConfig,
   event: NotificationEvent,
 ): Promise<SendResult> {
-  const url = `${config.serverUrl.replace(/\/$/, "")}/${config.topic}`;
+  const url = `${config.serverUrl.replace(/\/$/, "")}/${encodeURIComponent(config.topic)}`;
   const headers: Record<string, string> = { Title: "Companion" };
   if (config.accessToken) headers.Authorization = `Bearer ${config.accessToken}`;
   if (config.priority) headers.Priority = String(config.priority);
