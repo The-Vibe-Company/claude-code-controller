@@ -109,6 +109,7 @@ export class RecorderManager {
   private recordingsDir: string;
   private maxLines: number;
   private perSessionEnabled = new Set<string>();
+  private perSessionDisabled = new Set<string>();
   private recorders = new Map<string, SessionRecorder>();
   private dirCreated = false;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -157,15 +158,18 @@ export class RecorderManager {
   }
 
   isRecording(sessionId: string): boolean {
+    if (this.perSessionDisabled.has(sessionId)) return false;
     return this.globalEnabled || this.perSessionEnabled.has(sessionId);
   }
 
   enableForSession(sessionId: string): void {
+    this.perSessionDisabled.delete(sessionId);
     this.perSessionEnabled.add(sessionId);
   }
 
   disableForSession(sessionId: string): void {
     this.perSessionEnabled.delete(sessionId);
+    this.perSessionDisabled.add(sessionId);
     this.stopRecording(sessionId);
   }
 

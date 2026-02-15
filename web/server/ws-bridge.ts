@@ -1234,15 +1234,15 @@ export class WsBridge {
   // ── Transport helpers ───────────────────────────────────────────────────
 
   private sendToCLI(session: Session, ndjson: string) {
-    // Record raw outgoing CLI message
-    this.recorder?.record(session.id, "out", ndjson, "cli", session.backendType, session.state.cwd);
-
     if (!session.cliSocket) {
-      // Queue the message — CLI might still be starting up
+      // Queue the message — CLI might still be starting up.
+      // Don't record here; the message will be recorded when flushed.
       console.log(`[ws-bridge] CLI not yet connected for session ${session.id}, queuing message`);
       session.pendingMessages.push(ndjson);
       return;
     }
+    // Record raw outgoing CLI message (only when actually sending, not when queuing)
+    this.recorder?.record(session.id, "out", ndjson, "cli", session.backendType, session.state.cwd);
     try {
       // NDJSON requires a newline delimiter
       session.cliSocket.send(ndjson + "\n");

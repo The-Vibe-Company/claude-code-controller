@@ -312,6 +312,31 @@ describe("RecorderManager", () => {
     expect(mgr.getRecordingStatus("sess-1").filePath).toBeUndefined();
   });
 
+  it("disableForSession overrides globalEnabled and prevents new recordings", () => {
+    // When globalEnabled is true, disableForSession must still stop recording
+    // for that specific session by adding it to the perSessionDisabled set.
+    const mgr = new RecorderManager({ globalEnabled: true, recordingsDir: tempDir });
+    mgr.record("sess-1", "in", "msg1", "cli", "claude", "/cwd");
+
+    expect(mgr.isRecording("sess-1")).toBe(true);
+
+    mgr.disableForSession("sess-1");
+
+    // Session is no longer recording despite globalEnabled=true
+    expect(mgr.isRecording("sess-1")).toBe(false);
+
+    // New record() calls should be no-ops (no new file created)
+    const filesBefore = readDirSafe(tempDir).length;
+    mgr.record("sess-1", "in", "msg2", "cli", "claude", "/cwd");
+    expect(readDirSafe(tempDir).length).toBe(filesBefore);
+
+    // Re-enabling should work
+    mgr.enableForSession("sess-1");
+    expect(mgr.isRecording("sess-1")).toBe(true);
+
+    mgr.closeAll();
+  });
+
   it("getMaxLines returns configured limit", () => {
     const mgr = new RecorderManager({
       globalEnabled: false,
