@@ -252,12 +252,10 @@ function formatTokenCount(n: number): string {
 
 function CodexTokenDetailsSection({ sessionId }: { sessionId: string }) {
   const details = useStore((s) => s.sessions.get(sessionId)?.codex_token_details);
+  // Use the server-computed context percentage (input+output / contextWindow, capped 0-100)
+  const contextPct = useStore((s) => s.sessions.get(sessionId)?.context_used_percent ?? 0);
 
   if (!details) return null;
-
-  const contextPct = details.modelContextWindow > 0
-    ? Math.round((details.inputTokens / details.modelContextWindow) * 100)
-    : 0;
 
   return (
     <div className="shrink-0 px-4 py-3 border-b border-cc-border space-y-2">
