@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from "bun";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import type {
@@ -23,12 +23,9 @@ import type {
   BackendType,
   McpServerDetail,
   McpServerConfig,
-  PluginInsight,
 } from "./session-types.js";
 import type { SessionStore } from "./session-store.js";
 import type { CodexAdapter } from "./codex-adapter.js";
-import type { EmitResult, PluginManager } from "./plugins/manager.js";
-import type { PluginEvent } from "./plugins/types.js";
 
 // ─── WebSocket data tags ──────────────────────────────────────────────────────
 
@@ -81,10 +78,6 @@ interface Session {
   /** Recently processed browser client_msg_id values for idempotency on reconnect retries */
   processedClientMessageIds: string[];
   processedClientMessageIdSet: Set<string>;
-  /** tool_use_id values that already emitted tool.started */
-  startedToolUseIds: Set<string>;
-  /** Sequential chain to preserve user message ordering when middleware is async. */
-  userMessageChain: Promise<void>;
 }
 
 type GitSessionKey = "git_branch" | "is_worktree" | "repo_root" | "git_ahead" | "git_behind";
@@ -193,7 +186,6 @@ export class WsBridge {
   private autoNamingAttempted = new Set<string>();
   private userMsgCounter = 0;
   private onGitInfoReady: ((sessionId: string, cwd: string, branch: string) => void) | null = null;
-  private pluginManager: PluginManager | null = null;
   private static readonly GIT_SESSION_KEYS: GitSessionKey[] = [
     "git_branch",
     "is_worktree",
@@ -234,10 +226,6 @@ export class WsBridge {
     this.store = store;
   }
 
-  setPluginManager(pluginManager: PluginManager): void {
-    this.pluginManager = pluginManager;
-  }
-
   /** Restore sessions from disk (call once at startup). */
   restoreFromDisk(): number {
     if (!this.store) return 0;
@@ -263,8 +251,6 @@ export class WsBridge {
         processedClientMessageIdSet: new Set(
           Array.isArray(p.processedClientMessageIds) ? p.processedClientMessageIds : [],
         ),
-        startedToolUseIds: new Set(),
-        userMessageChain: Promise.resolve(),
       };
       session.state.backend_type = session.backendType;
       // Resolve git info for restored sessions (may have been persisted without it)
@@ -295,140 +281,6 @@ export class WsBridge {
       nextEventSeq: session.nextEventSeq,
       lastAckSeq: session.lastAckSeq,
       processedClientMessageIds: session.processedClientMessageIds,
-    });
-  }
-
-  private createPluginEvent<T extends PluginEvent["name"]>(
-    name: T,
-    data: Extract<PluginEvent, { name: T }>["data"],
-    options: {
-      source: "routes" | "ws-bridge" | "codex-adapter" | "plugin-manager";
-      sessionId?: string;
-      backendType?: BackendType;
-      correlationId?: string;
-    },
-  ): Extract<PluginEvent, { name: T }> {
-    const event = {
-      name,
-      meta: {
-        eventId: randomUUID(),
-        eventVersion: 2 as const,
-        timestamp: Date.now(),
-        source: options.source,
-        sessionId: options.sessionId,
-        backendType: options.backendType,
-        correlationId: options.correlationId,
-      },
-      data,
-    };
-    return event as unknown as Extract<PluginEvent, { name: T }>;
-  }
-
-  private async emitPluginEvent(event: PluginEvent): Promise<EmitResult> {
-    if (!this.pluginManager) return { insights: [], aborted: false };
-    const sessionId = event.meta.sessionId;
-    const session = sessionId ? this.sessions.get(sessionId) : undefined;
-    try {
-      const result = await this.pluginManager.emit(event, {
-        onInsight: (insight) => {
-          if (session) {
-            this.broadcastPluginInsights(session, [insight as PluginInsight]);
-          }
-        },
-      });
-      return {
-        insights: result.insights as PluginInsight[],
-        permissionDecision: result.permissionDecision,
-        userMessageMutation: result.userMessageMutation,
-        aborted: result.aborted,
-      };
-    } catch (err) {
-      console.error(`[ws-bridge] Plugin event emit failed (${event.name}):`, err);
-      if (session) {
-        this.broadcastPluginInsights(session, [{
-          id: `plugin-manager-${Date.now()}-emit-error`,
-          plugin_id: "plugin-manager",
-          title: "Plugin system error",
-          message: `Failed to process plugin event "${event.name}".`,
-          level: "error",
-          timestamp: Date.now(),
-          session_id: session.id,
-          event_name: event.name,
-        }]);
-      }
-      // Never propagate plugin runtime errors to event callers.
-      // This avoids dropping permission requests if plugin processing fails.
-      return { insights: [], aborted: false };
-    }
-  }
-
-  private broadcastPluginInsights(session: Session, insights: PluginInsight[]): void {
-    for (const insight of insights) {
-      this.broadcastToBrowsers(session, { type: "plugin_insight", insight });
-    }
-  }
-
-  private normalizeToolInput(input: Record<string, unknown>): { command?: string; filePath?: string } {
-    return {
-      command: typeof input.command === "string" ? input.command : undefined,
-      filePath: typeof input.file_path === "string" ? input.file_path : undefined,
-    };
-  }
-
-  private hashPermissionRequest(perm: PermissionRequest): string {
-    const normalized = this.normalizeToolInput(perm.input);
-    return createHash("sha256")
-      .update(JSON.stringify({
-        tool: perm.tool_name,
-        command: normalized.command || "",
-        filePath: normalized.filePath || "",
-      }))
-      .digest("hex");
-  }
-
-  private handlePermissionAbort(
-    session: Session,
-    options: { requestId: string; source: "ws-bridge" | "codex-adapter" },
-  ): void {
-    const message = "Plugin execution aborted while evaluating permission request.";
-    if (options.source === "codex-adapter") {
-      if (session.codexAdapter) {
-        session.codexAdapter.sendBrowserMessage({
-          type: "permission_response",
-          request_id: options.requestId,
-          behavior: "deny",
-          message,
-          client_msg_id: `plugin-abort-${Date.now()}`,
-        });
-      }
-      void this.emitPluginEvent(this.createPluginEvent(
-        "permission.responded",
-        {
-          sessionId: session.id,
-          backendType: session.backendType,
-          requestId: options.requestId,
-          behavior: "deny",
-          automated: true,
-          pluginId: "plugin-manager",
-          message,
-        },
-        {
-          source: "codex-adapter",
-          sessionId: session.id,
-          backendType: session.backendType,
-          correlationId: options.requestId,
-        },
-      ));
-      return;
-    }
-
-    this.handlePermissionResponse(session, {
-      type: "permission_response",
-      request_id: options.requestId,
-      behavior: "deny",
-      message,
-      automated: true,
-      plugin_id: "plugin-manager",
     });
   }
 
@@ -497,8 +349,6 @@ export class WsBridge {
         lastAckSeq: 0,
         processedClientMessageIds: [],
         processedClientMessageIdSet: new Set(),
-        startedToolUseIds: new Set(),
-        userMessageChain: Promise.resolve(),
       };
       this.sessions.set(sessionId, session);
     } else if (backendType) {
@@ -594,23 +444,6 @@ export class WsBridge {
       } else if (msg.type === "status_change") {
         session.state.is_compacting = msg.status === "compacting";
         this.persistSession(session);
-        void this.emitPluginEvent(this.createPluginEvent(
-          "session.status.changed",
-          {
-            sessionId: session.id,
-            backendType: session.backendType,
-            status: msg.status === "compacting" ? "compacting" : (msg.status || "idle"),
-          },
-          {
-            source: "codex-adapter",
-            sessionId: session.id,
-            backendType: session.backendType,
-          },
-        )).then((pluginResult) => {
-          if (pluginResult.insights.length > 0) {
-            this.broadcastPluginInsights(session, pluginResult.insights);
-          }
-        });
       }
 
       // Store assistant/result messages in history for replay
@@ -633,91 +466,8 @@ export class WsBridge {
 
       // Handle permission requests
       if (msg.type === "permission_request") {
-        if (!this.pluginManager) {
-          session.pendingPermissions.set(msg.request.request_id, msg.request);
-          this.persistSession(session);
-          this.broadcastToBrowsers(session, msg);
-          return;
-        }
-
-        const normalizedInput = this.normalizeToolInput(msg.request.input);
-        void this.emitPluginEvent(this.createPluginEvent(
-          "permission.requested",
-          {
-            sessionId: session.id,
-            permission: msg.request,
-            backendType: session.backendType,
-            state: session.state,
-            permissionMode: session.state.permissionMode,
-            requestHash: this.hashPermissionRequest(msg.request),
-            toolInputNormalized: normalizedInput,
-          },
-          {
-            source: "codex-adapter",
-            sessionId: session.id,
-            backendType: session.backendType,
-            correlationId: msg.request.request_id,
-          },
-        )).then((pluginResult) => {
-          if (pluginResult.insights.length > 0) {
-            this.broadcastPluginInsights(session, pluginResult.insights);
-          }
-
-          if (pluginResult.aborted) {
-            this.handlePermissionAbort(session, {
-              requestId: msg.request.request_id,
-              source: "codex-adapter",
-            });
-            return;
-          }
-
-          if (pluginResult.permissionDecision && session.codexAdapter) {
-            session.codexAdapter.sendBrowserMessage({
-              type: "permission_response",
-              request_id: msg.request.request_id,
-              behavior: pluginResult.permissionDecision.behavior,
-              message: pluginResult.permissionDecision.message,
-              updated_input: pluginResult.permissionDecision.updated_input,
-              client_msg_id: `plugin-auto-${Date.now()}`,
-            });
-            void this.emitPluginEvent(this.createPluginEvent(
-              "permission.responded",
-              {
-                sessionId: session.id,
-                backendType: session.backendType,
-                requestId: msg.request.request_id,
-                behavior: pluginResult.permissionDecision.behavior,
-                automated: true,
-                pluginId: pluginResult.permissionDecision.pluginId,
-                message: pluginResult.permissionDecision.message,
-              },
-              {
-                source: "codex-adapter",
-                sessionId: session.id,
-                backendType: session.backendType,
-                correlationId: msg.request.request_id,
-              },
-            ));
-            return;
-          }
-
-          if (!session.codexAdapter) {
-            return;
-          }
-
-          session.pendingPermissions.set(msg.request.request_id, msg.request);
-          this.persistSession(session);
-          this.broadcastToBrowsers(session, msg);
-        }).catch((err: unknown) => {
-          console.error(`[ws-bridge] Plugin emit failed in codex permission flow, falling back:`, err);
-          if (!session.codexAdapter) {
-            return;
-          }
-          session.pendingPermissions.set(msg.request.request_id, msg.request);
-          this.persistSession(session);
-          this.broadcastToBrowsers(session, msg);
-        });
-        return;
+        session.pendingPermissions.set(msg.request.request_id, msg.request);
+        this.persistSession(session);
       }
 
       this.broadcastToBrowsers(session, msg);
@@ -759,15 +509,6 @@ export class WsBridge {
       this.persistSession(session);
       console.log(`[ws-bridge] Codex adapter disconnected for session ${sessionId}`);
       this.broadcastToBrowsers(session, { type: "cli_disconnected" });
-      void this.emitPluginEvent(this.createPluginEvent(
-        "session.disconnected",
-        { sessionId, backendType: session.backendType },
-        { source: "codex-adapter", sessionId, backendType: session.backendType },
-      )).then((pluginResult) => {
-        if (pluginResult.insights.length > 0) {
-          this.broadcastPluginInsights(session, pluginResult.insights);
-        }
-      });
     });
 
     // Flush any messages queued while waiting for the adapter
@@ -787,15 +528,6 @@ export class WsBridge {
     // Notify browsers that the backend is connected
     this.broadcastToBrowsers(session, { type: "cli_connected" });
     console.log(`[ws-bridge] Codex adapter attached for session ${sessionId}`);
-    void this.emitPluginEvent(this.createPluginEvent(
-      "session.connected",
-      { sessionId, backendType: session.backendType },
-      { source: "codex-adapter", sessionId, backendType: session.backendType },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
   }
 
   // ── CLI WebSocket handlers ──────────────────────────────────────────────
@@ -805,15 +537,6 @@ export class WsBridge {
     session.cliSocket = ws;
     console.log(`[ws-bridge] CLI connected for session ${sessionId}`);
     this.broadcastToBrowsers(session, { type: "cli_connected" });
-    void this.emitPluginEvent(this.createPluginEvent(
-      "session.connected",
-      { sessionId, backendType: session.backendType },
-      { source: "ws-bridge", sessionId, backendType: session.backendType },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
 
     // Flush any messages that were queued while waiting for CLI to connect
     if (session.pendingMessages.length > 0) {
@@ -859,15 +582,6 @@ export class WsBridge {
       this.broadcastToBrowsers(session, { type: "permission_cancelled", request_id: reqId });
     }
     session.pendingPermissions.clear();
-    void this.emitPluginEvent(this.createPluginEvent(
-      "session.disconnected",
-      { sessionId, backendType: session.backendType },
-      { source: "ws-bridge", sessionId, backendType: session.backendType },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
   }
 
   // ── Browser WebSocket handlers ──────────────────────────────────────────
@@ -1036,23 +750,6 @@ export class WsBridge {
         type: "status_change",
         status: msg.status ?? null,
       });
-      void this.emitPluginEvent(this.createPluginEvent(
-        "session.status.changed",
-        {
-          sessionId: session.id,
-          backendType: session.backendType,
-          status: msg.status === "compacting" ? "compacting" : "idle",
-        },
-        {
-          source: "ws-bridge",
-          sessionId: session.id,
-          backendType: session.backendType,
-        },
-      )).then((pluginResult) => {
-        if (pluginResult.insights.length > 0) {
-          this.broadcastPluginInsights(session, pluginResult.insights);
-        }
-      });
     }
     // Other system subtypes (compact_boundary, task_notification, etc.) can be forwarded as needed
   }
@@ -1067,31 +764,6 @@ export class WsBridge {
     session.messageHistory.push(browserMsg);
     this.broadcastToBrowsers(session, browserMsg);
     this.persistSession(session);
-    const text = msg.message.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-    const toolBlocks = msg.message.content.filter((b) => b.type === "tool_use");
-    void this.emitPluginEvent(this.createPluginEvent(
-      "message.assistant",
-      {
-        sessionId: session.id,
-        backendType: session.backendType,
-        text,
-        hasToolUse: toolBlocks.length > 0,
-        toolNames: toolBlocks.map((b) => b.name),
-      },
-      {
-        source: "ws-bridge",
-        sessionId: session.id,
-        backendType: session.backendType,
-        correlationId: msg.message.id,
-      },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
   }
 
   private handleResultMessage(session: Session, msg: CLIResultMessage) {
@@ -1129,29 +801,6 @@ export class WsBridge {
     session.messageHistory.push(browserMsg);
     this.broadcastToBrowsers(session, browserMsg);
     this.persistSession(session);
-    void this.emitPluginEvent(this.createPluginEvent(
-      "result.received",
-      {
-        sessionId: session.id,
-        backendType: session.backendType,
-        result: msg,
-        success: !msg.is_error,
-        durationMs: msg.duration_ms,
-        costUsd: msg.total_cost_usd,
-        numTurns: msg.num_turns,
-        errorSummary: msg.errors?.join(", "),
-      },
-      {
-        source: "ws-bridge",
-        sessionId: session.id,
-        backendType: session.backendType,
-        correlationId: msg.uuid,
-      },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
 
     // Trigger auto-naming after the first successful result for this session.
     // Note: num_turns counts all internal tool-use turns, so it's typically > 1
@@ -1191,111 +840,17 @@ export class WsBridge {
         agent_id: msg.request.agent_id,
         timestamp: Date.now(),
       };
+      session.pendingPermissions.set(msg.request_id, perm);
 
-      if (!this.pluginManager) {
-        session.pendingPermissions.set(msg.request_id, perm);
-        this.broadcastToBrowsers(session, {
-          type: "permission_request",
-          request: perm,
-        });
-        this.persistSession(session);
-        return;
-      }
-
-      const normalizedInput = this.normalizeToolInput(perm.input);
-      void this.emitPluginEvent(this.createPluginEvent(
-        "permission.requested",
-        {
-          sessionId: session.id,
-          permission: perm,
-          backendType: session.backendType,
-          state: session.state,
-          permissionMode: session.state.permissionMode,
-          requestHash: this.hashPermissionRequest(perm),
-          toolInputNormalized: normalizedInput,
-        },
-        {
-          source: "ws-bridge",
-          sessionId: session.id,
-          backendType: session.backendType,
-          correlationId: msg.request_id,
-        },
-      )).then((pluginResult) => {
-        if (pluginResult.insights.length > 0) {
-          this.broadcastPluginInsights(session, pluginResult.insights);
-        }
-
-        if (pluginResult.aborted) {
-          this.handlePermissionAbort(session, {
-            requestId: msg.request_id,
-            source: "ws-bridge",
-          });
-          return;
-        }
-
-        if (pluginResult.permissionDecision) {
-          this.handlePermissionResponse(session, {
-            type: "permission_response",
-            request_id: msg.request_id,
-            behavior: pluginResult.permissionDecision.behavior,
-            message: pluginResult.permissionDecision.message,
-            updated_input: pluginResult.permissionDecision.updated_input ?? perm.input,
-            plugin_id: pluginResult.permissionDecision.pluginId,
-            automated: true,
-          });
-          return;
-        }
-
-        if (!session.cliSocket) {
-          return;
-        }
-
-        session.pendingPermissions.set(msg.request_id, perm);
-        this.broadcastToBrowsers(session, {
-          type: "permission_request",
-          request: perm,
-        });
-        this.persistSession(session);
-      }).catch((err: unknown) => {
-        console.error(`[ws-bridge] Plugin emit failed in Claude permission flow, falling back:`, err);
-        if (!session.cliSocket) {
-          return;
-        }
-        session.pendingPermissions.set(msg.request_id, perm);
-        this.broadcastToBrowsers(session, {
-          type: "permission_request",
-          request: perm,
-        });
-        this.persistSession(session);
+      this.broadcastToBrowsers(session, {
+        type: "permission_request",
+        request: perm,
       });
+      this.persistSession(session);
     }
   }
 
   private handleToolProgress(session: Session, msg: CLIToolProgressMessage) {
-    if (!session.startedToolUseIds.has(msg.tool_use_id)) {
-      session.startedToolUseIds.add(msg.tool_use_id);
-      void this.emitPluginEvent(this.createPluginEvent(
-        "tool.started",
-        {
-          sessionId: session.id,
-          backendType: session.backendType,
-          toolUseId: msg.tool_use_id,
-          toolName: msg.tool_name,
-          parentToolUseId: msg.parent_tool_use_id,
-        },
-        {
-          source: "ws-bridge",
-          sessionId: session.id,
-          backendType: session.backendType,
-          correlationId: msg.tool_use_id,
-        },
-      )).then((pluginResult) => {
-        if (pluginResult.insights.length > 0) {
-          this.broadcastPluginInsights(session, pluginResult.insights);
-        }
-      });
-    }
-
     this.broadcastToBrowsers(session, {
       type: "tool_progress",
       tool_use_id: msg.tool_use_id,
@@ -1305,28 +860,6 @@ export class WsBridge {
   }
 
   private handleToolUseSummary(session: Session, msg: CLIToolUseSummaryMessage) {
-    for (const toolUseId of msg.preceding_tool_use_ids) {
-      session.startedToolUseIds.delete(toolUseId);
-      void this.emitPluginEvent(this.createPluginEvent(
-        "tool.finished",
-        {
-          sessionId: session.id,
-          backendType: session.backendType,
-          toolUseId,
-        },
-        {
-          source: "ws-bridge",
-          sessionId: session.id,
-          backendType: session.backendType,
-          correlationId: toolUseId,
-        },
-      )).then((pluginResult) => {
-        if (pluginResult.insights.length > 0) {
-          this.broadcastPluginInsights(session, pluginResult.insights);
-        }
-      });
-    }
-
     this.broadcastToBrowsers(session, {
       type: "tool_use_summary",
       summary: msg.summary,
@@ -1371,33 +904,22 @@ export class WsBridge {
       this.rememberClientMessage(session, msg.client_msg_id);
     }
 
-    if (msg.type === "user_message") {
-      this.enqueueUserMessage(session, msg);
-      return;
-    }
-
     // For Codex sessions, delegate entirely to the adapter
     if (session.backendType === "codex") {
+      // Store user messages in history for replay with stable ID for dedup on reconnect
+      if (msg.type === "user_message") {
+        const ts = Date.now();
+        session.messageHistory.push({
+          type: "user_message",
+          content: msg.content,
+          timestamp: ts,
+          id: `user-${ts}-${this.userMsgCounter++}`,
+        });
+        this.persistSession(session);
+      }
       if (msg.type === "permission_response") {
         session.pendingPermissions.delete(msg.request_id);
         this.persistSession(session);
-        void this.emitPluginEvent(this.createPluginEvent(
-          "permission.responded",
-          {
-            sessionId: session.id,
-            backendType: session.backendType,
-            requestId: msg.request_id,
-            behavior: msg.behavior,
-            automated: false,
-            message: msg.message,
-          },
-          {
-            source: "ws-bridge",
-            sessionId: session.id,
-            backendType: session.backendType,
-            correlationId: msg.request_id,
-          },
-        ));
       }
 
       if (session.codexAdapter) {
@@ -1414,6 +936,10 @@ export class WsBridge {
 
     // Claude Code path (existing logic)
     switch (msg.type) {
+      case "user_message":
+        this.handleUserMessage(session, msg);
+        break;
+
       case "permission_response":
         this.handlePermissionResponse(session, msg);
         break;
@@ -1522,71 +1048,6 @@ export class WsBridge {
     }
   }
 
-  private enqueueUserMessage(
-    session: Session,
-    msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] },
-  ) {
-    if (!this.pluginManager) {
-      this.handleUserMessage(session, msg);
-      return;
-    }
-    session.userMessageChain = session.userMessageChain
-      .then(() => this.processUserMessage(session, msg))
-      .catch((err) => {
-        console.error(`[ws-bridge] Failed to process user message for session ${session.id}:`, err);
-      });
-  }
-
-  private async processUserMessage(
-    session: Session,
-    msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] },
-  ): Promise<void> {
-    const middlewareResult = await this.emitPluginEvent(this.createPluginEvent(
-      "user.message.before_send",
-      {
-        sessionId: session.id,
-        backendType: session.backendType,
-        state: session.state,
-        content: msg.content,
-        images: msg.images,
-      },
-      {
-        source: "ws-bridge",
-        sessionId: session.id,
-        backendType: session.backendType,
-      },
-    ));
-    if (middlewareResult.insights.length > 0) {
-      this.broadcastPluginInsights(session, middlewareResult.insights);
-    }
-
-    const transformedContent = middlewareResult.userMessageMutation?.content ?? msg.content;
-    const transformedImages = middlewareResult.userMessageMutation?.images ?? msg.images;
-    const blocked = middlewareResult.aborted || middlewareResult.userMessageMutation?.blocked === true;
-    if (blocked) {
-      const blockMessage = middlewareResult.userMessageMutation?.message || "Blocked by plugin middleware.";
-      const blockPluginId = middlewareResult.userMessageMutation?.pluginId || "plugin-middleware";
-      this.broadcastPluginInsights(session, [{
-        id: `${blockPluginId}-${Date.now()}-user-blocked`,
-        plugin_id: blockPluginId,
-        title: "User message blocked",
-        message: blockMessage,
-        level: "warning",
-        timestamp: Date.now(),
-        session_id: session.id,
-        event_name: "user.message.before_send",
-      }]);
-      return;
-    }
-
-    this.handleUserMessage(session, {
-      type: "user_message",
-      content: transformedContent,
-      session_id: msg.session_id,
-      images: transformedImages,
-    });
-  }
-
   private handleUserMessage(
     session: Session,
     msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] }
@@ -1600,67 +1061,35 @@ export class WsBridge {
       id: `user-${ts}-${this.userMsgCounter++}`,
     });
 
-    if (session.backendType === "codex") {
-      if (session.codexAdapter) {
-        session.codexAdapter.sendBrowserMessage(msg);
-      } else {
-        console.log(`[ws-bridge] Codex adapter not yet attached for session ${session.id}, queuing user_message`);
-        session.pendingMessages.push(JSON.stringify(msg));
+    // Build content: if images are present, use content block array; otherwise plain string
+    let content: string | unknown[];
+    if (msg.images?.length) {
+      const blocks: unknown[] = [];
+      for (const img of msg.images) {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: img.media_type, data: img.data },
+        });
       }
+      blocks.push({ type: "text", text: msg.content });
+      content = blocks;
     } else {
-      // Build content: if images are present, use content block array; otherwise plain string
-      let content: string | unknown[];
-      if (msg.images?.length) {
-        const blocks: unknown[] = [];
-        for (const img of msg.images) {
-          blocks.push({
-            type: "image",
-            source: { type: "base64", media_type: img.media_type, data: img.data },
-          });
-        }
-        blocks.push({ type: "text", text: msg.content });
-        content = blocks;
-      } else {
-        content = msg.content;
-      }
-
-      const ndjson = JSON.stringify({
-        type: "user",
-        message: { role: "user", content },
-        parent_tool_use_id: null,
-        session_id: msg.session_id || session.state.session_id || "",
-      });
-      this.sendToCLI(session, ndjson);
+      content = msg.content;
     }
+
+    const ndjson = JSON.stringify({
+      type: "user",
+      message: { role: "user", content },
+      parent_tool_use_id: null,
+      session_id: msg.session_id || session.state.session_id || "",
+    });
+    this.sendToCLI(session, ndjson);
     this.persistSession(session);
-    void this.emitPluginEvent(this.createPluginEvent(
-      "user.message.sent",
-      {
-        sessionId: session.id,
-        backendType: session.backendType,
-        content: msg.content,
-        hasImages: Array.isArray(msg.images) && msg.images.length > 0,
-      },
-      {
-        source: "ws-bridge",
-        sessionId: session.id,
-        backendType: session.backendType,
-      },
-    ));
   }
 
   private handlePermissionResponse(
     session: Session,
-    msg: {
-      type: "permission_response";
-      request_id: string;
-      behavior: "allow" | "deny";
-      updated_input?: Record<string, unknown>;
-      updated_permissions?: unknown[];
-      message?: string;
-      automated?: boolean;
-      plugin_id?: string;
-    }
+    msg: { type: "permission_response"; request_id: string; behavior: "allow" | "deny"; updated_input?: Record<string, unknown>; updated_permissions?: unknown[]; message?: string }
   ) {
     // Remove from pending
     const pending = session.pendingPermissions.get(msg.request_id);
@@ -1697,29 +1126,6 @@ export class WsBridge {
       });
       this.sendToCLI(session, ndjson);
     }
-
-    void this.emitPluginEvent(this.createPluginEvent(
-      "permission.responded",
-      {
-        sessionId: session.id,
-        backendType: session.backendType,
-        requestId: msg.request_id,
-        behavior: msg.behavior,
-        automated: msg.automated === true,
-        pluginId: msg.plugin_id,
-        message: msg.message,
-      },
-      {
-        source: "ws-bridge",
-        sessionId: session.id,
-        backendType: session.backendType,
-        correlationId: msg.request_id,
-      },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
   }
 
   private handleInterrupt(session: Session) {
@@ -1793,23 +1199,6 @@ export class WsBridge {
       resolve: (response) => {
         const servers = (response as { mcpServers?: McpServerDetail[] }).mcpServers ?? [];
         this.broadcastToBrowsers(session, { type: "mcp_status", servers });
-        void this.emitPluginEvent(this.createPluginEvent(
-          "mcp.status.changed",
-          {
-            sessionId: session.id,
-            backendType: session.backendType,
-            servers: servers.map((s) => ({ name: s.name, status: s.status })),
-          },
-          {
-            source: "ws-bridge",
-            sessionId: session.id,
-            backendType: session.backendType,
-          },
-        )).then((pluginResult) => {
-          if (pluginResult.insights.length > 0) {
-            this.broadcastPluginInsights(session, pluginResult.insights);
-          }
-        });
       },
     });
   }
@@ -1851,15 +1240,6 @@ export class WsBridge {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     this.broadcastToBrowsers(session, { type: "session_name_update", name });
-    void this.emitPluginEvent(this.createPluginEvent(
-      "session.name.updated",
-      { sessionId, name },
-      { source: "ws-bridge", sessionId, backendType: session.backendType },
-    )).then((pluginResult) => {
-      if (pluginResult.insights.length > 0) {
-        this.broadcastPluginInsights(session, pluginResult.insights);
-      }
-    });
   }
 
   private shouldBufferForReplay(msg: BrowserIncomingMessage): msg is ReplayableBrowserIncomingMessage {

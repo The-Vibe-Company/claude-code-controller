@@ -14,8 +14,6 @@ import { UpdateBanner } from "./components/UpdateBanner.js";
 import { SettingsPage } from "./components/SettingsPage.js";
 import { EnvManager } from "./components/EnvManager.js";
 import { TerminalPage } from "./components/TerminalPage.js";
-import { PluginsPage } from "./components/PluginsPage.js";
-import { ToastContainer } from "./components/ToastContainer.js";
 
 function useHash() {
   return useSyncExternalStore(
@@ -35,8 +33,7 @@ export default function App() {
   const isSettingsPage = hash === "#/settings";
   const isTerminalPage = hash === "#/terminal";
   const isEnvironmentsPage = hash === "#/environments";
-  const isPluginsPage = hash === "#/plugins";
-  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage && !isPluginsPage;
+  const isSessionView = !isSettingsPage && !isTerminalPage && !isEnvironmentsPage;
 
   useEffect(() => {
     capturePageView(hash || "#/");
@@ -115,12 +112,6 @@ export default function App() {
             </div>
           )}
 
-          {isPluginsPage && (
-            <div className="absolute inset-0">
-              <PluginsPage embedded />
-            </div>
-          )}
-
           {isSessionView && (
             <>
               {/* Chat tab — visible when activeTab is "chat" or no session */}
@@ -166,8 +157,6 @@ export default function App() {
           </div>
         </>
       )}
-
-      <ToastContainer />
     </div>
   );
 }
