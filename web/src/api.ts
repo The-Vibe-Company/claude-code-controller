@@ -534,7 +534,7 @@ export const api = {
 
   // Assistant
   getAssistantStatus: () => get<AssistantStatus>("/assistant/status"),
-  launchAssistant: () => post<AssistantStatus>("/assistant/launch"),
+  launchAssistant: () => post<{ ok: boolean; sessionId: string }>("/assistant/launch"),
   stopAssistant: () => post<{ ok: boolean }>("/assistant/stop"),
   getAssistantConfig: () => get<AssistantConfig>("/assistant/config"),
   updateAssistantConfig: (data: Partial<AssistantConfig>) =>

@@ -75,6 +75,9 @@ export function Sidebar() {
     api.getAssistantStatus().then((status) => {
       if (status.running && status.sessionId) {
         useStore.getState().setAssistantSessionId(status.sessionId);
+      } else {
+        // Clear stale session ID if the assistant is not running
+        useStore.getState().setAssistantSessionId(null);
       }
     }).catch(() => {
       // server not ready

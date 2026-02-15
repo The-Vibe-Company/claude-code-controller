@@ -287,6 +287,9 @@ export class AssistantManager {
     await new Promise((r) => setTimeout(r, RELAUNCH_DELAY_MS));
     this.relaunching = false;
 
+    // Re-check after delay — stop() may have cleared the session
+    if (sessionId !== this.config.sessionId || !this.config.enabled) return;
+
     // Try to relaunch with --resume
     if (this.config.cliSessionId) {
       console.log("[assistant] Relaunching with --resume...");
