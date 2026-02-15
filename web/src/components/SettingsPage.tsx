@@ -3,6 +3,8 @@ import { api } from "../api.js";
 import { useStore } from "../store.js";
 import { getTelemetryPreferenceEnabled, setTelemetryPreferenceEnabled } from "../analytics.js";
 
+import { NotificationSettings } from "./NotificationSettings.js";
+
 interface SettingsPageProps {
   embedded?: boolean;
 }
@@ -21,6 +23,7 @@ export function SettingsPage({ embedded = false }: SettingsPageProps) {
   const toggleNotificationSound = useStore((s) => s.toggleNotificationSound);
   const notificationDesktop = useStore((s) => s.notificationDesktop);
   const setNotificationDesktop = useStore((s) => s.setNotificationDesktop);
+
   const updateInfo = useStore((s) => s.updateInfo);
   const setUpdateInfo = useStore((s) => s.setUpdateInfo);
   const notificationApiAvailable = typeof Notification !== "undefined";
@@ -217,6 +220,7 @@ export function SettingsPage({ embedded = false }: SettingsPageProps) {
               <span className="text-xs text-cc-muted">{notificationDesktop ? "On" : "Off"}</span>
             </button>
           )}
+          <NotificationSettings embedded />
         </div>
 
         <div className="mt-4 bg-cc-card border border-cc-border rounded-xl p-4 sm:p-5 space-y-3">

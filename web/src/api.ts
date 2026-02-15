@@ -1,5 +1,10 @@
 import type { SdkSessionInfo } from "./types.js";
 import { captureEvent, captureException } from "./analytics.js";
+import type {
+  NotificationProvider,
+  ProviderConfig,
+  NotificationTrigger,
+} from "../server/notification-types.js";
 
 const BASE = "/api";
 
@@ -420,6 +425,32 @@ export const api = {
   getSettings: () => get<AppSettings>("/settings"),
   updateSettings: (data: { openrouterApiKey?: string; openrouterModel?: string }) =>
     put<AppSettings>("/settings", data),
+
+  // Notifications
+  listNotificationProviders: () => get<NotificationProvider[]>("/notifications"),
+  getNotificationProvider: (id: string) =>
+    get<NotificationProvider>(`/notifications/${encodeURIComponent(id)}`),
+  createNotificationProvider: (data: {
+    name: string;
+    config: ProviderConfig;
+    triggers: NotificationTrigger[];
+    enabled?: boolean;
+  }) => post<NotificationProvider>("/notifications", data),
+  updateNotificationProvider: (
+    id: string,
+    data: {
+      name?: string;
+      config?: ProviderConfig;
+      triggers?: NotificationTrigger[];
+      enabled?: boolean;
+    },
+  ) => put<NotificationProvider>(`/notifications/${encodeURIComponent(id)}`, data),
+  deleteNotificationProvider: (id: string) =>
+    del(`/notifications/${encodeURIComponent(id)}`),
+  testNotificationProvider: (id: string) =>
+    post<{ success: boolean; error?: string }>(
+      `/notifications/${encodeURIComponent(id)}/test`,
+    ),
 
   // Git operations
   getRepoInfo: (path: string) =>

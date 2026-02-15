@@ -2,6 +2,7 @@ import { useStore } from "./store.js";
 import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
 import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
+import { showDesktopNotification } from "./utils/desktop-notifications.js";
 
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -122,12 +123,6 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
       }
     }
   }
-}
-
-function sendBrowserNotification(title: string, body: string, tag: string) {
-  if (typeof Notification === "undefined") return;
-  if (Notification.permission !== "granted") return;
-  new Notification(title, { body, tag });
 }
 
 let idCounter = 0;
@@ -352,8 +347,14 @@ function handleParsedMessage(
       if (!document.hasFocus() && store.notificationSound) {
         playNotificationSound();
       }
-      if (!document.hasFocus() && store.notificationDesktop) {
-        sendBrowserNotification("Session completed", "Claude finished the task", sessionId);
+      // Desktop notification (browser-side)
+      if (!document.hasFocus() && useStore.getState().notificationDesktop) {
+        const sessionName = store.sessionNames.get(sessionId) || sessionId;
+        showDesktopNotification(
+          "Companion",
+          `${sessionName}: ${r.is_error ? "Session error" : "Session complete"}`,
+          sessionId,
+        );
       }
       if (r.is_error && r.errors?.length) {
         store.appendMessage(sessionId, {
@@ -368,12 +369,13 @@ function handleParsedMessage(
 
     case "permission_request": {
       store.addPermission(sessionId, data.request);
-      if (!document.hasFocus() && store.notificationDesktop) {
-        const req = data.request;
-        sendBrowserNotification(
-          "Permission needed",
-          `${req.tool_name}: approve or deny`,
-          req.request_id,
+      // Desktop notification for permission requests
+      if (!document.hasFocus() && useStore.getState().notificationDesktop) {
+        const sessionName = store.sessionNames.get(sessionId) || sessionId;
+        showDesktopNotification(
+          "Companion",
+          `${sessionName}: Permission requested - ${data.request.tool_name || "unknown"}`,
+          data.request.request_id,
         );
       }
       // Also extract tasks and changed files from permission requests
@@ -476,6 +478,8 @@ function handleParsedMessage(
       store.setMcpServers(sessionId, data.servers);
       break;
     }
+
+
 
     case "message_history": {
       const chatMessages: ChatMessage[] = [];

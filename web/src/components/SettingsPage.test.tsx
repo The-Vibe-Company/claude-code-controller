@@ -41,6 +41,7 @@ const mockApi = {
   updateSettings: vi.fn(),
   forceCheckForUpdate: vi.fn(),
   triggerUpdate: vi.fn(),
+  listNotificationProviders: vi.fn(),
 };
 
 const mockTelemetry = {
@@ -54,6 +55,7 @@ vi.mock("../api.js", () => ({
     updateSettings: (...args: unknown[]) => mockApi.updateSettings(...args),
     forceCheckForUpdate: (...args: unknown[]) => mockApi.forceCheckForUpdate(...args),
     triggerUpdate: (...args: unknown[]) => mockApi.triggerUpdate(...args),
+    listNotificationProviders: (...args: unknown[]) => mockApi.listNotificationProviders(...args),
   },
 }));
 
@@ -67,6 +69,10 @@ vi.mock("../store.js", () => {
   useStoreFn.getState = () => mockState;
   return { useStore: useStoreFn };
 });
+
+vi.mock("../utils/desktop-notifications.js", () => ({
+  showDesktopNotification: vi.fn(),
+}));
 
 import { SettingsPage } from "./SettingsPage.js";
 
@@ -95,6 +101,7 @@ beforeEach(() => {
     message: "Update started. Server will restart shortly.",
   });
   mockTelemetry.getTelemetryPreferenceEnabled.mockReturnValue(true);
+  mockApi.listNotificationProviders.mockResolvedValue([]);
 });
 
 describe("SettingsPage", () => {

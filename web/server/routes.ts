@@ -17,6 +17,9 @@ import * as sessionNames from "./session-names.js";
 import { containerManager, type ContainerConfig, type ContainerInfo } from "./container-manager.js";
 import { DEFAULT_OPENROUTER_MODEL, getSettings, updateSettings } from "./settings-manager.js";
 import { getUsageLimits } from "./usage-limits.js";
+import * as notificationManager from "./notification-manager.js";
+import { sendNotification } from "./notification-sender.js";
+import type { NotificationEvent, NotificationProvider } from "./notification-types.js";
 import {
   getUpdateState,
   checkForUpdate,
@@ -745,6 +748,107 @@ export function createRoutes(
       openrouterApiKeyConfigured: !!settings.openrouterApiKey.trim(),
       openrouterModel: settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
     });
+  });
+
+  // ─── Notifications (~/.companion/notifications.json) ─────────────────
+
+  const REDACT_SENTINEL = "••••••••";
+  const SENSITIVE_KEYS = new Set([
+    "webhookUrl", "botToken", "apiKey", "appToken",
+    "accessToken", "userKey", "apiToken",
+  ]);
+
+  function redactProvider(provider: NotificationProvider) {
+    const config = { ...provider.config } as Record<string, unknown>;
+    for (const key of SENSITIVE_KEYS) {
+      if (key in config && typeof config[key] === "string" && (config[key] as string).length > 0) {
+        config[key] = REDACT_SENTINEL;
+      }
+    }
+    return { ...provider, config };
+  }
+
+  api.get("/notifications", (c) => {
+    try {
+      return c.json(notificationManager.listProviders().map(redactProvider));
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  });
+
+  api.get("/notifications/:id", (c) => {
+    const provider = notificationManager.getProvider(c.req.param("id"));
+    if (!provider) return c.json({ error: "Provider not found" }, 404);
+    return c.json(redactProvider(provider));
+  });
+
+  api.post("/notifications", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      if (!body.config || !body.config.type) {
+        return c.json({ error: "Provider config with a valid type is required" }, 400);
+      }
+      const provider = notificationManager.createProvider(
+        body.name,
+        body.config,
+        body.triggers || [],
+        body.enabled,
+      );
+      return c.json(redactProvider(provider), 201);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  api.put("/notifications/:id", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      // Restore redacted sensitive fields from the existing stored config
+      if (body.config) {
+        const existing = notificationManager.getProvider(id);
+        if (existing) {
+          const incoming = body.config as Record<string, unknown>;
+          const stored = existing.config as unknown as Record<string, unknown>;
+          for (const key of SENSITIVE_KEYS) {
+            if (incoming[key] === REDACT_SENTINEL && key in stored) {
+              incoming[key] = stored[key];
+            }
+          }
+        }
+      }
+      const provider = notificationManager.updateProvider(id, {
+        name: body.name,
+        config: body.config,
+        triggers: body.triggers,
+        enabled: body.enabled,
+      });
+      if (!provider) return c.json({ error: "Provider not found" }, 404);
+      return c.json(redactProvider(provider));
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  api.delete("/notifications/:id", (c) => {
+    const deleted = notificationManager.deleteProvider(c.req.param("id"));
+    if (!deleted) return c.json({ error: "Provider not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  api.post("/notifications/:id/test", async (c) => {
+    const provider = notificationManager.getProvider(c.req.param("id"));
+    if (!provider) return c.json({ error: "Provider not found" }, 404);
+
+    const testEvent: NotificationEvent = {
+      trigger: "session_complete",
+      sessionId: "test-session",
+      sessionName: "Test Session",
+      message: "This is a test notification from Companion.",
+    };
+
+    const result = await sendNotification(provider, testEvent);
+    return c.json(result);
   });
 
   // ─── Git operations ─────────────────────────────────────────────────

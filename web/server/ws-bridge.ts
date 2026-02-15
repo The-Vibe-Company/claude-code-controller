@@ -195,6 +195,12 @@ export class WsBridge {
     "git_ahead",
     "git_behind",
   ];
+  private onNotificationTrigger: ((
+    trigger: "session_complete" | "session_error" | "permission_requested",
+    sessionId: string,
+    sessionCwd: string,
+    message: string,
+  ) => void) | null = null;
 
   /** Register a callback for when we learn the CLI's internal session ID. */
   onCLISessionIdReceived(cb: (sessionId: string, cliSessionId: string) => void): void {
@@ -214,6 +220,16 @@ export class WsBridge {
   /** Register a callback for when git info is resolved and branch is known. */
   onSessionGitInfoReadyCallback(cb: (sessionId: string, cwd: string, branch: string) => void): void {
     this.onGitInfoReady = cb;
+  }
+
+  /** Register a callback for notification triggers (session complete/error, permission requested). */
+  onNotificationTriggerCallback(cb: (
+    trigger: "session_complete" | "session_error" | "permission_requested",
+    sessionId: string,
+    sessionCwd: string,
+    message: string,
+  ) => void): void {
+    this.onNotificationTrigger = cb;
   }
 
   /** Push a message to all connected browsers for a session (public, for PRPoller etc.). */
@@ -826,6 +842,16 @@ export class WsBridge {
     this.broadcastToBrowsers(session, browserMsg);
     this.persistSession(session);
 
+    // Fire notification trigger
+    if (this.onNotificationTrigger) {
+      const trigger = msg.is_error ? "session_error" : "session_complete";
+      const cwd = session.state.cwd || session.id;
+      const message = msg.is_error
+        ? `Session error: ${msg.errors?.join(", ") || "unknown error"}`
+        : `Session completed (${msg.num_turns} turns, $${(msg.total_cost_usd || 0).toFixed(4)})`;
+      this.onNotificationTrigger(trigger, session.id, cwd, message);
+    }
+
     // Trigger auto-naming after the first successful result for this session.
     // Note: num_turns counts all internal tool-use turns, so it's typically > 1
     // even on the first user interaction. We track per-session instead.
@@ -871,6 +897,16 @@ export class WsBridge {
         request: perm,
       });
       this.persistSession(session);
+
+      // Fire notification trigger for permission requests
+      if (this.onNotificationTrigger) {
+        this.onNotificationTrigger(
+          "permission_requested",
+          session.id,
+          session.state.cwd || session.id,
+          `Permission requested: ${msg.request.tool_name || "unknown"}`,
+        );
+      }
     }
   }
 
