@@ -5,8 +5,8 @@
   --color-cc-bg: #F5F5F0;
   --color-cc-fg: #1a1a18;
   --color-cc-card: #FFFFFF;
-  --color-cc-primary: #ae5630;
-  --color-cc-primary-hover: #c4643a;
+  --color-cc-primary: #0d9488;
+  --color-cc-primary-hover: #14b8a6;
   --color-cc-user-bubble: #DDD9CE;
   --color-cc-border: rgba(0,0,0,0.15);
   --color-cc-muted: #7d796e;
@@ -122,8 +122,8 @@
   --color-cc-bg: #2b2a27;
   --color-cc-fg: #eeeeee;
   --color-cc-card: #1f1e1b;
-  --color-cc-primary: #ae5630;
-  --color-cc-primary-hover: #c4643a;
+  --color-cc-primary: #14b8a6;
+  --color-cc-primary-hover: #2dd4bf;
   --color-cc-user-bubble: #393937;
   --color-cc-border: rgba(255,255,255,0.08);
   --color-cc-muted: #8a8780;
@@ -228,7 +228,7 @@ select {
   padding: 4px 12px;
   color: var(--color-cc-primary);
   font-size: 11px;
-  background: rgba(174, 86, 48, 0.06);
+  background: color-mix(in srgb, var(--color-cc-primary) 6%, transparent);
 }
 .diff-line {
   display: flex;

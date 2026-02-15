@@ -111,6 +111,23 @@ function McpServerRow({
                 <span className="font-mono text-[10px] break-all">{server.config.url}</span>
               </div>
             )}
+            {server.config.env && Object.keys(server.config.env).length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-cc-muted/60">Environment:</span>
+                {Object.entries(server.config.env).map(([key, value]) => (
+                  <div key={key} className="flex items-start gap-1">
+                    <span className="font-mono text-[10px] text-cc-accent/80">{key}</span>
+                    <span className="text-cc-muted/40">=</span>
+                    <span className="font-mono text-[10px] text-cc-muted/80 break-all">
+                      {/* Partially mask sensitive values */}
+                      {key.toLowerCase().includes("key") || key.toLowerCase().includes("secret") || key.toLowerCase().includes("token")
+                        ? `${value.slice(0, 8)}...`
+                        : value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-1">
               <span className="text-cc-muted/60">Scope:</span>
               <span>{server.scope}</span>
@@ -158,6 +175,20 @@ function McpServerRow({
 
 type ServerType = "stdio" | "sse" | "http";
 
+// Common MCP server presets with templates
+const MCP_PRESETS: Array<{ id: string; name: string; command: string; args: string; envVars: Array<{ key: string; value: string; label: string }> }> = [
+  {
+    id: "n8n-mcp",
+    name: "n8n-mcp",
+    command: "npx",
+    args: "-y n8n-mcp",
+    envVars: [
+      { key: "N8N_API_URL", value: "", label: "N8N API URL" },
+      { key: "N8N_API_KEY", value: "", label: "N8N API Key" },
+    ],
+  },
+];
+
 function AddServerForm({
   sessionId,
   onDone,
@@ -170,10 +201,42 @@ function AddServerForm({
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
+  const [showEnvVars, setShowEnvVars] = useState(false);
+  const [newEnvKey, setNewEnvKey] = useState("");
+  const [newEnvValue, setNewEnvValue] = useState("");
+
+  // Debug: log current state
+  console.log("[McpPanel] serverType:", serverType, "showEnvVars:", showEnvVars);
 
   const canSubmit =
     name.trim() &&
     (serverType === "stdio" ? command.trim() : url.trim());
+
+  function loadPreset(presetId: string) {
+    const preset = MCP_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    setName(preset.name);
+    setCommand(preset.command);
+    setArgs(preset.args);
+    setEnvVars(preset.envVars.map((v) => ({ key: v.key, value: v.value })));
+    if (preset.envVars.length > 0) {
+      setShowEnvVars(true);
+    }
+  }
+
+  function addEnvVar() {
+    if (newEnvKey.trim()) {
+      setEnvVars([...envVars, { key: newEnvKey.trim(), value: newEnvValue }]);
+      setNewEnvKey("");
+      setNewEnvValue("");
+    }
+  }
+
+  function removeEnvVar(index: number) {
+    setEnvVars(envVars.filter((_, i) => i !== index));
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -183,6 +246,9 @@ function AddServerForm({
     if (serverType === "stdio") {
       config.command = command.trim();
       if (args.trim()) config.args = args.trim().split(/\s+/);
+      if (envVars.length > 0) {
+        config.env = Object.fromEntries(envVars.filter((v) => v.key.trim() && v.value.trim()).map((v) => [v.key, v.value]));
+      }
     } else {
       config.url = url.trim();
     }
@@ -193,6 +259,29 @@ function AddServerForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2 p-2.5 rounded-lg border border-cc-border bg-cc-bg">
+      {/* Preset selector */}
+      <div className="border-b border-cc-border pb-2 mb-2">
+        <label className="text-[10px] text-cc-muted uppercase tracking-wider block mb-0.5">
+          Quick Add Preset
+        </label>
+        <div className="flex gap-1 flex-wrap">
+          {MCP_PRESETS.length === 0 ? (
+            <span className="text-[11px] text-cc-muted/50 italic">No presets available</span>
+          ) : (
+            MCP_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => loadPreset(preset.id)}
+                className="text-[11px] px-2 py-1 rounded-md border border-cc-border bg-cc-hover text-cc-fg hover:border-cc-accent hover:text-cc-accent hover:bg-cc-accent/10 transition-colors cursor-pointer"
+              >
+                {preset.name}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* Server name */}
       <div>
         <label className="text-[10px] text-cc-muted uppercase tracking-wider block mb-0.5">
@@ -257,6 +346,99 @@ function AddServerForm({
               className="w-full text-[12px] bg-cc-bg-secondary border border-cc-border rounded px-2 py-1.5 text-cc-fg placeholder:text-cc-muted/40 font-mono focus:outline-none focus:border-cc-accent"
             />
           </div>
+
+          {/* Environment variables toggle */}
+          <div className="flex items-center justify-between border-t border-cc-border pt-2 mt-2">
+            <label className="text-[10px] text-cc-muted uppercase tracking-wider">
+              Environment Variables
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowEnvVars(!showEnvVars)}
+              className={`text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                showEnvVars
+                  ? "bg-cc-accent/10 text-cc-accent"
+                  : "text-cc-muted hover:text-cc-fg"
+              }`}
+            >
+              {showEnvVars ? "Hide" : "Show"}
+            </button>
+          </div>
+
+          {/* Environment variables list and form */}
+          {showEnvVars && (
+            <div className="space-y-1.5">
+              {envVars.map((envVar, index) => (
+                <div key={index} className="flex gap-1 items-center">
+                  <input
+                    type="text"
+                    value={envVar.key}
+                    onChange={(e) => {
+                      const updated = [...envVars];
+                      updated[index].key = e.target.value;
+                      setEnvVars(updated);
+                    }}
+                    placeholder="KEY"
+                    className="flex-1 text-[11px] bg-cc-bg-secondary border border-cc-border rounded px-2 py-1 text-cc-fg placeholder:text-cc-muted/40 font-mono focus:outline-none focus:border-cc-accent"
+                  />
+                  <span className="text-cc-muted text-[10px]">=</span>
+                  <input
+                    type="text"
+                    value={envVar.value}
+                    onChange={(e) => {
+                      const updated = [...envVars];
+                      updated[index].value = e.target.value;
+                      setEnvVars(updated);
+                    }}
+                    placeholder="value"
+                    className="flex-1 text-[11px] bg-cc-bg-secondary border border-cc-border rounded px-2 py-1 text-cc-fg placeholder:text-cc-muted/40 font-mono focus:outline-none focus:border-cc-accent"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeEnvVar(index)}
+                    className="w-5 h-5 flex items-center justify-center rounded text-cc-muted hover:text-cc-error hover:bg-cc-error/10 transition-colors cursor-pointer"
+                    title="Remove"
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+                      <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <div className="flex gap-1 items-center">
+                <input
+                  type="text"
+                  value={newEnvKey}
+                  onChange={(e) => setNewEnvKey(e.target.value)}
+                  placeholder="NEW_KEY"
+                  className="flex-1 text-[11px] bg-cc-bg-secondary border border-cc-border rounded px-2 py-1 text-cc-fg placeholder:text-cc-muted/40 font-mono focus:outline-none focus:border-cc-accent"
+                />
+                <span className="text-cc-muted text-[10px]">=</span>
+                <input
+                  type="text"
+                  value={newEnvValue}
+                  onChange={(e) => setNewEnvValue(e.target.value)}
+                  placeholder="new value"
+                  className="flex-1 text-[11px] bg-cc-bg-secondary border border-cc-border rounded px-2 py-1 text-cc-fg placeholder:text-cc-muted/40 font-mono focus:outline-none focus:border-cc-accent"
+                />
+                <button
+                  type="button"
+                  onClick={addEnvVar}
+                  disabled={!newEnvKey.trim()}
+                  className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                    newEnvKey.trim()
+                      ? "text-cc-success hover:text-cc-success hover:bg-cc-success/10 cursor-pointer"
+                      : "text-cc-muted/30 cursor-not-allowed"
+                  }`}
+                  title="Add"
+                >
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+                    <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 

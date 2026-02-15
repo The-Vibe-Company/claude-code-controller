@@ -97,13 +97,15 @@ export class CliLauncher {
   private sessions = new Map<string, SdkSessionInfo>();
   private processes = new Map<string, Subprocess>();
   private port: number;
+  private hostname: string;
   private store: SessionStore | null = null;
   private recorder: RecorderManager | null = null;
   private onCodexAdapter: ((sessionId: string, adapter: CodexAdapter) => void) | null = null;
   private exitHandlers: ((sessionId: string, exitCode: number | null) => void)[] = [];
 
-  constructor(port: number) {
+  constructor(port: number, hostname: string = "localhost") {
     this.port = port;
+    this.hostname = hostname;
   }
 
   /** Register a callback for when a CodexAdapter is created (WsBridge needs to attach it). */
@@ -277,7 +279,7 @@ export class CliLauncher {
       return;
     }
 
-    const sdkUrl = `ws://localhost:${this.port}/ws/cli/${sessionId}`;
+    const sdkUrl = `ws://${this.hostname}:${this.port}/ws/cli/${sessionId}`;
 
     const args: string[] = [
       "--sdk-url", sdkUrl,

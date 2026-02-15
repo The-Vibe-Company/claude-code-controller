@@ -276,7 +276,7 @@ export interface McpServerDetail {
   status: "connected" | "failed" | "disabled" | "connecting";
   serverInfo?: unknown;
   error?: string;
-  config: { type: string; url?: string; command?: string; args?: string[] };
+  config: { type: string; url?: string; command?: string; args?: string[]; env?: Record<string, string> };
   scope: string;
   tools?: { name: string; annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean } }[];
 }

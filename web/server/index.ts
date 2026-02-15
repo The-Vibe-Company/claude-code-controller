@@ -36,9 +36,10 @@ import { DEFAULT_PORT_DEV, DEFAULT_PORT_PROD } from "./constants.js";
 
 const defaultPort = process.env.NODE_ENV === "production" ? DEFAULT_PORT_PROD : DEFAULT_PORT_DEV;
 const port = Number(process.env.PORT) || defaultPort;
+const hostname = process.env.HOST || "0.0.0.0";
 const sessionStore = new SessionStore();
 const wsBridge = new WsBridge();
-const launcher = new CliLauncher(port);
+const launcher = new CliLauncher(port, hostname);
 const worktreeTracker = new WorktreeTracker();
 const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
@@ -132,6 +133,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 const server = Bun.serve<SocketData>({
+  hostname,
   port,
   async fetch(req, server) {
     const url = new URL(req.url);
@@ -207,9 +209,9 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://localhost:${server.port}`);
-console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
+console.log(`Server running on http://${hostname}:${server.port}`);
+console.log(`  CLI WebSocket:     ws://${hostname}:${server.port}/ws/cli/:sessionId`);
+console.log(`  Browser WebSocket: ws://${hostname}:${server.port}/ws/browser/:sessionId`);
 
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
