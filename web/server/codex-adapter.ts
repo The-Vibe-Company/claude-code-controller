@@ -20,6 +20,7 @@ import type {
   McpServerDetail,
   McpServerConfig,
 } from "./session-types.js";
+import type { RecorderManager } from "./recorder.js";
 
 // ─── Codex JSON-RPC Types ─────────────────────────────────────────────────────
 
@@ -126,6 +127,8 @@ export interface CodexAdapterOptions {
   sandbox?: "workspace-write" | "danger-full-access";
   /** If provided, resume an existing thread instead of starting a new one. */
   threadId?: string;
+  /** Optional recorder for raw message capture. */
+  recorder?: RecorderManager;
 }
 
 // ─── JSON-RPC Transport ───────────────────────────────────────────────────────
@@ -135,6 +138,8 @@ class JsonRpcTransport {
   private pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private notificationHandler: ((method: string, params: Record<string, unknown>) => void) | null = null;
   private requestHandler: ((method: string, id: number, params: Record<string, unknown>) => void) | null = null;
+  private rawInCb: ((line: string) => void) | null = null;
+  private rawOutCb: ((data: string) => void) | null = null;
   private writer: WritableStreamDefaultWriter<Uint8Array>;
   private connected = true;
   private buffer = "";
@@ -193,6 +198,9 @@ class JsonRpcTransport {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
+
+      // Record raw incoming line before parsing
+      this.rawInCb?.(trimmed);
 
       let msg: JsonRpcMessage;
       try {
@@ -271,10 +279,22 @@ class JsonRpcTransport {
     return this.connected;
   }
 
+  /** Register callback for raw incoming lines (before JSON parse). */
+  onRawIncoming(cb: (line: string) => void): void {
+    this.rawInCb = cb;
+  }
+
+  /** Register callback for raw outgoing data (before write). */
+  onRawOutgoing(cb: (data: string) => void): void {
+    this.rawOutCb = cb;
+  }
+
   private async writeRaw(data: string): Promise<void> {
     if (!this.connected) {
       throw new Error("Transport closed");
     }
+    // Record raw outgoing data before writing
+    this.rawOutCb?.(data);
     await this.writer.write(new TextEncoder().encode(data));
   }
 }
@@ -351,6 +371,18 @@ export class CodexAdapter {
     );
     this.transport.onNotification((method, params) => this.handleNotification(method, params));
     this.transport.onRequest((method, id, params) => this.handleRequest(method, id, params));
+
+    // Wire raw message recording if a recorder is provided
+    if (options.recorder) {
+      const recorder = options.recorder;
+      const cwd = options.cwd || "";
+      this.transport.onRawIncoming((line) => {
+        recorder.record(sessionId, "in", line, "cli", "codex", cwd);
+      });
+      this.transport.onRawOutgoing((data) => {
+        recorder.record(sessionId, "out", data.trimEnd(), "cli", "codex", cwd);
+      });
+    }
 
     // Monitor process exit
     proc.exited.then(() => {
