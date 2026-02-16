@@ -320,6 +320,8 @@ export function HomePage() {
 
       // Switch to session — use replace to avoid a back-button entry for the creation state
       navigateToSession(sessionId, true);
+      // connectSession called eagerly so waitForConnection below can resolve immediately;
+      // the App.tsx hash-sync effect also calls it, but that runs after render (too late).
       connectSession(sessionId);
 
       // Wait for WebSocket connection

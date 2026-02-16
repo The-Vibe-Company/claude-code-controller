@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useStore } from "./store.js";
 import { connectSession } from "./ws.js";
 import { api } from "./api.js";
@@ -48,8 +48,20 @@ export default function App() {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
-  // Sync hash → store: when the hash contains a session ID, update the store and connect
+  // Capture the localStorage-restored session ID during render (before any effects run)
+  // so the mount logic can use it even if the hash-sync branch would clear it.
+  const restoredIdRef = useRef(useStore.getState().currentSessionId);
+
+  // Sync hash → store. On mount, restore a localStorage session into the URL first.
   useEffect(() => {
+    // On first mount with no session hash, restore from localStorage
+    if (restoredIdRef.current !== null && route.page === "home") {
+      navigateToSession(restoredIdRef.current, true);
+      restoredIdRef.current = null;
+      return; // navigateToSession triggers hashchange → this effect re-runs with the session route
+    }
+    restoredIdRef.current = null;
+
     if (route.page === "session") {
       const store = useStore.getState();
       if (store.currentSessionId !== route.sessionId) {
@@ -64,16 +76,6 @@ export default function App() {
     }
     // For other pages (settings, terminal, etc.), preserve currentSessionId
   }, [route]);
-
-  // On mount: if the URL has no session hash but localStorage has a session, populate the URL.
-  // If the URL already has a session hash, the effect above handles it.
-  useEffect(() => {
-    const restoredId = useStore.getState().currentSessionId;
-    const currentRoute = parseHash(window.location.hash);
-    if (currentRoute.page === "home" && restoredId) {
-      navigateToSession(restoredId, true);
-    }
-  }, []);
 
   // Poll for updates
   useEffect(() => {

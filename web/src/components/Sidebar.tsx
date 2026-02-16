@@ -146,6 +146,9 @@ export function Sidebar() {
     } catch {
       // best-effort
     }
+    if (useStore.getState().currentSessionId === sessionId) {
+      navigateHome();
+    }
     removeSession(sessionId);
   }, [removeSession]);
 
