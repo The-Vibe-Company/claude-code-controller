@@ -399,7 +399,7 @@ export class ContainerManager {
 
     // Apply timeout — capture timer ID so we can clear it on normal exit
     const exitPromise = proc.exited;
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
         proc.kill();
@@ -409,7 +409,7 @@ export class ContainerManager {
 
     try {
       const exitCode = await Promise.race([exitPromise, timeoutPromise]);
-      clearTimeout(timeoutId!);
+      clearTimeout(timeoutId);
       await readStdout;
       const stderrText = await stderrPromise;
       if (stderrText.trim()) {
@@ -422,7 +422,7 @@ export class ContainerManager {
       }
       return { exitCode, output: lines.join("\n") };
     } catch (e) {
-      clearTimeout(timeoutId!);
+      clearTimeout(timeoutId);
       await readStdout.catch(() => {});
       throw e;
     }
@@ -751,7 +751,7 @@ export class ContainerManager {
         }
       };
 
-      let timeoutId: ReturnType<typeof setTimeout>;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
           proc.kill();
@@ -765,7 +765,7 @@ export class ContainerManager {
       })();
 
       const exitCode = await Promise.race([exitPromise, timeoutPromise]);
-      clearTimeout(timeoutId!);
+      clearTimeout(timeoutId);
 
       if (exitCode !== 0) {
         console.warn(`[container-manager] docker pull ${remoteImage} failed (exit ${exitCode})`);

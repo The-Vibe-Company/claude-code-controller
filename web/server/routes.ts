@@ -480,6 +480,8 @@ export function createRoutes(
                   pulled = await containerManager.pullImage(registryImage, effectiveImage);
                   if (pulled) {
                     await emitProgress(stream, "pulling_image", "Image pulled", "done");
+                  } else {
+                    await emitProgress(stream, "pulling_image", "Pull failed, falling back to build", "error");
                   }
                 }
 
