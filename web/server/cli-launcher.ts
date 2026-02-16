@@ -13,6 +13,7 @@ import type { BackendType } from "./session-types.js";
 import type { RecorderManager } from "./recorder.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { resolveBinary, getEnrichedPath } from "./path-resolver.js";
+import { containerManager } from "./container-manager.js";
 import {
   getLegacyCodexHome,
   resolveCompanionCodexSessionHome,
@@ -234,9 +235,9 @@ export class CliLauncher {
    * Kills the old process if still alive, then spawns a fresh CLI
    * that connects back to the same session in the WsBridge.
    */
-  async relaunch(sessionId: string): Promise<boolean> {
+  async relaunch(sessionId: string): Promise<{ ok: boolean; error?: string }> {
     const info = this.sessions.get(sessionId);
-    if (!info) return false;
+    if (!info) return { ok: false, error: "Session not found" };
 
     // Kill old process if still alive
     const oldProc = this.processes.get(sessionId);
@@ -252,6 +253,51 @@ export class CliLauncher {
     } else if (info.pid) {
       // Process from a previous server instance — kill by PID
       try { process.kill(info.pid, "SIGTERM"); } catch {}
+    }
+
+    // Pre-flight validation for containerized sessions
+    if (info.containerId) {
+      const containerLabel = info.containerName || info.containerId.slice(0, 12);
+      const containerState = containerManager.isContainerAlive(info.containerId);
+
+      if (containerState === "missing") {
+        console.error(`[cli-launcher] Container ${containerLabel} no longer exists for session ${sessionId}`);
+        info.state = "exited";
+        info.exitCode = 1;
+        this.persistState();
+        return {
+          ok: false,
+          error: `Container "${containerLabel}" was removed externally. Please create a new session.`,
+        };
+      }
+
+      if (containerState === "stopped") {
+        try {
+          containerManager.startContainer(info.containerId);
+          console.log(`[cli-launcher] Restarted stopped container ${containerLabel} for session ${sessionId}`);
+        } catch (e) {
+          info.state = "exited";
+          info.exitCode = 1;
+          this.persistState();
+          return {
+            ok: false,
+            error: `Container "${containerLabel}" is stopped and could not be restarted: ${e instanceof Error ? e.message : String(e)}`,
+          };
+        }
+      }
+
+      // Validate the CLI binary exists inside the container
+      const binary = info.backendType === "codex" ? "codex" : "claude";
+      if (!containerManager.hasBinaryInContainer(info.containerId, binary)) {
+        console.error(`[cli-launcher] "${binary}" not found in container ${containerLabel} for session ${sessionId}`);
+        info.state = "exited";
+        info.exitCode = 127;
+        this.persistState();
+        return {
+          ok: false,
+          error: `"${binary}" command not found inside container "${containerLabel}". The container image may need to be rebuilt.`,
+        };
+      }
     }
 
     info.state = "starting";
@@ -282,7 +328,7 @@ export class CliLauncher {
         env: runtimeEnv,
       });
     }
-    return true;
+    return { ok: true };
   }
 
   /**

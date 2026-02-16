@@ -82,6 +82,7 @@ describe("Session management", () => {
     expect(session.state.context_used_percent).toBe(0);
     expect(session.state.is_compacting).toBe(false);
     expect(session.state.git_branch).toBe("");
+    expect(session.state.is_worktree).toBe(false);
     expect(session.state.is_containerized).toBe(false);
     expect(session.state.repo_root).toBe("");
     expect(session.state.git_ahead).toBe(0);
@@ -331,6 +332,31 @@ describe("CLI handlers", () => {
     expect(state.agents).toEqual(["agent1"]);
     expect(state.slash_commands).toEqual(["/commit"]);
     expect(state.skills).toEqual(["pdf"]);
+  });
+
+  it("handleCLIMessage: system.init preserves host cwd for containerized sessions", () => {
+    // markContainerized sets the host cwd and is_containerized before CLI connects
+    bridge.markContainerized("s1", "/Users/stan/Dev/myproject");
+
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.includes("--abbrev-ref HEAD")) return "main\n";
+      if (cmd.includes("--git-dir")) return ".git\n";
+      if (cmd.includes("--show-toplevel")) return "/Users/stan/Dev/myproject\n";
+      if (cmd.includes("--left-right --count")) return "0\t0\n";
+      throw new Error("unknown git cmd");
+    });
+
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+
+    // CLI inside the container reports /workspace — should be ignored
+    bridge.handleCLIMessage(cli, makeInitMsg({ cwd: "/workspace" }));
+
+    const state = bridge.getSession("s1")!.state;
+    expect(state.cwd).toBe("/Users/stan/Dev/myproject");
+    expect(state.is_containerized).toBe(true);
+    expect(state.git_branch).toBe("main");
+    expect(state.repo_root).toBe("/Users/stan/Dev/myproject");
   });
 
   it("handleCLIMessage: system.init resolves git info via execSync", () => {
@@ -1337,6 +1363,7 @@ describe("Persistence", () => {
         context_used_percent: 15,
         is_compacting: false,
         git_branch: "main",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "/saved",
         git_ahead: 0,
@@ -1390,6 +1417,7 @@ describe("Persistence", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2064,6 +2092,7 @@ describe("Restore from disk with pendingPermissions", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2114,6 +2143,7 @@ describe("Restore from disk with pendingPermissions", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2171,6 +2201,7 @@ describe("Restore from disk with pendingPermissions", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2211,6 +2242,7 @@ describe("Restore from disk with pendingPermissions", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2641,6 +2673,7 @@ describe("onFirstTurnCompletedCallback", () => {
         context_used_percent: 10,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,
@@ -2703,6 +2736,7 @@ describe("onFirstTurnCompletedCallback", () => {
         context_used_percent: 0,
         is_compacting: false,
         git_branch: "",
+        is_worktree: false,
         is_containerized: false,
         repo_root: "",
         git_ahead: 0,

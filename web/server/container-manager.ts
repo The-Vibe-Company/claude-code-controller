@@ -408,6 +408,46 @@ export class ContainerManager {
     return Array.from(this.containers.values());
   }
 
+  /** Attempt to start a stopped container. Throws on failure. */
+  startContainer(containerId: string): void {
+    exec(`docker start ${shellEscape(containerId)}`, {
+      encoding: "utf-8",
+      timeout: CONTAINER_BOOT_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Check whether a Docker container exists and its running state.
+   * Returns "running", "stopped", or "missing".
+   */
+  isContainerAlive(containerId: string): "running" | "stopped" | "missing" {
+    try {
+      const state = exec(
+        `docker inspect --format '{{.State.Running}}' ${shellEscape(containerId)}`,
+        { encoding: "utf-8", timeout: QUICK_EXEC_TIMEOUT_MS },
+      );
+      return state === "true" ? "running" : "stopped";
+    } catch {
+      return "missing";
+    }
+  }
+
+  /**
+   * Check if a binary is available inside a running container.
+   * Uses `bash -lc` so PATH includes nvm/bun/deno/etc.
+   */
+  hasBinaryInContainer(containerId: string, binary: string): boolean {
+    try {
+      exec(
+        `docker exec ${shellEscape(containerId)} bash -lc 'which ${shellEscape(binary)}'`,
+        { encoding: "utf-8", timeout: QUICK_EXEC_TIMEOUT_MS },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Re-register a container that was persisted across a server restart.
    * Verifies the container still exists in Docker before tracking it.

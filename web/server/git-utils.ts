@@ -1,5 +1,7 @@
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { join, basename } from "node:path";
+import { homedir } from "node:os";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -8,14 +10,45 @@ export interface GitRepoInfo {
   repoName: string;
   currentBranch: string;
   defaultBranch: string;
+  isWorktree: boolean;
 }
 
 export interface GitBranchInfo {
   name: string;
   isCurrent: boolean;
   isRemote: boolean;
+  worktreePath: string | null;
   ahead: number;
   behind: number;
+}
+
+export interface GitWorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  isMainWorktree: boolean;
+  isDirty: boolean;
+}
+
+export interface WorktreeCreateResult {
+  worktreePath: string;
+  /** The conceptual branch the user selected */
+  branch: string;
+  /** The actual git branch in the worktree (may be e.g. `main-wt-2` for duplicate sessions) */
+  actualBranch: string;
+  isNew: boolean;
+}
+
+// ─── Paths ──────────────────────────────────────────────────────────────────
+
+const WORKTREES_BASE = join(homedir(), ".companion", "worktrees");
+
+function sanitizeBranch(branch: string): string {
+  return branch.replace(/\//g, "--");
+}
+
+function worktreeDir(repoName: string, branch: string): string {
+  return join(WORKTREES_BASE, repoName, sanitizeBranch(branch));
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -44,6 +77,10 @@ export function getRepoInfo(cwd: string): GitRepoInfo | null {
   if (!repoRoot) return null;
 
   const currentBranch = gitSafe("rev-parse --abbrev-ref HEAD", cwd) || "HEAD";
+  const gitDir = gitSafe("rev-parse --git-dir", cwd) || "";
+  // A linked worktree's .git dir is inside the main repo's .git/worktrees/
+  const isWorktree = gitDir.includes("/worktrees/");
+
   const defaultBranch = resolveDefaultBranch(repoRoot);
 
   return {
@@ -51,6 +88,7 @@ export function getRepoInfo(cwd: string): GitRepoInfo | null {
     repoName: basename(repoRoot),
     currentBranch,
     defaultBranch,
+    isWorktree,
   };
 }
 
@@ -69,6 +107,13 @@ function resolveDefaultBranch(repoRoot: string): string {
 }
 
 export function listBranches(repoRoot: string): GitBranchInfo[] {
+  // Get worktree mappings first
+  const worktrees = listWorktrees(repoRoot);
+  const worktreeByBranch = new Map<string, string>();
+  for (const wt of worktrees) {
+    if (wt.branch) worktreeByBranch.set(wt.branch, wt.path);
+  }
+
   const result: GitBranchInfo[] = [];
 
   // Local branches
@@ -86,6 +131,7 @@ export function listBranches(repoRoot: string): GitBranchInfo[] {
         name,
         isCurrent,
         isRemote: false,
+        worktreePath: worktreeByBranch.get(name) || null,
         ahead,
         behind,
       });
@@ -108,6 +154,7 @@ export function listBranches(repoRoot: string): GitBranchInfo[] {
         name,
         isCurrent: false,
         isRemote: true,
+        worktreePath: null,
         ahead: 0,
         behind: 0,
       });
@@ -115,6 +162,187 @@ export function listBranches(repoRoot: string): GitBranchInfo[] {
   }
 
   return result;
+}
+
+export function listWorktrees(repoRoot: string): GitWorktreeInfo[] {
+  const raw = gitSafe("worktree list --porcelain", repoRoot);
+  if (!raw) return [];
+
+  const worktrees: GitWorktreeInfo[] = [];
+  let current: Partial<GitWorktreeInfo> = {};
+
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      if (current.path) {
+        worktrees.push(current as GitWorktreeInfo);
+      }
+      current = { path: line.slice(9), isDirty: false, isMainWorktree: false };
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice(5);
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice(7).replace("refs/heads/", "");
+    } else if (line === "bare") {
+      current.isMainWorktree = true;
+    } else if (line === "") {
+      // End of entry — check if main worktree (first one is always main)
+      if (worktrees.length === 0 && current.path) {
+        current.isMainWorktree = true;
+      }
+    }
+  }
+  // Push last entry
+  if (current.path) {
+    if (worktrees.length === 0) current.isMainWorktree = true;
+    worktrees.push(current as GitWorktreeInfo);
+  }
+
+  // Check dirty status for each worktree
+  for (const wt of worktrees) {
+    wt.isDirty = isWorktreeDirty(wt.path);
+  }
+
+  return worktrees;
+}
+
+export function ensureWorktree(
+  repoRoot: string,
+  branchName: string,
+  options?: { baseBranch?: string; createBranch?: boolean; forceNew?: boolean },
+): WorktreeCreateResult {
+  const repoName = basename(repoRoot);
+
+  // Check if a worktree already exists for this branch
+  const existing = listWorktrees(repoRoot);
+  const found = existing.find((wt) => wt.branch === branchName);
+
+  if (found && !options?.forceNew) {
+    // Don't reuse the main worktree — it's the original repo checkout
+    if (!found.isMainWorktree) {
+      return { worktreePath: found.path, branch: branchName, actualBranch: branchName, isNew: false };
+    }
+  }
+
+  // Find a unique path: append random 4-digit suffix if the base path is taken
+  const basePath = worktreeDir(repoName, branchName);
+  let targetPath = basePath;
+  for (let attempt = 0; attempt < 100 && existsSync(targetPath); attempt++) {
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    targetPath = `${basePath}-${suffix}`;
+  }
+  if (existsSync(targetPath)) {
+    targetPath = `${basePath}-${Date.now()}`;
+  }
+
+  // Ensure parent directory exists
+  mkdirSync(join(WORKTREES_BASE, repoName), { recursive: true });
+
+  // A worktree already exists for this branch — create a new uniquely-named
+  // branch so multiple sessions can work on the same branch independently.
+  if (found) {
+    const commitHash = git("rev-parse HEAD", found.path);
+    const uniqueBranch = generateUniqueWorktreeBranch(repoRoot, branchName);
+    git(`worktree add -b ${uniqueBranch} "${targetPath}" ${commitHash}`, repoRoot);
+    return { worktreePath: targetPath, branch: branchName, actualBranch: uniqueBranch, isNew: false };
+  }
+
+  // Check if branch already exists locally or on remote
+  const branchExists =
+    gitSafe(`rev-parse --verify refs/heads/${branchName}`, repoRoot) !== null;
+  const remoteBranchExists =
+    gitSafe(`rev-parse --verify refs/remotes/origin/${branchName}`, repoRoot) !== null;
+
+  if (branchExists) {
+    if (options?.forceNew) {
+      // Create a uniquely-named branch so multiple sessions can work independently
+      const commitHash = git(`rev-parse refs/heads/${branchName}`, repoRoot);
+      const uniqueBranch = generateUniqueWorktreeBranch(repoRoot, branchName);
+      git(`worktree add -b ${uniqueBranch} "${targetPath}" ${commitHash}`, repoRoot);
+      return { worktreePath: targetPath, branch: branchName, actualBranch: uniqueBranch, isNew: false };
+    }
+    // Worktree add with existing local branch
+    git(`worktree add "${targetPath}" ${branchName}`, repoRoot);
+    return { worktreePath: targetPath, branch: branchName, actualBranch: branchName, isNew: false };
+  }
+
+  if (remoteBranchExists) {
+    if (options?.forceNew) {
+      const uniqueBranch = generateUniqueWorktreeBranch(repoRoot, branchName);
+      git(`worktree add -b ${uniqueBranch} "${targetPath}" origin/${branchName}`, repoRoot);
+      return { worktreePath: targetPath, branch: branchName, actualBranch: uniqueBranch, isNew: false };
+    }
+    // Create local tracking branch from remote
+    git(`worktree add -b ${branchName} "${targetPath}" origin/${branchName}`, repoRoot);
+    return { worktreePath: targetPath, branch: branchName, actualBranch: branchName, isNew: false };
+  }
+
+  if (options?.createBranch !== false) {
+    // Create new branch from base
+    const base = options?.baseBranch || resolveDefaultBranch(repoRoot);
+    git(`worktree add -b ${branchName} "${targetPath}" ${base}`, repoRoot);
+    return { worktreePath: targetPath, branch: branchName, actualBranch: branchName, isNew: true };
+  }
+
+  throw new Error(`Branch "${branchName}" does not exist and createBranch is false`);
+}
+
+/**
+ * Generate a unique branch name for a companion-managed worktree.
+ * Pattern: `{branch}-wt-{random4digit}` (e.g. `main-wt-8374`).
+ * Uses random suffixes to avoid collisions with leftover branches.
+ */
+export function generateUniqueWorktreeBranch(repoRoot: string, baseBranch: string): string {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    const candidate = `${baseBranch}-wt-${suffix}`;
+    if (gitSafe(`rev-parse --verify refs/heads/${candidate}`, repoRoot) === null) {
+      return candidate;
+    }
+  }
+  // Fallback: use timestamp if all random attempts collide (extremely unlikely)
+  return `${baseBranch}-wt-${Date.now()}`;
+}
+
+export function removeWorktree(
+  repoRoot: string,
+  worktreePath: string,
+  options?: { force?: boolean; branchToDelete?: string },
+): { removed: boolean; reason?: string } {
+  if (!existsSync(worktreePath)) {
+    // Already gone, clean up git's reference
+    gitSafe("worktree prune", repoRoot);
+    if (options?.branchToDelete) {
+      gitSafe(`branch -D ${options.branchToDelete}`, repoRoot);
+    }
+    return { removed: true };
+  }
+
+  if (!options?.force && isWorktreeDirty(worktreePath)) {
+    return {
+      removed: false,
+      reason: "Worktree has uncommitted changes. Use force to remove anyway.",
+    };
+  }
+
+  try {
+    const forceFlag = options?.force ? " --force" : "";
+    git(`worktree remove "${worktreePath}"${forceFlag}`, repoRoot);
+    // Clean up the companion-managed branch after worktree removal
+    if (options?.branchToDelete) {
+      gitSafe(`branch -D ${options.branchToDelete}`, repoRoot);
+    }
+    return { removed: true };
+  } catch (e: unknown) {
+    return {
+      removed: false,
+      reason: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+export function isWorktreeDirty(worktreePath: string): boolean {
+  if (!existsSync(worktreePath)) return false;
+  const status = gitSafe("status --porcelain", worktreePath);
+  return status !== null && status.length > 0;
 }
 
 export function gitFetch(cwd: string): { success: boolean; output: string } {
@@ -136,6 +364,7 @@ export function gitPull(
     return { success: false, output: e instanceof Error ? e.message : String(e) };
   }
 }
+
 
 export function checkoutBranch(cwd: string, branchName: string): void {
   git(`checkout ${branchName}`, cwd);

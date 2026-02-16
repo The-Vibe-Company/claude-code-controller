@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { CliLauncher } from "./cli-launcher.js";
 import type { WsBridge } from "./ws-bridge.js";
 import type { SessionStore } from "./session-store.js";
-// WorktreeTracker removed — replaced by Docker container environments
+import type { WorktreeTracker } from "./worktree-tracker.js";
 import type { TerminalManager } from "./terminal-manager.js";
 import * as envManager from "./env-manager.js";
 import * as cronStore from "./cron-store.js";
@@ -78,7 +78,7 @@ export function createRoutes(
   launcher: CliLauncher,
   wsBridge: WsBridge,
   sessionStore: SessionStore,
-  _worktreeTracker: unknown, // kept for backward compat signature, unused
+  worktreeTracker: WorktreeTracker,
   terminalManager: TerminalManager,
   prPoller?: import("./pr-poller.js").PRPoller,
   recorder?: import("./recorder.js").RecorderManager,
@@ -115,9 +115,28 @@ export function createRoutes(
       }
 
       let cwd = body.cwd;
+      let worktreeInfo: { isWorktree: boolean; repoRoot: string; branch: string; actualBranch: string; worktreePath: string } | undefined;
 
-      // If branch is specified and no container, checkout in-place (lightweight)
-      if (body.branch && cwd) {
+      if (body.useWorktree && body.branch && cwd) {
+        // Worktree isolation: create/reuse a worktree for the selected branch
+        const repoInfo = gitUtils.getRepoInfo(cwd);
+        if (repoInfo) {
+          const result = gitUtils.ensureWorktree(repoInfo.repoRoot, body.branch, {
+            baseBranch: repoInfo.defaultBranch,
+            createBranch: body.createBranch,
+            forceNew: true,
+          });
+          cwd = result.worktreePath;
+          worktreeInfo = {
+            isWorktree: true,
+            repoRoot: repoInfo.repoRoot,
+            branch: body.branch,
+            actualBranch: result.actualBranch,
+            worktreePath: result.worktreePath,
+          };
+        }
+      } else if (body.branch && cwd) {
+        // Non-worktree: checkout the selected branch in-place (lightweight)
         const repoInfo = gitUtils.getRepoInfo(cwd);
         if (repoInfo) {
           const fetchResult = gitUtils.gitFetch(repoInfo.repoRoot);
@@ -274,9 +293,23 @@ export function createRoutes(
         containerImage,
       });
 
-      // Re-track container with real session ID
+      // Re-track container with real session ID and mark session as containerized
+      // so the bridge preserves the host cwd for sidebar grouping
       if (containerInfo) {
         containerManager.retrack(containerInfo.containerId, session.sessionId);
+        wsBridge.markContainerized(session.sessionId, cwd);
+      }
+
+      // Track the worktree mapping
+      if (worktreeInfo) {
+        worktreeTracker.addMapping({
+          sessionId: session.sessionId,
+          repoRoot: worktreeInfo.repoRoot,
+          branch: worktreeInfo.branch,
+          actualBranch: worktreeInfo.actualBranch,
+          worktreePath: worktreeInfo.worktreePath,
+          createdAt: Date.now(),
+        });
       }
 
       return c.json(session);
@@ -340,8 +373,11 @@ export function createRoutes(
 
   api.post("/sessions/:id/relaunch", async (c) => {
     const id = c.req.param("id");
-    const ok = await launcher.relaunch(id);
-    if (!ok) return c.json({ error: "Session not found" }, 404);
+    const result = await launcher.relaunch(id);
+    if (!result.ok) {
+      const status = result.error?.includes("not found") || result.error?.includes("Session not found") ? 404 : 503;
+      return c.json({ error: result.error || "Relaunch failed" }, status);
+    }
     return c.json({ ok: true });
   });
 
@@ -355,10 +391,11 @@ export function createRoutes(
     // Clean up container if any
     containerManager.removeContainer(id);
 
+    const worktreeResult = cleanupWorktree(id, true);
     prPoller?.unwatch(id);
     launcher.removeSession(id);
     wsBridge.closeSession(id);
-    return c.json({ ok: true });
+    return c.json({ ok: true, worktree: worktreeResult });
   });
 
   api.post("/sessions/:id/archive", async (c) => {
@@ -366,6 +403,7 @@ export function createRoutes(
     if (assistantManager?.isAssistantSession(id)) {
       return c.json({ error: "Cannot archive the assistant session. Use companion assistant stop instead." }, 403);
     }
+    const body = await c.req.json().catch(() => ({}));
     await launcher.kill(id);
 
     // Clean up container if any
@@ -374,9 +412,10 @@ export function createRoutes(
     // Stop PR polling for this session
     prPoller?.unwatch(id);
 
+    const worktreeResult = cleanupWorktree(id, body.force);
     launcher.setArchived(id, true);
     sessionStore.setArchived(id, true);
-    return c.json({ ok: true });
+    return c.json({ ok: true, worktree: worktreeResult });
   });
 
   api.post("/sessions/:id/unarchive", (c) => {
@@ -903,6 +942,28 @@ export function createRoutes(
     return c.json(gitUtils.gitFetch(repoRoot));
   });
 
+  api.get("/git/worktrees", (c) => {
+    const repoRoot = c.req.query("repoRoot");
+    if (!repoRoot) return c.json({ error: "repoRoot required" }, 400);
+    return c.json(gitUtils.listWorktrees(repoRoot));
+  });
+
+  api.post("/git/worktree", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { repoRoot, branch, baseBranch, createBranch } = body;
+    if (!repoRoot || !branch) return c.json({ error: "repoRoot and branch required" }, 400);
+    const result = gitUtils.ensureWorktree(repoRoot, branch, { baseBranch, createBranch });
+    return c.json(result);
+  });
+
+  api.delete("/git/worktree", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const { repoRoot, worktreePath, force } = body;
+    if (!repoRoot || !worktreePath) return c.json({ error: "repoRoot and worktreePath required" }, 400);
+    const result = gitUtils.removeWorktree(repoRoot, worktreePath, { force });
+    return c.json(result);
+  });
+
   api.post("/git/pull", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { cwd } = body;
@@ -1377,6 +1438,42 @@ export function createRoutes(
     const id = c.req.param("id");
     return c.json(cronScheduler?.getExecutions(id) ?? []);
   });
+
+  // ─── Worktree cleanup helper ────────────────────────────────────
+
+  function cleanupWorktree(
+    sessionId: string,
+    force?: boolean,
+  ): { cleaned?: boolean; dirty?: boolean; path?: string } | undefined {
+    const mapping = worktreeTracker.getBySession(sessionId);
+    if (!mapping) return undefined;
+
+    // Check if other sessions still use this worktree
+    if (worktreeTracker.isWorktreeInUse(mapping.worktreePath, sessionId)) {
+      worktreeTracker.removeBySession(sessionId);
+      return { cleaned: false, path: mapping.worktreePath };
+    }
+
+    // Auto-remove if clean, or force-remove if requested
+    const dirty = gitUtils.isWorktreeDirty(mapping.worktreePath);
+    if (dirty && !force) {
+      return { cleaned: false, dirty: true, path: mapping.worktreePath };
+    }
+
+    // Delete companion-managed branch if it differs from the user-selected branch
+    const branchToDelete =
+      mapping.actualBranch && mapping.actualBranch !== mapping.branch
+        ? mapping.actualBranch
+        : undefined;
+    const result = gitUtils.removeWorktree(mapping.repoRoot, mapping.worktreePath, {
+      force: dirty,
+      branchToDelete,
+    });
+    if (result.removed) {
+      worktreeTracker.removeBySession(sessionId);
+    }
+    return { cleaned: result.removed, path: mapping.worktreePath };
+  }
 
   return api;
 }

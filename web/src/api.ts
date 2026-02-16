@@ -193,6 +193,7 @@ export interface CreateSessionOpts {
   envSlug?: string;
   branch?: string;
   createBranch?: boolean;
+  useWorktree?: boolean;
   backend?: "claude" | "codex";
   container?: ContainerCreateOpts;
 }
@@ -214,14 +215,30 @@ export interface GitRepoInfo {
   repoName: string;
   currentBranch: string;
   defaultBranch: string;
+  isWorktree: boolean;
 }
 
 export interface GitBranchInfo {
   name: string;
   isCurrent: boolean;
   isRemote: boolean;
+  worktreePath: string | null;
   ahead: number;
   behind: number;
+}
+
+export interface GitWorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  isMainWorktree: boolean;
+  isDirty: boolean;
+}
+
+export interface WorktreeCreateResult {
+  worktreePath: string;
+  branch: string;
+  isNew: boolean;
 }
 
 export interface CompanionEnv {
@@ -455,6 +472,24 @@ export const api = {
       git_ahead: number;
       git_behind: number;
     }>("/git/pull", { cwd }),
+
+  // Git worktrees
+  listWorktrees: (repoRoot: string) =>
+    get<GitWorktreeInfo[]>(
+      `/git/worktrees?repoRoot=${encodeURIComponent(repoRoot)}`,
+    ),
+  createWorktree: (
+    repoRoot: string,
+    branch: string,
+    opts?: { baseBranch?: string; createBranch?: boolean },
+  ) =>
+    post<WorktreeCreateResult>("/git/worktree", {
+      repoRoot,
+      branch,
+      ...opts,
+    }),
+  removeWorktree: (repoRoot: string, worktreePath: string, force?: boolean) =>
+    del("/git/worktree", { repoRoot, worktreePath, force }),
 
   // GitHub PR status
   getPRStatus: (cwd: string, branch: string) =>

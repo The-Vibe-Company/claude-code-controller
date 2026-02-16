@@ -13,6 +13,18 @@ const mockResolveBinary = vi.hoisted(() => vi.fn((_name: string): string | null 
 const mockGetEnrichedPath = vi.hoisted(() => vi.fn(() => "/usr/bin:/usr/local/bin"));
 vi.mock("./path-resolver.js", () => ({ resolveBinary: mockResolveBinary, getEnrichedPath: mockGetEnrichedPath }));
 
+// Mock container-manager for container validation in relaunch
+const mockIsContainerAlive = vi.hoisted(() => vi.fn((): "running" | "stopped" | "missing" => "running"));
+const mockHasBinaryInContainer = vi.hoisted(() => vi.fn((): boolean => true));
+const mockStartContainer = vi.hoisted(() => vi.fn());
+vi.mock("./container-manager.js", () => ({
+  containerManager: {
+    isContainerAlive: mockIsContainerAlive,
+    hasBinaryInContainer: mockHasBinaryInContainer,
+    startContainer: mockStartContainer,
+  },
+}));
+
 // Mock fs operations for worktree guardrails (CLAUDE.md in .claude dirs)
 const mockMkdirSync = vi.hoisted(() => vi.fn());
 const mockExistsSync = vi.hoisted(() => vi.fn((..._args: any[]) => false));
@@ -602,7 +614,7 @@ describe("relaunch", () => {
     mockSpawn.mockReturnValueOnce(secondProc);
 
     const result = await launcher.relaunch("test-session-id");
-    expect(result).toBe(true);
+    expect(result).toEqual({ ok: true });
 
     // Old process should have been killed
     expect(firstProc.kill).toHaveBeenCalledWith("SIGTERM");
@@ -642,16 +654,136 @@ describe("relaunch", () => {
     mockSpawn.mockReturnValueOnce(secondProc);
 
     const result = await launcher.relaunch("test-session-id");
-    expect(result).toBe(true);
+    expect(result).toEqual({ ok: true });
 
     const [relaunchCmd] = mockSpawn.mock.calls[1];
     expect(relaunchCmd).toContain("-e");
     expect(relaunchCmd).toContain("CLAUDE_CODE_OAUTH_TOKEN=tok-test");
   });
 
-  it("returns false for unknown session", async () => {
+  it("returns error for unknown session", async () => {
     const result = await launcher.relaunch("nonexistent");
-    expect(result).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Session not found");
+  });
+
+  it("returns error when container was removed externally", async () => {
+    // Launch a containerized session
+    launcher.launch({
+      cwd: "/tmp/project",
+      containerId: "abc123def456",
+      containerName: "companion-gone",
+    });
+
+    // Simulate container being removed
+    mockIsContainerAlive.mockReturnValueOnce("missing");
+
+    const result = await launcher.relaunch("test-session-id");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("companion-gone");
+    expect(result.error).toContain("removed externally");
+
+    // Session should be marked as exited
+    const session = launcher.getSession("test-session-id");
+    expect(session?.state).toBe("exited");
+    expect(session?.exitCode).toBe(1);
+
+    // Should NOT have spawned a new process
+    expect(mockSpawn).toHaveBeenCalledTimes(1); // only the initial launch
+  });
+
+  it("restarts stopped container before spawning CLI", async () => {
+    // Create initial proc that exits immediately when killed
+    let resolveFirst: (code: number) => void;
+    const firstProc = {
+      pid: 12345,
+      kill: vi.fn(() => { resolveFirst(0); }),
+      exited: new Promise<number>((r) => { resolveFirst = r; }),
+      stdout: null,
+      stderr: null,
+    };
+    mockSpawn.mockReturnValueOnce(firstProc);
+
+    launcher.launch({
+      cwd: "/tmp/project",
+      containerId: "abc123def456",
+      containerName: "companion-stopped",
+    });
+
+    // Container is stopped but can be restarted
+    mockIsContainerAlive.mockReturnValueOnce("stopped");
+    mockHasBinaryInContainer.mockReturnValueOnce(true);
+
+    const secondProc = createMockProc(54321);
+    mockSpawn.mockReturnValueOnce(secondProc);
+
+    const result = await launcher.relaunch("test-session-id");
+    expect(result).toEqual({ ok: true });
+    expect(mockStartContainer).toHaveBeenCalledWith("abc123def456");
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns error when stopped container cannot be restarted", async () => {
+    launcher.launch({
+      cwd: "/tmp/project",
+      containerId: "abc123def456",
+      containerName: "companion-dead",
+    });
+
+    mockIsContainerAlive.mockReturnValueOnce("stopped");
+    mockStartContainer.mockImplementationOnce(() => { throw new Error("container start failed"); });
+
+    const result = await launcher.relaunch("test-session-id");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("companion-dead");
+    expect(result.error).toContain("stopped");
+    expect(result.error).toContain("container start failed");
+  });
+
+  it("returns error when CLI binary not found in container", async () => {
+    launcher.launch({
+      cwd: "/tmp/project",
+      containerId: "abc123def456",
+      containerName: "companion-nobin",
+    });
+
+    mockIsContainerAlive.mockReturnValueOnce("running");
+    mockHasBinaryInContainer.mockReturnValueOnce(false);
+
+    const result = await launcher.relaunch("test-session-id");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("claude");
+    expect(result.error).toContain("not found");
+    expect(result.error).toContain("companion-nobin");
+
+    const session = launcher.getSession("test-session-id");
+    expect(session?.state).toBe("exited");
+    expect(session?.exitCode).toBe(127);
+  });
+
+  it("skips container validation for non-containerized sessions", async () => {
+    // Create initial proc that exits when killed
+    let resolveFirst: (code: number) => void;
+    const firstProc = {
+      pid: 12345,
+      kill: vi.fn(() => { resolveFirst(0); }),
+      exited: new Promise<number>((r) => { resolveFirst = r; }),
+      stdout: null,
+      stderr: null,
+    };
+    mockSpawn.mockReturnValueOnce(firstProc);
+
+    launcher.launch({ cwd: "/tmp/project" });
+
+    const secondProc = createMockProc(54321);
+    mockSpawn.mockReturnValueOnce(secondProc);
+
+    const result = await launcher.relaunch("test-session-id");
+    expect(result).toEqual({ ok: true });
+
+    // Container validation methods should NOT have been called
+    expect(mockIsContainerAlive).not.toHaveBeenCalled();
+    expect(mockHasBinaryInContainer).not.toHaveBeenCalled();
   });
 });
 

@@ -79,6 +79,7 @@ function makeSession(id: string, overrides: Partial<SessionState> = {}): Session
     context_used_percent: 0,
     is_compacting: false,
     git_branch: "",
+    is_worktree: false,
     is_containerized: false,
     repo_root: "",
     git_ahead: 0,
@@ -234,7 +235,7 @@ describe("Sidebar", () => {
     });
 
     render(<Sidebar />);
-    expect(screen.getByText("docker")).toBeInTheDocument();
+    expect(screen.getByText("Docker")).toBeInTheDocument();
   });
 
   it("session items show ahead/behind counts", () => {

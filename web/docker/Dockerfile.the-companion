@@ -31,7 +31,9 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
     && nvm alias default 22 \
     && nvm use default \
     && npm install -g pnpm
-ENV PATH="$NVM_DIR/versions/node/v22.14.0/bin:$PATH"
+# Create a stable symlink to the default node bin dir so ENV PATH survives version bumps
+RUN ln -sf "$(. "$NVM_DIR/nvm.sh" && dirname "$(nvm which default)")" /root/.nvm/default-bin
+ENV PATH="/root/.nvm/default-bin:$PATH"
 
 # ── Layer 3: Bun ─────────────────────────────────────────────────────────────
 RUN curl -fsSL https://bun.sh/install | bash

@@ -15,6 +15,7 @@ import { createRoutes } from "./routes.js";
 import { CliLauncher } from "./cli-launcher.js";
 import { WsBridge } from "./ws-bridge.js";
 import { SessionStore } from "./session-store.js";
+import { WorktreeTracker } from "./worktree-tracker.js";
 import { containerManager } from "./container-manager.js";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -41,6 +42,7 @@ const port = Number(process.env.PORT) || defaultPort;
 const sessionStore = new SessionStore();
 const wsBridge = new WsBridge();
 const launcher = new CliLauncher(port);
+const worktreeTracker = new WorktreeTracker();
 const CONTAINER_STATE_PATH = join(homedir(), ".companion", "containers.json");
 const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
@@ -91,7 +93,10 @@ wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
     relaunchingSet.add(sessionId);
     console.log(`[server] Auto-relaunching CLI for session ${sessionId}`);
     try {
-      await launcher.relaunch(sessionId);
+      const result = await launcher.relaunch(sessionId);
+      if (!result.ok && result.error) {
+        wsBridge.broadcastToSession(sessionId, { type: "error", message: result.error });
+      }
     } finally {
       setTimeout(() => relaunchingSet.delete(sessionId), 5000);
     }
@@ -125,7 +130,7 @@ if (recorder.isGloballyEnabled()) {
 const app = new Hono();
 
 app.use("/api/*", cors());
-app.route("/api", createRoutes(launcher, wsBridge, sessionStore, null, terminalManager, prPoller, recorder, cronScheduler, assistantManager));
+app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder, cronScheduler, assistantManager));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
 if (process.env.NODE_ENV === "production") {

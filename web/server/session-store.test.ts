@@ -25,6 +25,7 @@ function makeSession(id: string, overrides: Partial<PersistedSession> = {}): Per
       context_used_percent: 0,
       is_compacting: false,
       git_branch: "",
+      is_worktree: false,
       is_containerized: false,
       repo_root: "",
       git_ahead: 0,

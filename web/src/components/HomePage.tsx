@@ -70,6 +70,7 @@ export function HomePage() {
 
   // Git branch state
   const [gitRepoInfo, setGitRepoInfo] = useState<GitRepoInfo | null>(null);
+  const [useWorktree, setUseWorktree] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
@@ -289,6 +290,7 @@ export function HomePage() {
         envSlug: selectedEnv || undefined,
         branch: branchName,
         createBranch: branchName && isNewBranch ? true : undefined,
+        useWorktree: useWorktree || undefined,
         backend,
         codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
       });
@@ -661,6 +663,9 @@ export function HomePage() {
                                     {b.behind > 0 && (
                                       <span className="text-[9px] text-amber-500">{b.behind}&#8595;</span>
                                     )}
+                                    {b.worktreePath && (
+                                      <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400">wt</span>
+                                    )}
                                     {b.isCurrent && (
                                       <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/15 text-green-600 dark:text-green-400">current</span>
                                     )}
@@ -720,6 +725,24 @@ export function HomePage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Worktree toggle (only when cwd is a git repo) */}
+          {gitRepoInfo && (
+            <button
+              onClick={() => setUseWorktree(!useWorktree)}
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                useWorktree
+                  ? "bg-cc-primary/15 text-cc-primary font-medium"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              title="Create an isolated worktree for this session"
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-70">
+                <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v5.256a2.25 2.25 0 101.5 0V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zm7.5-9.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V7A2.5 2.5 0 0110 9.5H6a1 1 0 000 2h4a2.5 2.5 0 012.5 2.5v.628a2.25 2.25 0 11-1.5 0V14a1 1 0 00-1-1H6a2.5 2.5 0 01-2.5-2.5V10a2.5 2.5 0 012.5-2.5h4a1 1 0 001-1V5.372a2.25 2.25 0 01-1.5-2.122z" />
+              </svg>
+              <span>Worktree</span>
+            </button>
           )}
 
           {/* Environment selector */}
