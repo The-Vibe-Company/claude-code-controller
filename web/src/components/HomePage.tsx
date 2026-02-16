@@ -228,7 +228,7 @@ export function HomePage() {
     setText(e.target.value);
     const ta = e.target;
     ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 300) + "px";
+    ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -449,8 +449,8 @@ export function HomePage() {
             onPaste={handlePaste}
             placeholder="Fix a bug, build a feature, refactor code..."
             rows={4}
-            className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
-            style={{ minHeight: "100px", maxHeight: "300px" }}
+            className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
+            style={{ minHeight: "100px", maxHeight: "200px" }}
           />
 
           {/* Bottom toolbar */}
