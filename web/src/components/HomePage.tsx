@@ -6,9 +6,11 @@ import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
 import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
+import { getPromptTelemetry } from "../analytics-events.js";
 import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { captureEvent } from "../analytics.js";
 
 interface ImageAttachment {
   name: string;
@@ -275,6 +277,7 @@ export function HomePage() {
       setSending(false);
       return;
     }
+    const telemetry = getPromptTelemetry(msg, images.length);
 
     try {
       // Disconnect current session if any
@@ -307,6 +310,27 @@ export function HomePage() {
 
       // Store the permission mode for this session
       useStore.getState().setPreviousPermissionMode(sessionId, mode);
+      captureEvent("session_created", {
+        source: "home",
+        backend: backend === "codex" ? "codex" : "claude",
+        permission_mode: mode,
+        use_worktree: useWorktree,
+        has_branch: !!branchName,
+        create_branch: branchName ? isNewBranch : false,
+        has_images: images.length > 0,
+        has_env: !!selectedEnv,
+        has_cwd: !!cwd,
+        ...telemetry,
+      });
+
+      captureEvent("user_prompt_submitted", {
+        source: "home",
+        backend: backend === "codex" ? "codex" : "claude",
+        permission_mode: mode,
+        has_images: images.length > 0,
+        has_worktree: useWorktree,
+        ...telemetry,
+      });
 
       // Switch to session
       setCurrentSession(sessionId);

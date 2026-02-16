@@ -8,6 +8,7 @@ import type { SessionState } from "../../server/session-types.js";
 Element.prototype.scrollIntoView = vi.fn();
 
 const mockSendToSession = vi.fn();
+const mockCaptureEvent = vi.fn();
 
 // Build a controllable mock store state
 let mockStoreState: Record<string, unknown> = {};
@@ -20,6 +21,10 @@ vi.mock("../api.js", () => ({
   api: {
     gitPull: vi.fn().mockResolvedValue({ success: true, output: "", git_ahead: 0, git_behind: 0 }),
   },
+}));
+
+vi.mock("../analytics.js", () => ({
+  captureEvent: (...args: unknown[]) => mockCaptureEvent(...args),
 }));
 
 // Mock useStore as a function that takes a selector
@@ -159,6 +164,12 @@ describe("Composer sending messages", () => {
       type: "user_message",
       content: "test message",
       session_id: "s1",
+    }));
+    expect(mockCaptureEvent).toHaveBeenCalledWith("user_prompt_submitted", expect.objectContaining({
+      source: "composer",
+      backend: "claude",
+      permission_mode: "acceptEdits",
+      has_attachments: false,
     }));
   });
 

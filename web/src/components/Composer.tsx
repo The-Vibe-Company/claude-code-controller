@@ -3,6 +3,8 @@ import { useStore } from "../store.js";
 import { sendToSession } from "../ws.js";
 import { api } from "../api.js";
 import { CLAUDE_MODES, CODEX_MODES } from "../utils/backends.js";
+import { getPromptTelemetry } from "../analytics-events.js";
+import { captureEvent } from "../analytics.js";
 import type { ModeOption } from "../utils/backends.js";
 
 let idCounter = 0;
@@ -115,6 +117,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
   function handleSend() {
     const msg = text.trim();
     if (!msg || !isConnected) return;
+    const telemetry = getPromptTelemetry(msg, images.length);
 
     sendToSession(sessionId, {
       type: "user_message",
@@ -129,6 +132,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
       content: msg,
       images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
       timestamp: Date.now(),
+    });
+
+    captureEvent("user_prompt_submitted", {
+      source: "composer",
+      backend: isCodex ? "codex" : "claude",
+      permission_mode: currentMode,
+      ...telemetry,
+      has_images: images.length > 0,
+      has_worktree: false,
     });
 
     setText("");

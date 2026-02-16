@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { connectSession, connectAllSessions, disconnectSession } from "../ws.js";
+import { captureEvent } from "../analytics.js";
 import { ProjectGroup } from "./ProjectGroup.js";
 import { SessionItem } from "./SessionItem.js";
 import { groupSessionsByProject, type SessionItem as SessionItemType } from "../utils/project-grouping.js";
@@ -439,6 +440,10 @@ export function Sidebar() {
         <button
           onClick={() => {
             window.location.hash = "#/terminal";
+            captureEvent("terminal_opened", {
+              source: "sidebar",
+              has_existing_term_session: useStore.getState().terminalOpen,
+            });
             if (window.innerWidth < 768) {
               useStore.getState().setSidebarOpen(false);
             }

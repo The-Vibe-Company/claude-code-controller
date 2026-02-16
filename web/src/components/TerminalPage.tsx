@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../store.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { TerminalView } from "./TerminalView.js";
+import { captureEvent } from "../analytics.js";
 
 export function TerminalPage() {
   const terminalCwd = useStore((s) => s.terminalCwd);
@@ -19,7 +20,13 @@ export function TerminalPage() {
           </div>
           <button
             type="button"
-            onClick={() => setShowTerminalPicker(true)}
+            onClick={() => {
+              captureEvent("terminal_opened", {
+                source: "terminal_page",
+                has_existing_terminal: Boolean(terminalCwd),
+              });
+              setShowTerminalPicker(true);
+            }}
             className="px-3 py-2 rounded-lg text-sm font-medium bg-cc-primary hover:bg-cc-primary-hover text-white transition-colors cursor-pointer whitespace-nowrap"
           >
             {terminalCwd ? "Change Folder" : "Choose Folder"}
@@ -46,6 +53,10 @@ export function TerminalPage() {
         <FolderPicker
           initialPath={terminalCwd || ""}
           onSelect={(path) => {
+            captureEvent("terminal_folder_selected", {
+              source: "terminal_page",
+              has_active_terminal: Boolean(terminalCwd),
+            });
             useStore.getState().openTerminal(path);
             window.location.hash = "#/terminal";
             setShowTerminalPicker(false);

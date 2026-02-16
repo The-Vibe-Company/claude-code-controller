@@ -6,6 +6,7 @@ interface MockStoreState {
   terminalCwd: string | null;
   openTerminal: ReturnType<typeof vi.fn>;
 }
+const mockCaptureEvent = vi.fn();
 
 let mockState: MockStoreState;
 
@@ -35,6 +36,10 @@ vi.mock("./FolderPicker.js", () => ({
   ),
 }));
 
+vi.mock("../analytics.js", () => ({
+  captureEvent: (...args: unknown[]) => mockCaptureEvent(...args),
+}));
+
 import { TerminalPage } from "./TerminalPage.js";
 
 beforeEach(() => {
@@ -61,9 +66,17 @@ describe("TerminalPage", () => {
     render(<TerminalPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Choose Folder" }));
+    expect(mockCaptureEvent).toHaveBeenCalledWith("terminal_opened", expect.objectContaining({
+      source: "terminal_page",
+      has_existing_terminal: false,
+    }));
     fireEvent.click(screen.getByText("Pick folder"));
 
     expect(mockState.openTerminal).toHaveBeenCalledWith("/tmp/terminal-project");
+    expect(mockCaptureEvent).toHaveBeenCalledWith("terminal_folder_selected", expect.objectContaining({
+      source: "terminal_page",
+      has_active_terminal: false,
+    }));
     expect(window.location.hash).toBe("#/terminal");
   });
 });

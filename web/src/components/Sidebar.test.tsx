@@ -8,11 +8,16 @@ import type { SessionState, SdkSessionInfo } from "../types.js";
 const mockConnectSession = vi.fn();
 const mockConnectAllSessions = vi.fn();
 const mockDisconnectSession = vi.fn();
+const mockCaptureEvent = vi.fn();
 
 vi.mock("../ws.js", () => ({
   connectSession: (...args: unknown[]) => mockConnectSession(...args),
   connectAllSessions: (...args: unknown[]) => mockConnectAllSessions(...args),
   disconnectSession: (...args: unknown[]) => mockDisconnectSession(...args),
+}));
+
+vi.mock("../analytics.js", () => ({
+  captureEvent: (...args: unknown[]) => mockCaptureEvent(...args),
 }));
 
 const mockApi = {
@@ -435,6 +440,9 @@ describe("Sidebar", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByText("Terminal").closest("button")!);
     expect(window.location.hash).toBe("#/terminal");
+    expect(mockCaptureEvent).toHaveBeenCalledWith("terminal_opened", expect.objectContaining({
+      source: "sidebar",
+    }));
   });
 
   it("session name shows animate-name-appear class when recently renamed", () => {
