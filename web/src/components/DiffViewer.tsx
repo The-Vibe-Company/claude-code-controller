@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import * as Diff from "diff";
+import { splitPath } from "../utils/path.js";
 
 export interface DiffViewerProps {
   /** Original text (for computing diff from old/new) */
@@ -207,7 +208,7 @@ function HunkBlock({ hunk, showLineNumbers }: { hunk: DiffHunk; showLineNumbers:
 }
 
 function FileHeader({ fileName }: { fileName: string }) {
-  const parts = fileName.split("/");
+  const parts = splitPath(fileName);
   const base = parts.pop() || fileName;
   const dir = parts.join("/");
   return (

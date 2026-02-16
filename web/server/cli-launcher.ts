@@ -13,6 +13,7 @@ import type { BackendType } from "./session-types.js";
 import type { RecorderManager } from "./recorder.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { resolveBinary, getEnrichedPath } from "./path-resolver.js";
+import { gracefulKill, forceKill, killByPid, PATH_DELIMITER } from "./platform-utils.js";
 import { containerManager } from "./container-manager.js";
 import {
   getLegacyCodexHome,
@@ -243,7 +244,7 @@ export class CliLauncher {
     const oldProc = this.processes.get(sessionId);
     if (oldProc) {
       try {
-        oldProc.kill("SIGTERM");
+        gracefulKill(oldProc);
         await Promise.race([
           oldProc.exited,
           new Promise((r) => setTimeout(r, 2000)),
@@ -252,7 +253,7 @@ export class CliLauncher {
       this.processes.delete(sessionId);
     } else if (info.pid) {
       // Process from a previous server instance — kill by PID
-      try { process.kill(info.pid, "SIGTERM"); } catch {}
+      killByPid(info.pid);
     }
 
     // Pre-flight validation for containerized sessions
@@ -597,7 +598,7 @@ export class CliLauncher {
       const binaryDir = resolve(binary, "..");
       const siblingNode = join(binaryDir, "node");
       const enrichedPath = getEnrichedPath();
-      const spawnPath = [binaryDir, ...enrichedPath.split(":")].filter(Boolean).join(":");
+      const spawnPath = [binaryDir, ...enrichedPath.split(PATH_DELIMITER)].filter(Boolean).join(PATH_DELIMITER);
 
       if (existsSync(siblingNode)) {
         let codexScript: string;
@@ -727,7 +728,7 @@ export class CliLauncher {
     const proc = this.processes.get(sessionId);
     if (!proc) return false;
 
-    proc.kill("SIGTERM");
+    gracefulKill(proc);
 
     // Wait up to 5s for graceful exit, then force kill
     const exited = await Promise.race([
@@ -737,7 +738,7 @@ export class CliLauncher {
 
     if (!exited) {
       console.log(`[cli-launcher] Force-killing session ${sessionId}`);
-      proc.kill("SIGKILL");
+      forceKill(proc);
     }
 
     const session = this.sessions.get(sessionId);

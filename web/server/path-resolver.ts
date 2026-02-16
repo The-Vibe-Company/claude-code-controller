@@ -8,10 +8,11 @@
  * that works regardless of how the server was started.
  */
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isWindows, PATH_DELIMITER } from "./platform-utils.js";
 
 /**
  * Capture the user's full interactive shell PATH by spawning a login shell.
@@ -19,6 +20,11 @@ import { join } from "node:path";
  * Falls back to probing common directories if shell sourcing fails.
  */
 export function captureUserShellPath(): string {
+  // On Windows, PATH is already populated by the OS — no login shell needed
+  if (isWindows) {
+    return process.env.PATH || "";
+  }
+
   try {
     const shell = process.env.SHELL || "/bin/bash";
     const captured = execSync(
@@ -96,7 +102,7 @@ export function buildFallbackPath(): string {
     } catch { /* ignore */ }
   }
 
-  return [...new Set(candidates.filter((dir) => existsSync(dir)))].join(":");
+  return [...new Set(candidates.filter((dir) => existsSync(dir)))].join(PATH_DELIMITER);
 }
 
 // ─── Enriched PATH (cached) ───────────────────────────────────────────────────
@@ -115,7 +121,7 @@ export function getEnrichedPath(): string {
   const userPath = captureUserShellPath();
 
   // Merge: user shell PATH first (takes precedence), then current process PATH
-  const allDirs = [...userPath.split(":"), ...currentPath.split(":")];
+  const allDirs = [...userPath.split(PATH_DELIMITER), ...currentPath.split(PATH_DELIMITER)];
   const seen = new Set<string>();
   const deduped: string[] = [];
   for (const dir of allDirs) {
@@ -125,7 +131,7 @@ export function getEnrichedPath(): string {
     }
   }
 
-  _cachedPath = deduped.join(":");
+  _cachedPath = deduped.join(PATH_DELIMITER);
   return _cachedPath;
 }
 
@@ -141,19 +147,24 @@ export function _resetPathCache(): void {
  * Returns null if the binary is not found anywhere.
  */
 export function resolveBinary(name: string): string | null {
-  if (name.startsWith("/")) {
+  // Handle absolute paths on both platforms
+  if (name.startsWith("/") || /^[A-Za-z]:[\\/]/.test(name)) {
     return existsSync(name) ? name : null;
   }
 
   const enrichedPath = getEnrichedPath();
   try {
-    const resolved = execSync(`which ${name.replace(/[^a-zA-Z0-9._@/-]/g, "")}`, {
-
-      encoding: "utf-8",
-      timeout: 5_000,
-      env: { ...process.env, PATH: enrichedPath },
-    }).trim();
-    return resolved || null;
+    const resolved = execFileSync(
+      isWindows ? "where" : "which",
+      [name],
+      {
+        encoding: "utf-8",
+        timeout: 5_000,
+        env: { ...process.env, PATH: enrichedPath },
+      },
+    ).trim();
+    // `where` on Windows may return multiple lines; take the first
+    return resolved.split(/\r?\n/)[0].trim() || null;
   } catch {
     return null;
   }

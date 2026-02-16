@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { api, type DirEntry } from "../api.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
+import { pathBasename, pathParent, isRootPath } from "../utils/path.js";
 
 interface FolderPickerProps {
   initialPath: string;
@@ -82,7 +83,7 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
                   <path d="M8 3.5a.5.5 0 00-1 0V8a.5.5 0 00.252.434l3.5 2a.5.5 0 00.496-.868L8 7.71V3.5z" />
                   <path fillRule="evenodd" d="M8 16A8 8 0 108 0a8 8 0 000 16zm7-8A7 7 0 111 8a7 7 0 0114 0z" />
                 </svg>
-                <span className="font-medium truncate">{dir.split("/").pop() || dir}</span>
+                <span className="font-medium truncate">{pathBasename(dir)}</span>
                 <span className="text-cc-muted font-mono-code text-[10px] truncate ml-auto">{dir}</span>
               </button>
             ))}
@@ -112,11 +113,10 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
           ) : (
             <>
               {/* Go up button */}
-              {browsePath && browsePath !== "/" && (
+              {browsePath && !isRootPath(browsePath) && (
                 <button
                   onClick={() => {
-                    const parent = browsePath.split("/").slice(0, -1).join("/") || "/";
-                    loadDirs(parent);
+                    loadDirs(pathParent(browsePath));
                   }}
                   className="w-6 h-6 flex items-center justify-center rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer shrink-0"
                   title="Go to parent directory"
@@ -151,7 +151,7 @@ export function FolderPicker({ initialPath, onSelect, onClose }: FolderPickerPro
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0">
                 <path d="M12.416 3.376a.75.75 0 01.208 1.04l-5 7.5a.75.75 0 01-1.154.114l-3-3a.75.75 0 011.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 011.04-.207z" />
               </svg>
-              <span className="truncate font-mono-code">Select: {browsePath.split("/").pop() || "/"}</span>
+              <span className="truncate font-mono-code">Select: {pathBasename(browsePath)}</span>
             </button>
 
             {/* Subdirectories */}

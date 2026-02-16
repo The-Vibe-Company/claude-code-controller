@@ -1,4 +1,6 @@
 process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+// Default to production when started via `bun run start` (avoids Unix-only NODE_ENV=production syntax)
+process.env.NODE_ENV ??= "production";
 
 // Enrich process PATH at startup so binary resolution and `which` calls can find
 // binaries installed via version managers (nvm, volta, fnm, etc.).

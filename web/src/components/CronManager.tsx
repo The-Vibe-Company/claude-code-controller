@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { api, type CronJobInfo } from "../api.js";
 import { getModelsForBackend, getDefaultModel, toModelOptions, type ModelOption } from "../utils/backends.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { pathBasename } from "../utils/path.js";
 
 interface Props {
   onClose?: () => void;
@@ -589,7 +590,7 @@ function JobForm({
 
   // Folder display label
   const dirLabel = form.cwd
-    ? form.cwd.split("/").pop() || form.cwd
+    ? pathBasename(form.cwd)
     : "Select folder";
 
   return (

@@ -10,6 +10,7 @@ import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMod
 import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { pathBasename } from "../utils/path.js";
 
 interface ImageAttachment {
   name: string;
@@ -188,7 +189,7 @@ export function HomePage() {
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
   const logoSrc = backend === "codex" ? "/logo-codex.svg" : "/logo.svg";
-  const dirLabel = cwd ? cwd.split("/").pop() || cwd : "Select folder";
+  const dirLabel = cwd ? pathBasename(cwd) : "Select folder";
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;

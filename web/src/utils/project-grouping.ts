@@ -1,4 +1,5 @@
 import type { SdkSessionInfo } from "../types.js";
+import { pathBasename } from "./path.js";
 
 export interface SessionItem {
   id: string;
@@ -37,7 +38,7 @@ export interface ProjectGroup {
  */
 export function extractProjectKey(cwd: string, repoRoot?: string): string {
   const basePath = repoRoot || cwd;
-  return basePath.replace(/\/+$/, "") || "/";
+  return basePath.replace(/[\\/]+$/, "") || "/";
 }
 
 /**
@@ -45,9 +46,7 @@ export function extractProjectKey(cwd: string, repoRoot?: string): string {
  */
 export function extractProjectLabel(projectKey: string): string {
   if (projectKey === "/") return "/";
-  const parts = projectKey.split("/").filter(Boolean);
-  if (parts.length === 0) return "/";
-  return parts[parts.length - 1];
+  return pathBasename(projectKey);
 }
 
 /**

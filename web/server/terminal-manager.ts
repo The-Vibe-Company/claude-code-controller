@@ -22,6 +22,11 @@ interface TerminalInstance {
 }
 
 function resolveShell(): string {
+  if (process.platform === "win32") {
+    // Prefer PowerShell, fall back to cmd.exe
+    if (process.env.COMSPEC) return process.env.COMSPEC;
+    return "cmd.exe";
+  }
   if (process.env.SHELL && existsSync(process.env.SHELL)) return process.env.SHELL;
   if (existsSync("/bin/bash")) return "/bin/bash";
   return "/bin/sh";

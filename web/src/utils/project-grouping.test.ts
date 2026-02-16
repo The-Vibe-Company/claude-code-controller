@@ -55,6 +55,16 @@ describe("extractProjectKey", () => {
       extractProjectKey("/home/user/myapp/web", "/home/user/myapp"),
     ).toBe("/home/user/myapp");
   });
+
+  it("removes trailing backslashes (Windows paths)", () => {
+    expect(extractProjectKey("C:\\Users\\user\\myapp\\")).toBe("C:\\Users\\user\\myapp");
+  });
+
+  it("handles Windows paths with repoRoot", () => {
+    expect(
+      extractProjectKey("C:\\Users\\user\\myapp-wt", "C:\\Users\\user\\myapp"),
+    ).toBe("C:\\Users\\user\\myapp");
+  });
 });
 
 describe("extractProjectLabel", () => {
@@ -72,6 +82,10 @@ describe("extractProjectLabel", () => {
 
   it("handles deep nested paths", () => {
     expect(extractProjectLabel("/a/b/c/d/e")).toBe("e");
+  });
+
+  it("handles Windows-style backslash paths", () => {
+    expect(extractProjectLabel("C:\\Users\\user\\projects\\myapp")).toBe("myapp");
   });
 });
 

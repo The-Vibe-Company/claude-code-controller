@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { DiffViewer } from "./DiffViewer.js";
+import { pathTail, pathBasename } from "../utils/path.js";
 
 const TOOL_ICONS: Record<string, string> = {
   Bash: "terminal",
@@ -362,12 +363,12 @@ export function getPreview(name: string, input: Record<string, unknown>): string
   }
   if ((name === "Read" || name === "Write" || name === "Edit") && input.file_path) {
     const path = String(input.file_path);
-    return path.split("/").slice(-2).join("/");
+    return pathTail(path, 2);
   }
   if (name === "Glob" && input.pattern) return String(input.pattern);
   if (name === "Grep" && input.pattern) {
     const p = String(input.pattern);
-    const suffix = input.path ? ` in ${String(input.path).split("/").slice(-2).join("/")}` : "";
+    const suffix = input.path ? ` in ${pathTail(String(input.path), 2)}` : "";
     const full = p + suffix;
     return full.length > 60 ? full.slice(0, 60) + "..." : full;
   }
@@ -385,7 +386,7 @@ export function getPreview(name: string, input: Record<string, unknown>): string
     return `${input.todos.length} task${input.todos.length !== 1 ? "s" : ""}`;
   }
   if (name === "NotebookEdit" && input.notebook_path) {
-    return String(input.notebook_path).split("/").pop() || "";
+    return pathBasename(String(input.notebook_path));
   }
   if (name === "SendMessage" && input.recipient) {
     return `\u2192 ${String(input.recipient)}`;
