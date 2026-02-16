@@ -1287,15 +1287,18 @@ export class CodexAdapter {
 
       case "reasoning": {
         const r = item as CodexReasoningItem;
-        this.reasoningTextByItemId.set(item.id, r.summary || r.content || "");
+        const summary = typeof r.summary === "string" ? r.summary : "";
+        const content = typeof r.content === "string" ? r.content : "";
+        const text = summary || content;
+        this.reasoningTextByItemId.set(item.id, text);
         // Emit as thinking content block
-        if (r.summary || r.content) {
+        if (text) {
           this.emit({
             type: "stream_event",
             event: {
               type: "content_block_start",
               index: 0,
-              content_block: { type: "thinking", thinking: r.summary || r.content || "" },
+              content_block: { type: "thinking", thinking: text },
             },
             parent_tool_use_id: null,
           });
@@ -1475,12 +1478,11 @@ export class CodexAdapter {
 
       case "reasoning": {
         const r = item as CodexReasoningItem;
-        const thinkingText = (
-          this.reasoningTextByItemId.get(item.id)
-          || r.summary
-          || r.content
-          || ""
-        ).trim();
+        const rawText = this.reasoningTextByItemId.get(item.id)
+          || (typeof r.summary === "string" ? r.summary : "")
+          || (typeof r.content === "string" ? r.content : "")
+          || "";
+        const thinkingText = rawText.trim();
 
         if (thinkingText) {
           this.emit({

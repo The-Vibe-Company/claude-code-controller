@@ -592,6 +592,9 @@ export class WsBridge {
       this.broadcastToBrowsers(session, { type: "permission_cancelled", request_id: reqId });
     }
     session.pendingPermissions.clear();
+
+    // Auto-relaunch if browser is still connected (same behavior as Codex)
+    this.triggerRelaunchIfSessionActive(session);
   }
 
   // ── Browser WebSocket handlers ──────────────────────────────────────────

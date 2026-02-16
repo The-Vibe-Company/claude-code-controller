@@ -13,8 +13,14 @@ const CLAUDE_MD_PATH = join(ASSISTANT_DIR, "CLAUDE.md");
 const CLI_CONNECT_TIMEOUT_MS = 30_000;
 const CLI_CONNECT_POLL_MS = 500;
 
-/** How long to wait before auto-relaunching after an unexpected exit */
-const RELAUNCH_DELAY_MS = 3_000;
+/** Base delay before auto-relaunching after an unexpected exit */
+const RELAUNCH_DELAY_BASE_MS = 3_000;
+
+/** Max relaunch delay (cap for exponential backoff) */
+const RELAUNCH_DELAY_MAX_MS = 60_000;
+
+/** Max consecutive crashes before giving up on auto-relaunch */
+const MAX_CONSECUTIVE_CRASHES = 5;
 
 export interface AssistantConfig {
   enabled: boolean;
@@ -137,6 +143,7 @@ export class AssistantManager {
   private port: number;
   private config: AssistantConfig = { ...DEFAULT_CONFIG };
   private relaunching = false;
+  private consecutiveCrashes = 0;
 
   constructor(launcher: CliLauncher, wsBridge: WsBridge, port: number) {
     this.launcher = launcher;
@@ -213,6 +220,9 @@ export class AssistantManager {
     try {
       await this.waitForCLIConnection(session.sessionId);
 
+      // Reset crash counter on successful connection
+      this.consecutiveCrashes = 0;
+
       // Send the initial greeting
       this.wsBridge.injectUserMessage(
         session.sessionId,
@@ -280,15 +290,41 @@ export class AssistantManager {
     if (sessionId !== this.config.sessionId) return;
     if (this.relaunching) return;
 
-    console.log("[assistant] CLI exited, scheduling relaunch...");
+    this.consecutiveCrashes++;
+
+    if (this.consecutiveCrashes >= MAX_CONSECUTIVE_CRASHES) {
+      console.error(
+        `[assistant] Crash loop detected: ${this.consecutiveCrashes} consecutive crashes. Stopping auto-relaunch.`,
+      );
+      this.config.enabled = false;
+      this.config.sessionId = null;
+      this.config.cliSessionId = null;
+      this.consecutiveCrashes = 0;
+      this.saveConfig();
+      return;
+    }
+
+    // Exponential backoff: 3s, 6s, 12s, 24s, 48s (capped at 60s)
+    const delay = Math.min(
+      RELAUNCH_DELAY_BASE_MS * Math.pow(2, this.consecutiveCrashes - 1),
+      RELAUNCH_DELAY_MAX_MS,
+    );
+    console.log(`[assistant] CLI exited, scheduling relaunch in ${delay / 1000}s (crash #${this.consecutiveCrashes})...`);
     this.relaunching = true;
 
-    // Wait a bit before relaunching to avoid rapid restart loops
-    await new Promise((r) => setTimeout(r, RELAUNCH_DELAY_MS));
+    await new Promise((r) => setTimeout(r, delay));
     this.relaunching = false;
 
     // Re-check after delay — stop() may have cleared the session
     if (sessionId !== this.config.sessionId || !this.config.enabled) return;
+
+    // Sync cliSessionId from the launcher — it may have been cleared
+    // if the CLI exited immediately after --resume (indicating a bad resume)
+    const launcherSession = this.launcher.getSession(sessionId);
+    if (launcherSession && !launcherSession.cliSessionId) {
+      this.config.cliSessionId = null;
+      this.saveConfig();
+    }
 
     // Try to relaunch with --resume
     if (this.config.cliSessionId) {

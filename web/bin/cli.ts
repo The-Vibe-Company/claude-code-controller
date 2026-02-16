@@ -10,7 +10,7 @@ const command = process.argv[2];
 
 // Management subcommands that delegate to ctl.ts
 const CTL_COMMANDS = new Set([
-  "sessions", "envs", "cron", "skills", "settings", "assistant", "ctl-help",
+  "sessions", "envs", "cron", "skills", "settings", "assistant", "memory", "ctl-help",
 ]);
 
 function printUsage(): void {
@@ -36,6 +36,7 @@ Management commands (requires running server):
   skills      Manage Claude Code skills (list, get, create, update, delete)
   settings    Manage settings (get, set)
   assistant   Manage the Companion Assistant (status, launch, stop, config)
+  memory      Manage memory system (status, search, reindex, export, import)
 
 Options:
   --port <n>  Override the default port (default: 3456)

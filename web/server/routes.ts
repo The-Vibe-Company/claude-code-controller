@@ -1329,5 +1329,183 @@ export function createRoutes(
     return c.json(cronScheduler?.getExecutions(id) ?? []);
   });
 
+  // ─── Memory System ──────────────────────────────────────────────────
+
+  api.get("/memory/status", async (c) => {
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+      const stats = manager.getStats();
+      const config = manager.getConfig();
+      return c.json({
+        enabled: config.enabled,
+        stats,
+        config: {
+          provider: config.search.provider,
+          model: config.search.model,
+          hybridEnabled: config.search.hybrid.enabled,
+          cacheEnabled: config.search.cache.enabled,
+        },
+      });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Failed to get memory status" },
+        500,
+      );
+    }
+  });
+
+  api.get("/memory/search", async (c) => {
+    const query = c.req.query("q");
+    if (!query) return c.json({ error: "Query parameter 'q' required" }, 400);
+
+    const limit = parseInt(c.req.query("limit") || "10", 10);
+    const minScore = parseFloat(c.req.query("minScore") || "0");
+
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+      const results = await manager.search({ query, limit, minScore });
+      return c.json({ query, results });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Search failed" },
+        500,
+      );
+    }
+  });
+
+  api.post("/memory/reindex", async (c) => {
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+
+      // Run reindexing in background
+      let progress = { current: 0, total: 0, file: "" };
+      const promise = manager.reindex((current, total, file) => {
+        progress = { current, total, file };
+      });
+
+      // Return immediately
+      return c.json({
+        ok: true,
+        message: "Reindexing started in background",
+      });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Reindex failed" },
+        500,
+      );
+    }
+  });
+
+  api.get("/memory/config", async (c) => {
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+      return c.json(manager.getConfig());
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Failed to get config" },
+        500,
+      );
+    }
+  });
+
+  api.put("/memory/config", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+
+      const updates: Record<string, unknown> = {};
+      if (body.enabled !== undefined) updates.enabled = body.enabled;
+      if (body.provider) {
+        updates.search = {
+          ...manager.getConfig().search,
+          provider: body.provider,
+        };
+      }
+      if (body.model) {
+        updates.search = {
+          ...(updates.search || manager.getConfig().search),
+          model: body.model,
+        };
+      }
+      if (body.apiKey) {
+        updates.search = {
+          ...(updates.search || manager.getConfig().search),
+          apiKey: body.apiKey,
+        };
+      }
+
+      const updated = manager.updateConfig(updates);
+      return c.json(updated);
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Failed to update config" },
+        500,
+      );
+    }
+  });
+
+  api.get("/memory/export", async (c) => {
+    const output = c.req.query("output");
+    if (!output) return c.json({ error: "output path required" }, 400);
+
+    try {
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+      const files = manager.listFiles();
+
+      const data = {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        config: manager.getConfig(),
+        files: files.map((f) => ({
+          path: f.path,
+          source: f.source,
+          content: readFileSync(f.absolutePath, "utf-8"),
+        })),
+      };
+
+      await writeFile(output, JSON.stringify(data, null, 2), "utf-8");
+      return c.json({ ok: true, output, fileCount: files.length });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Export failed" },
+        500,
+      );
+    }
+  });
+
+  api.post("/memory/import", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const inputPath = body.input;
+    if (!inputPath) return c.json({ error: "input path required" }, 400);
+
+    try {
+      const data = JSON.parse(await readFile(inputPath, "utf-8"));
+      const { getMemoryManager } = await import("./memory-manager.js");
+      const manager = getMemoryManager();
+
+      // Import files
+      let imported = 0;
+      for (const file of data.files || []) {
+        const fullPath = join(manager.getMemoryDir(), file.path);
+        await writeFile(fullPath, file.content, "utf-8");
+        await manager.indexFile(file.source, file.path, file.content);
+        imported++;
+      }
+
+      return c.json({ ok: true, imported });
+    } catch (e: unknown) {
+      return c.json(
+        { error: e instanceof Error ? e.message : "Import failed" },
+        500,
+      );
+    }
+  });
+
   return api;
 }

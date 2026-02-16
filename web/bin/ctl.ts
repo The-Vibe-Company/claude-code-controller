@@ -457,6 +457,62 @@ async function handleSkills(base: string, args: string[]): Promise<void> {
   }
 }
 
+async function handleMemory(base: string, args: string[]): Promise<void> {
+  const sub = args[0];
+  const rest = args.slice(1);
+
+  switch (sub) {
+    case "status": {
+      out(await apiGet(base, "/memory/status"));
+      break;
+    }
+    case "search": {
+      const query = rest.join(" ");
+      if (!query) err("Usage: companion memory search <query> [--limit <n>] [--min-score <n>]");
+      const flags = parseFlags(rest);
+      const params = new URLSearchParams();
+      params.set("q", query);
+      if (flags.limit) params.set("limit", String(flags.limit));
+      if (flags["min-score"]) params.set("minScore", String(flags["min-score"]));
+      out(await apiGet(base, `/memory/search?${params.toString()}`));
+      break;
+    }
+    case "reindex": {
+      out(await apiPost(base, "/memory/reindex"));
+      break;
+    }
+    case "config": {
+      const action = rest[0];
+      if (action === "set") {
+        const flags = parseFlags(rest.slice(1));
+        const body: Record<string, unknown> = {};
+        if (flags.provider) body.provider = flags.provider;
+        if (flags.model) body.model = flags.model;
+        if (flags["api-key"]) body.apiKey = flags["api-key"];
+        if (flags.enabled !== undefined) body.enabled = flags.enabled === true || flags.enabled === "true";
+        out(await apiPut(base, "/memory/config", body));
+      } else {
+        out(await apiGet(base, "/memory/config"));
+      }
+      break;
+    }
+    case "export": {
+      const flags = parseFlags(rest);
+      if (!flags.output) err("Usage: companion memory export --output <path>");
+      out(await apiGet(base, `/memory/export?output=${encodeURIComponent(String(flags.output))}`));
+      break;
+    }
+    case "import": {
+      const flags = parseFlags(rest);
+      if (!flags.input) err("Usage: companion memory import --input <path>");
+      out(await apiPost(base, "/memory/import", { input: flags.input }));
+      break;
+    }
+    default:
+      err(`Unknown memory subcommand: ${sub}. Available: status, search, reindex, config, export, import`);
+  }
+}
+
 // ─── Main dispatch ──────────────────────────────────────────────────────────
 
 function printCtlUsage(): void {
@@ -470,6 +526,7 @@ Management commands:
   companion skills <subcommand>           Manage Claude Code skills
   companion settings <subcommand>         Manage settings
   companion assistant <subcommand>        Manage the Companion Assistant
+  companion memory <subcommand>           Manage memory system
 
 Global options:
   --port <n>    Override the Companion API port (default: 3456, or COMPANION_PORT env)
@@ -510,6 +567,10 @@ export async function handleCtlCommand(command: string, rawArgv: string[]): Prom
       case "assistant":
         if (argv.length === 0) err("Usage: companion assistant <status|launch|stop|config>");
         await handleAssistant(base, argv);
+        break;
+      case "memory":
+        if (argv.length === 0) err("Usage: companion memory <status|search|reindex|config|export|import>");
+        await handleMemory(base, argv);
         break;
       case "ctl-help":
         printCtlUsage();
