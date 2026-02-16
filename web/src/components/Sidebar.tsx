@@ -382,7 +382,7 @@ export function Sidebar() {
 
       {/* Session list */}
       <div className="flex-1 overflow-y-auto px-2 pb-2">
-        {activeSessions.length === 0 && archivedSessions.length === 0 ? (
+        {activeSessions.length === 0 && cronSessions.length === 0 && archivedSessions.length === 0 ? (
           <p className="px-3 py-8 text-xs text-cc-muted text-center leading-relaxed">
             No sessions yet.
           </p>
