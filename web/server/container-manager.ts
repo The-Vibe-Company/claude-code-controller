@@ -50,6 +50,9 @@ const EXEC_OPTS: ExecSyncOptionsWithStringEncoding = {
 const QUICK_EXEC_TIMEOUT_MS = 8_000;
 const STANDARD_EXEC_TIMEOUT_MS = 30_000;
 const CONTAINER_BOOT_TIMEOUT_MS = 20_000;
+const IMAGE_PULL_TIMEOUT_MS = 300_000; // 5 min for pulling images
+
+const GHCR_REGISTRY = "ghcr.io/the-vibe-company";
 
 function exec(cmd: string, opts?: ExecSyncOptionsWithStringEncoding): string {
   return execSync(cmd, { ...EXEC_OPTS, ...opts }).trim();
@@ -699,6 +702,92 @@ export class ContainerManager {
     } finally {
       // Clean up temp build directory
       try { rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  }
+
+  /**
+   * Return the ghcr.io remote path for a default image, or null for non-default images.
+   */
+  static getRegistryImage(localTag: string): string | null {
+    if (localTag === "the-companion:latest") {
+      return `${GHCR_REGISTRY}/the-companion:latest`;
+    }
+    return null;
+  }
+
+  /**
+   * Pull a Docker image from a registry and optionally tag it locally.
+   * Returns true on success, false on failure (never throws).
+   */
+  async pullImage(
+    remoteImage: string,
+    localTag: string,
+    onProgress?: (line: string) => void,
+  ): Promise<boolean> {
+    try {
+      const proc = Bun.spawn(["docker", "pull", remoteImage], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const readOutput = async (stream: ReadableStream<Uint8Array>) => {
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n");
+            buffer = parts.pop() || "";
+            for (const line of parts) {
+              if (line.trim()) onProgress?.(line);
+            }
+          }
+          if (buffer.trim()) onProgress?.(buffer);
+        } finally {
+          reader.releaseLock();
+        }
+      };
+
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          proc.kill();
+          reject(new Error("Pull timed out"));
+        }, IMAGE_PULL_TIMEOUT_MS);
+      });
+
+      const exitPromise = (async () => {
+        await Promise.all([readOutput(proc.stdout), readOutput(proc.stderr)]);
+        return proc.exited;
+      })();
+
+      const exitCode = await Promise.race([exitPromise, timeoutPromise]);
+      clearTimeout(timeoutId!);
+
+      if (exitCode !== 0) {
+        console.warn(`[container-manager] docker pull ${remoteImage} failed (exit ${exitCode})`);
+        return false;
+      }
+
+      // Tag as local name if different
+      if (remoteImage !== localTag) {
+        exec(`docker tag ${shellEscape(remoteImage)} ${shellEscape(localTag)}`, {
+          encoding: "utf-8",
+          timeout: QUICK_EXEC_TIMEOUT_MS,
+        });
+      }
+
+      console.log(`[container-manager] Pulled ${remoteImage} → ${localTag}`);
+      return true;
+    } catch (e) {
+      console.warn(
+        `[container-manager] Pull failed for ${remoteImage}:`,
+        e instanceof Error ? e.message : String(e),
+      );
+      return false;
     }
   }
 

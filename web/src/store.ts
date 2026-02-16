@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { SessionState, PermissionRequest, ChatMessage, SdkSessionInfo, TaskItem, McpServerDetail } from "./types.js";
-import type { UpdateInfo, PRStatusResponse } from "./api.js";
+import type { UpdateInfo, PRStatusResponse, CreationProgressEvent } from "./api.js";
 
 interface AppState {
   // Sessions
@@ -58,6 +58,12 @@ interface AppState {
   // Update info
   updateInfo: UpdateInfo | null;
   updateDismissedVersion: string | null;
+
+  // Session creation progress (SSE streaming)
+  creationProgress: CreationProgressEvent[] | null;
+  creationError: string | null;
+  addCreationProgress: (step: CreationProgressEvent) => void;
+  clearCreation: () => void;
 
   // UI
   darkMode: boolean;
@@ -233,6 +239,8 @@ export const useStore = create<AppState>((set) => ({
   mcpServers: new Map(),
   toolProgress: new Map(),
   collapsedProjects: getInitialCollapsedProjects(),
+  creationProgress: null,
+  creationError: null,
   updateInfo: null,
   updateDismissedVersion: getInitialDismissedVersion(),
   darkMode: getInitialDarkMode(),
@@ -246,6 +254,18 @@ export const useStore = create<AppState>((set) => ({
   terminalOpen: false,
   terminalCwd: null,
   terminalId: null,
+
+  addCreationProgress: (step) => set((state) => {
+    const existing = state.creationProgress || [];
+    const idx = existing.findIndex((s) => s.step === step.step);
+    if (idx >= 0) {
+      const updated = [...existing];
+      updated[idx] = step;
+      return { creationProgress: updated };
+    }
+    return { creationProgress: [...existing, step] };
+  }),
+  clearCreation: () => set({ creationProgress: null, creationError: null }),
 
   setDarkMode: (v) => {
     localStorage.setItem("cc-dark-mode", String(v));

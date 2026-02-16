@@ -12,6 +12,8 @@ import type { PermissionRequest, ChatMessage, ContentBlock, SessionState, McpSer
 import type { TaskItem } from "../types.js";
 import type { UpdateInfo, GitHubPRInfo } from "../api.js";
 import { GitHubPRDisplay, CodexRateLimitsSection, CodexTokenDetailsSection } from "./TaskPanel.js";
+import { SessionCreationProgress } from "./SessionCreationProgress.js";
+import type { CreationProgressEvent } from "../types.js";
 
 // ─── Mock Data ──────────────────────────────────────────────────────────────
 
@@ -1102,6 +1104,52 @@ export function Playground() {
             </Card>
             <Card label="No changes">
               <DiffViewer oldText="same content" newText="same content" />
+            </Card>
+          </div>
+        </Section>
+        {/* ─── Session Creation Progress ─────────────────────── */}
+        <Section title="Session Creation Progress" description="Step-by-step progress indicator shown during session creation (SSE streaming)">
+          <div className="space-y-4 max-w-md">
+            <Card label="In progress (container session)">
+              <SessionCreationProgress
+                steps={[
+                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
+                  { step: "pulling_image", label: "Pulling Docker image...", status: "done" },
+                  { step: "creating_container", label: "Starting container...", status: "in_progress" },
+                  { step: "launching_cli", label: "Launching Claude Code...", status: "in_progress" },
+                ] satisfies CreationProgressEvent[]}
+              />
+            </Card>
+            <Card label="Completed (worktree session)">
+              <SessionCreationProgress
+                steps={[
+                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
+                  { step: "fetching_git", label: "Fetching from remote...", status: "done" },
+                  { step: "checkout_branch", label: "Checking out feat/auth...", status: "done" },
+                  { step: "creating_worktree", label: "Creating worktree...", status: "done" },
+                  { step: "launching_cli", label: "Launching Claude Code...", status: "done" },
+                ] satisfies CreationProgressEvent[]}
+              />
+            </Card>
+            <Card label="Error during image pull">
+              <SessionCreationProgress
+                steps={[
+                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
+                  { step: "pulling_image", label: "Pulling Docker image...", status: "error" },
+                ] satisfies CreationProgressEvent[]}
+                error="Failed to pull ghcr.io/the-vibe-company/the-companion:latest — connection timed out after 30s"
+              />
+            </Card>
+            <Card label="Error during init script">
+              <SessionCreationProgress
+                steps={[
+                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
+                  { step: "pulling_image", label: "Pulling Docker image...", status: "done" },
+                  { step: "creating_container", label: "Starting container...", status: "done" },
+                  { step: "running_init_script", label: "Running init script...", status: "error" },
+                ] satisfies CreationProgressEvent[]}
+                error={"npm ERR! code ENOENT\nnpm ERR! syscall open\nnpm ERR! path /app/package.json"}
+              />
             </Card>
           </div>
         </Section>

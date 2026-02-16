@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "../store.js";
-import { api, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
+import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
+import { SessionCreationProgress } from "./SessionCreationProgress.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -90,6 +91,7 @@ export function HomePage() {
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
   const currentSessionId = useStore((s) => s.currentSessionId);
+  const creationProgress = useStore((s) => s.creationProgress);
 
   // Auto-focus textarea (desktop only — on mobile it triggers the keyboard immediately)
   useEffect(() => {
@@ -275,25 +277,33 @@ export function HomePage() {
       return;
     }
 
+    const store = useStore.getState();
+    store.clearCreation();
+
     try {
       // Disconnect current session if any
       if (currentSessionId) {
         disconnectSession(currentSessionId);
       }
 
-      // Create session (with optional branch)
+      // Create session with progress streaming
       const branchName = selectedBranch.trim() || undefined;
-      const result = await api.createSession({
-        model,
-        permissionMode: mode,
-        cwd: cwd || undefined,
-        envSlug: selectedEnv || undefined,
-        branch: branchName,
-        createBranch: branchName && isNewBranch ? true : undefined,
-        useWorktree: useWorktree || undefined,
-        backend,
-        codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
-      });
+      const result = await createSessionStream(
+        {
+          model,
+          permissionMode: mode,
+          cwd: cwd || undefined,
+          envSlug: selectedEnv || undefined,
+          branch: branchName,
+          createBranch: branchName && isNewBranch ? true : undefined,
+          useWorktree: useWorktree || undefined,
+          backend,
+          codexInternetAccess: backend === "codex" ? codexInternetAccess : undefined,
+        },
+        (progress) => {
+          useStore.getState().addCreationProgress(progress);
+        },
+      );
       const sessionId = result.sessionId;
 
       // Assign a random session name
@@ -330,6 +340,9 @@ export function HomePage() {
         images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
         timestamp: Date.now(),
       });
+
+      // Clear progress on success
+      useStore.getState().clearCreation();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
       setSending(false);
@@ -895,6 +908,11 @@ export function HomePage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Session creation progress */}
+        {sending && creationProgress && creationProgress.length > 0 && (
+          <SessionCreationProgress steps={creationProgress} />
         )}
 
         {/* Error message */}
