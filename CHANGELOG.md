@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.0...the-companion-v0.46.1) (2026-02-17)
+
+
+### Bug Fixes
+
+* **docker:** remove legacy companion-dev image support ([#295](https://github.com/The-Vibe-Company/companion/issues/295)) ([fe8cc2a](https://github.com/The-Vibe-Company/companion/commit/fe8cc2a57390a5ccd5e2d18605995c043cfa26b4))
+
 ## [0.46.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.45.0...the-companion-v0.46.0) (2026-02-16)
 
 
