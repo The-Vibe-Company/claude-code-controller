@@ -1,7 +1,8 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState, useMemo, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { parseHash } from "../utils/routing.js";
 
 export function TopBar() {
   const hash = useSyncExternalStore(
@@ -11,7 +12,8 @@ export function TopBar() {
     },
     () => window.location.hash,
   );
-  const isSessionView = hash !== "#/settings" && hash !== "#/terminal" && hash !== "#/environments";
+  const route = useMemo(() => parseHash(hash), [hash]);
+  const isSessionView = route.page === "session" || route.page === "home";
   const currentSessionId = useStore((s) => s.currentSessionId);
   const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);

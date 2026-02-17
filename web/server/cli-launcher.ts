@@ -580,6 +580,8 @@ export class CliLauncher {
         }
       }
       dockerArgs.push("-e", "CLAUDECODE=");
+      // Point Codex at /root/.codex where container-manager seeded auth/config
+      dockerArgs.push("-e", "CODEX_HOME=/root/.codex");
       dockerArgs.push(options.containerId!);
       // Use a login shell so ~/.bashrc is sourced and nvm/bun/deno/etc are on PATH
       const innerCmd = [binary, ...args].map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" ");

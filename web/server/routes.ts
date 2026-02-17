@@ -19,6 +19,7 @@ import * as sessionNames from "./session-names.js";
 import { containerManager, ContainerManager, type ContainerConfig, type ContainerInfo } from "./container-manager.js";
 import type { CreationStepId } from "./session-types.js";
 import { hasContainerClaudeAuth } from "./claude-container-auth.js";
+import { hasContainerCodexAuth } from "./codex-container-auth.js";
 import { DEFAULT_OPENROUTER_MODEL, getSettings, updateSettings } from "./settings-manager.js";
 import { getUsageLimits } from "./usage-limits.js";
 import {
@@ -173,13 +174,20 @@ export function createRoutes(
       let containerName: string | undefined;
       let containerImage: string | undefined;
 
-      // Claude inside Linux containers cannot use host keychain auth.
+      // Containers cannot use host keychain auth.
       // Fail fast with a clear error when no container-compatible auth is present.
       if (effectiveImage && backend === "claude" && !hasContainerClaudeAuth(envVars)) {
         return c.json({
           error:
             "Containerized Claude requires auth available inside the container. " +
             "Set ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / CLAUDE_CODE_AUTH_TOKEN) in the selected environment.",
+        }, 400);
+      }
+      if (effectiveImage && backend === "codex" && !hasContainerCodexAuth(envVars)) {
+        return c.json({
+          error:
+            "Containerized Codex requires auth available inside the container. " +
+            "Set OPENAI_API_KEY in the selected environment, or ensure ~/.codex/auth.json exists on the host.",
         }, 400);
       }
 
@@ -196,7 +204,7 @@ export function createRoutes(
               console.warn("[routes] the-companion:latest not found, falling back to companion-dev:latest (deprecated)");
               effectiveImage = "companion-dev:latest";
             } else {
-              // Try pulling from ghcr.io first, fall back to local build
+              // Try pulling from Docker Hub first, fall back to local build
               const registryImage = ContainerManager.getRegistryImage(effectiveImage);
               let pulled = false;
               if (registryImage) {
@@ -260,9 +268,18 @@ export function createRoutes(
         containerId = containerInfo.containerId;
         containerName = containerInfo.name;
         containerImage = effectiveImage;
-        // Note: we intentionally do NOT run git checkout inside the container.
-        // The container uses a bind mount of hostCwd at /workspace, so the host
-        // checkout state is already visible inside the container.
+
+        // Copy workspace files into the container's isolated volume
+        try {
+          await containerManager.copyWorkspaceToContainer(containerInfo.containerId, cwd);
+          containerManager.reseedGitAuth(containerInfo.containerId);
+        } catch (err) {
+          containerManager.removeContainer(tempId);
+          const reason = err instanceof Error ? err.message : String(err);
+          return c.json({
+            error: `Failed to copy workspace to container: ${reason}`,
+          }, 503);
+        }
 
         // Run per-environment init script if configured
         if (companionEnv?.initScript?.trim()) {
@@ -452,7 +469,7 @@ export function createRoutes(
         let containerName: string | undefined;
         let containerImage: string | undefined;
 
-        // Auth check for containerized Claude
+        // Auth check for containerized sessions
         if (effectiveImage && backend === "claude" && !hasContainerClaudeAuth(envVars)) {
           await stream.writeSSE({
             event: "error",
@@ -460,6 +477,17 @@ export function createRoutes(
               error:
                 "Containerized Claude requires auth available inside the container. " +
                 "Set ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN / CLAUDE_CODE_AUTH_TOKEN) in the selected environment.",
+            }),
+          });
+          return;
+        }
+        if (effectiveImage && backend === "codex" && !hasContainerCodexAuth(envVars)) {
+          await stream.writeSSE({
+            event: "error",
+            data: JSON.stringify({
+              error:
+                "Containerized Codex requires auth available inside the container. " +
+                "Set OPENAI_API_KEY in the selected environment, or ensure ~/.codex/auth.json exists on the host.",
             }),
           });
           return;
@@ -472,7 +500,7 @@ export function createRoutes(
               if (effectiveImage === "the-companion:latest" && containerManager.imageExists("companion-dev:latest")) {
                 effectiveImage = "companion-dev:latest";
               } else {
-                // Try pulling from ghcr.io first
+                // Try pulling from Docker Hub first
                 const registryImage = ContainerManager.getRegistryImage(effectiveImage);
                 let pulled = false;
                 if (registryImage) {
@@ -558,6 +586,25 @@ export function createRoutes(
           containerName = containerInfo.name;
           containerImage = effectiveImage;
           await emitProgress(stream, "creating_container", "Container running", "done");
+
+          // --- Step: Copy workspace into isolated volume ---
+          await emitProgress(stream, "copying_workspace", "Copying workspace files...", "in_progress");
+          try {
+            await containerManager.copyWorkspaceToContainer(containerInfo.containerId, cwd);
+            containerManager.reseedGitAuth(containerInfo.containerId);
+            await emitProgress(stream, "copying_workspace", "Workspace copied", "done");
+          } catch (err) {
+            containerManager.removeContainer(tempId);
+            const reason = err instanceof Error ? err.message : String(err);
+            await stream.writeSSE({
+              event: "error",
+              data: JSON.stringify({
+                error: `Failed to copy workspace: ${reason}`,
+                step: "copying_workspace",
+              }),
+            });
+            return;
+          }
 
           // --- Step: Init script ---
           if (companionEnv?.initScript?.trim()) {

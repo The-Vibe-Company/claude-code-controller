@@ -43,6 +43,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # ── Claude Code CLI ─────────────────────────────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code
 
+# ── Codex CLI ──────────────────────────────────────────────────────────────
+RUN npm install -g @openai/codex
+
 # ── Workspace ────────────────────────────────────────────────────────────────
 WORKDIR /workspace
 

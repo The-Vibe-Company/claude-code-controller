@@ -318,6 +318,7 @@ export type CreationStepId =
   | "pulling_image"
   | "building_image"
   | "creating_container"
+  | "copying_workspace"
   | "running_init_script"
   | "launching_cli";
 

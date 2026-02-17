@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "../store.js";
 import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
-import { SessionCreationProgress } from "./SessionCreationProgress.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
 import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
+import { navigateToSession } from "../utils/routing.js";
 import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
 import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
@@ -92,7 +92,6 @@ export function HomePage() {
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
   const currentSessionId = useStore((s) => s.currentSessionId);
-  const creationProgress = useStore((s) => s.creationProgress);
 
   // Auto-focus textarea (desktop only — on mobile it triggers the keyboard immediately)
   useEffect(() => {
@@ -229,7 +228,7 @@ export function HomePage() {
     setText(e.target.value);
     const ta = e.target;
     ta.style.height = "auto";
-    ta.style.height = Math.min(ta.scrollHeight, 300) + "px";
+    ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -280,6 +279,7 @@ export function HomePage() {
 
     const store = useStore.getState();
     store.clearCreation();
+    store.setSessionCreating(true, backend as "claude" | "codex");
 
     try {
       // Disconnect current session if any
@@ -318,8 +318,10 @@ export function HomePage() {
       // Store the permission mode for this session
       useStore.getState().setPreviousPermissionMode(sessionId, mode);
 
-      // Switch to session
-      setCurrentSession(sessionId);
+      // Switch to session — use replace to avoid a back-button entry for the creation state
+      navigateToSession(sessionId, true);
+      // connectSession called eagerly so waitForConnection below can resolve immediately;
+      // the App.tsx hash-sync effect also calls it, but that runs after render (too late).
       connectSession(sessionId);
 
       // Wait for WebSocket connection
@@ -345,7 +347,11 @@ export function HomePage() {
       // Clear progress on success
       useStore.getState().clearCreation();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setError(errMsg);
+      // Set error in store so the overlay can display it; keep sessionCreating
+      // true so the overlay stays visible — user dismisses via the overlay's cancel button
+      useStore.getState().setCreationError(errMsg);
       setSending(false);
     }
   }
@@ -450,8 +456,8 @@ export function HomePage() {
             onPaste={handlePaste}
             placeholder="Fix a bug, build a feature, refactor code..."
             rows={4}
-            className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
-            style={{ minHeight: "100px", maxHeight: "300px" }}
+            className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
+            style={{ minHeight: "100px", maxHeight: "200px" }}
           />
 
           {/* Bottom toolbar */}
@@ -909,11 +915,6 @@ export function HomePage() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* Session creation progress */}
-        {sending && creationProgress && creationProgress.length > 0 && (
-          <SessionCreationProgress steps={creationProgress} />
         )}
 
         {/* Error message */}

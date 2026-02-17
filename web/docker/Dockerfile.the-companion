@@ -75,7 +75,10 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # ── Layer 9: Claude Code CLI ─────────────────────────────────────────────────
 RUN . "$NVM_DIR/nvm.sh" && npm install -g @anthropic-ai/claude-code
 
-# ── Layer 10: Python tooling (poetry, uv) ────────────────────────────────────
+# ── Layer 10: Codex CLI ─────────────────────────────────────────────────────
+RUN . "$NVM_DIR/nvm.sh" && npm install -g @openai/codex
+
+# ── Layer 11: Python tooling (poetry, uv) ────────────────────────────────────
 # --break-system-packages is safe here: this is a disposable container image,
 # not a shared system. No risk of breaking OS-managed Python packages.
 RUN pip install --break-system-packages poetry uv

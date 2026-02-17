@@ -37,6 +37,8 @@ export interface ContainerInfo {
   hostCwd: string;
   containerCwd: string;
   state: "creating" | "running" | "stopped" | "removed";
+  /** Named Docker volume for isolated workspace (absent for legacy bind-mount containers). */
+  volumeName?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ const STANDARD_EXEC_TIMEOUT_MS = 30_000;
 const CONTAINER_BOOT_TIMEOUT_MS = 20_000;
 const IMAGE_PULL_TIMEOUT_MS = 300_000; // 5 min for pulling images
 
-const GHCR_REGISTRY = "ghcr.io/the-vibe-company";
+const DOCKER_REGISTRY = "docker.io/stangirard";
 
 function exec(cmd: string, opts?: ExecSyncOptionsWithStringEncoding): string {
   return execSync(cmd, { ...EXEC_OPTS, ...opts }).trim();
@@ -143,6 +145,13 @@ export class ContainerManager {
       }
     }
 
+    // Create a named volume for workspace isolation (each container gets its own copy)
+    const volumeName = `companion-ws-${sessionId.slice(0, 8)}`;
+    exec(`docker volume create ${shellEscape(volumeName)}`, {
+      encoding: "utf-8",
+      timeout: QUICK_EXEC_TIMEOUT_MS,
+    });
+
     // Build docker create args
     const args: string[] = [
       "docker", "create",
@@ -153,7 +162,12 @@ export class ContainerManager {
       // Seed auth/config from host home, but keep runtime writes inside container.
       "-v", `${homedir}/.claude:/companion-host-claude:ro`,
       "--tmpfs", "/root/.claude",
-      "-v", `${hostCwd}:/workspace`,
+      // Seed Codex auth/config from host (if present)
+      ...(existsSync(join(homedir, ".codex"))
+        ? ["-v", `${homedir}/.codex:/companion-host-codex:ro`, "--tmpfs", "/root/.codex"]
+        : []),
+      // Isolated workspace: named volume populated later via docker cp
+      "-v", `${volumeName}:/workspace`,
       "-w", "/workspace",
     ];
 
@@ -193,6 +207,7 @@ export class ContainerManager {
       hostCwd,
       containerCwd: "/workspace",
       state: "creating",
+      volumeName,
     };
 
     try {
@@ -211,6 +226,7 @@ export class ContainerManager {
       info.state = "running";
 
       this.seedAuthFiles(containerId);
+      this.seedCodexFiles(containerId);
       this.seedGitAuth(containerId);
 
       // Resolve actual port mappings
@@ -224,8 +240,9 @@ export class ContainerManager {
 
       return info;
     } catch (e) {
-      // Cleanup partial creation
+      // Cleanup partial creation (container + volume)
       try { exec(`docker rm -f ${shellEscape(name)}`); } catch { /* ignore */ }
+      try { exec(`docker volume rm ${shellEscape(volumeName)}`); } catch { /* ignore */ }
       info.state = "removed";
       throw new Error(
         `Failed to create container: ${e instanceof Error ? e.message : String(e)}`,
@@ -259,27 +276,65 @@ export class ContainerManager {
   }
 
   /**
+   * Copy Codex auth & config files from the read-only bind mount into the
+   * tmpfs home dir. Similar to seedAuthFiles but for Codex's ~/.codex directory.
+   * Called after both initial create and restart (tmpfs is wiped on stop).
+   */
+  private seedCodexFiles(containerId: string): void {
+    try {
+      this.execInContainer(containerId, [
+        "sh", "-lc",
+        [
+          "[ -d /companion-host-codex ] || exit 0",
+          "mkdir -p /root/.codex",
+          "for f in auth.json config.toml models_cache.json version.json; do " +
+            "[ -f /companion-host-codex/$f ] && cp /companion-host-codex/$f /root/.codex/$f 2>/dev/null; done",
+          "for d in skills vendor_imports prompts rules; do " +
+            "[ -d /companion-host-codex/$d ] && cp -r /companion-host-codex/$d /root/.codex/$d 2>/dev/null; done",
+          "true",
+        ].join("; "),
+      ]);
+    } catch { /* best-effort — container may not have /companion-host-codex mounted */ }
+  }
+
+  /**
    * Seed git authentication inside the container.
    * - Extracts GitHub CLI token from host keyring and logs in inside container
-   * - Sets up `gh` as the git credential helper for HTTPS operations
+   * - Always sets up `gh` as the git credential helper for HTTPS operations
    * - Disables GPG commit signing (host tools like 1Password aren't available)
    *
    * Called after both initial create and restart (tmpfs wipes gh config on stop).
    */
   private seedGitAuth(containerId: string): void {
+    // Track whether we could read the host token. Containers may still have gh
+    // auth via copied files, so setup-git must run even when this is unavailable.
+    let token = "";
+
     // Extract GitHub token from host (may be stored in macOS keyring)
     try {
-      const token = exec("gh auth token 2>/dev/null", {
+      token = exec("gh auth token 2>/dev/null", {
         encoding: "utf-8",
         timeout: QUICK_EXEC_TIMEOUT_MS,
       });
-      if (token) {
+    } catch { /* best-effort — gh may not be installed on host */ }
+
+    // If host token exists, seed gh auth state in the container.
+    if (token) {
+      try {
         this.execInContainer(containerId, [
           "sh", "-lc",
-          `echo "${token}" | gh auth login --with-token 2>/dev/null; gh auth setup-git 2>/dev/null; true`,
+          `printf '%s\n' ${shellEscape(token)} | gh auth login --with-token 2>/dev/null; true`,
         ]);
-      }
-    } catch { /* best-effort — gh may not be installed on host */ }
+      } catch { /* best-effort */ }
+    }
+
+    // Always wire git credentials to gh token flow.
+    try {
+      this.execInContainer(containerId, [
+        "sh", "-lc",
+        "gh auth setup-git 2>/dev/null; true",
+      ]);
+    } catch { /* best-effort */ }
 
     // Disable GPG/SSH commit signing — host signing tools (1Password, GPG agent)
     // aren't available inside the container and would cause git commit to fail.
@@ -302,6 +357,43 @@ export class ContainerManager {
         ].join("; "),
       ]);
     } catch { /* best-effort */ }
+  }
+
+  /**
+   * Copy host workspace files into a running container's /workspace volume.
+   * Uses `docker cp` which works with both running and stopped containers.
+   * The trailing `/.` ensures directory contents are copied (not the directory itself).
+   */
+  async copyWorkspaceToContainer(
+    containerId: string,
+    hostCwd: string,
+  ): Promise<void> {
+    validateContainerId(containerId);
+
+    const src = hostCwd.endsWith("/") ? `${hostCwd}.` : `${hostCwd}/.`;
+    const cmd = `docker cp ${shellEscape(src)} ${shellEscape(containerId)}:/workspace`;
+
+    const proc = Bun.spawn(["sh", "-c", cmd], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stderrText = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      throw new Error(
+        `docker cp failed (exit ${exitCode}): ${stderrText.trim() || "unknown error"}`,
+      );
+    }
+  }
+
+  /**
+   * Re-seed git auth inside a container. Call this after workspace files have
+   * been copied so SSH→HTTPS remote rewriting can find the `.git` directory.
+   */
+  reseedGitAuth(containerId: string): void {
+    this.seedGitAuth(containerId);
   }
 
   /** Parse `docker port` output to get host port mappings. */
@@ -459,6 +551,23 @@ export class ContainerManager {
         e instanceof Error ? e.message : String(e),
       );
     }
+
+    // Clean up the named workspace volume if one was created
+    if (info.volumeName) {
+      try {
+        exec(`docker volume rm ${shellEscape(info.volumeName)}`, {
+          encoding: "utf-8",
+          timeout: QUICK_EXEC_TIMEOUT_MS,
+        });
+        console.log(`[container-manager] Removed volume ${info.volumeName}`);
+      } catch (e) {
+        console.warn(
+          `[container-manager] Failed to remove volume ${info.volumeName}:`,
+          e instanceof Error ? e.message : String(e),
+        );
+      }
+    }
+
     this.containers.delete(sessionId);
   }
 
@@ -480,6 +589,7 @@ export class ContainerManager {
       timeout: CONTAINER_BOOT_TIMEOUT_MS,
     });
     this.seedAuthFiles(containerId);
+    this.seedCodexFiles(containerId);
     this.seedGitAuth(containerId);
   }
 
@@ -706,11 +816,11 @@ export class ContainerManager {
   }
 
   /**
-   * Return the ghcr.io remote path for a default image, or null for non-default images.
+   * Return the Docker Hub remote path for a default image, or null for non-default images.
    */
   static getRegistryImage(localTag: string): string | null {
     if (localTag === "the-companion:latest") {
-      return `${GHCR_REGISTRY}/the-companion:latest`;
+      return `${DOCKER_REGISTRY}/the-companion:latest`;
     }
     return null;
   }

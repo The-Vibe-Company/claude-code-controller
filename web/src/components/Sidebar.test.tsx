@@ -289,7 +289,9 @@ describe("Sidebar", () => {
     expect(sessionButton).toHaveClass("bg-cc-active");
   });
 
-  it("clicking a session calls setCurrentSession and connectSession", () => {
+  it("clicking a session navigates to the session hash", () => {
+    // Sidebar now delegates to URL-based routing: it sets the hash to #/session/{id}
+    // and App.tsx's hash effect handles setCurrentSession + connectSession
     const session = makeSession("s1");
     const sdk = makeSdkSession("s1");
     mockState = createMockState({
@@ -302,8 +304,7 @@ describe("Sidebar", () => {
     const sessionButton = screen.getByText("claude-sonnet-4-5-20250929").closest("button")!;
     fireEvent.click(sessionButton);
 
-    expect(mockState.setCurrentSession).toHaveBeenCalledWith("s1");
-    expect(mockConnectSession).toHaveBeenCalledWith("s1");
+    expect(window.location.hash).toBe("#/session/s1");
   });
 
   it("New Session button calls newSession", () => {

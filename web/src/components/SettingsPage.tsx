@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { useStore } from "../store.js";
 import { getTelemetryPreferenceEnabled, setTelemetryPreferenceEnabled } from "../analytics.js";
+import { navigateToSession, navigateHome } from "../utils/routing.js";
 
 interface SettingsPageProps {
   embedded?: boolean;
@@ -112,7 +113,12 @@ export function SettingsPage({ embedded = false }: SettingsPageProps) {
           {!embedded && (
             <button
               onClick={() => {
-                window.location.hash = "";
+                const sessionId = useStore.getState().currentSessionId;
+                if (sessionId) {
+                  navigateToSession(sessionId);
+                } else {
+                  navigateHome();
+                }
               }}
               className="px-3 py-1.5 rounded-lg text-sm text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
             >
