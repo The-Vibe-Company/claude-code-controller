@@ -1225,6 +1225,9 @@ export function Playground() {
             <Card label="Open editor button (from TopBar)">
               <PlaygroundClaudeMdButton />
             </Card>
+            <Card label="Terminal quick tabs (from TopBar)">
+              <PlaygroundTerminalTabsMock />
+            </Card>
           </div>
         </Section>
       </div>
@@ -1253,6 +1256,40 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
         <span className="text-[10px] text-cc-muted font-mono-code uppercase tracking-wider">{label}</span>
       </div>
       <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+function PlaygroundTerminalTabsMock() {
+  const tabs = [
+    { id: "host", label: "Machine", cwd: "/Users/demo/project" },
+    { id: "docker", label: "Docker", cwd: "/workspace" },
+  ];
+  const [active, setActive] = useState("host");
+
+  return (
+    <div className="rounded-xl border border-cc-border bg-cc-card overflow-hidden">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-cc-border bg-cc-sidebar">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActive(tab.id)}
+            className={`px-2 py-1 rounded-md text-[11px] font-medium border cursor-pointer ${
+              active === tab.id
+                ? "text-cc-fg bg-cc-card border-cc-border"
+                : "text-cc-muted border-transparent hover:bg-cc-hover"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+        <span className="text-[11px] font-mono-code text-cc-muted truncate ml-1">
+          {tabs.find((tab) => tab.id === active)?.cwd}
+        </span>
+      </div>
+      <div className="h-28 flex items-center justify-center text-xs text-cc-muted bg-cc-bg">
+        Embedded terminal panel preview
+      </div>
     </div>
   );
 }

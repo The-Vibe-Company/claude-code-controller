@@ -147,6 +147,7 @@ let launcher: ReturnType<typeof createMockLauncher>;
 let bridge: ReturnType<typeof createMockBridge>;
 let sessionStore: ReturnType<typeof createMockStore>;
 let tracker: ReturnType<typeof createMockTracker>;
+let terminalManager: { getInfo: ReturnType<typeof vi.fn>; spawn: ReturnType<typeof vi.fn>; kill: ReturnType<typeof vi.fn> };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -160,13 +161,37 @@ beforeEach(() => {
   bridge = createMockBridge();
   sessionStore = createMockStore();
   tracker = createMockTracker();
+  terminalManager = { getInfo: vi.fn(() => null), spawn: vi.fn(() => ""), kill: vi.fn() };
   app = new Hono();
-  const terminalManager = { getInfo: () => null, spawn: () => "", kill: () => {} } as any;
-  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker, terminalManager));
+  app.route("/api", createRoutes(launcher, bridge, sessionStore, tracker, terminalManager as any));
 
   // Default no-op mocks for container workspace isolation (called during container session creation)
   vi.spyOn(containerManager, "copyWorkspaceToContainer").mockResolvedValue(undefined);
   vi.spyOn(containerManager, "reseedGitAuth").mockImplementation(() => {});
+});
+
+describe("POST /api/terminal/kill", () => {
+  it("returns 400 when terminalId is missing", async () => {
+    const res = await app.request("/api/terminal/kill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(400);
+    expect(terminalManager.kill).not.toHaveBeenCalled();
+  });
+
+  it("kills only the requested terminal", async () => {
+    const res = await app.request("/api/terminal/kill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ terminalId: "term-1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(terminalManager.kill).toHaveBeenCalledWith("term-1");
+  });
 });
 
 // ─── Sessions ────────────────────────────────────────────────────────────────

@@ -1548,20 +1548,26 @@ export function createRoutes(
   // ─── Terminal ──────────────────────────────────────────────────────
 
   api.get("/terminal", (c) => {
-    const info = terminalManager.getInfo();
+    const terminalId = c.req.query("terminalId");
+    const info = terminalManager.getInfo(terminalId || undefined);
     if (!info) return c.json({ active: false });
     return c.json({ active: true, terminalId: info.id, cwd: info.cwd });
   });
 
   api.post("/terminal/spawn", async (c) => {
-    const body = await c.req.json<{ cwd: string; cols?: number; rows?: number }>();
+    const body = await c.req.json<{ cwd: string; cols?: number; rows?: number; containerId?: string }>();
     if (!body.cwd) return c.json({ error: "cwd is required" }, 400);
-    const terminalId = terminalManager.spawn(body.cwd, body.cols, body.rows);
+    const terminalId = terminalManager.spawn(body.cwd, body.cols, body.rows, {
+      containerId: body.containerId,
+    });
     return c.json({ terminalId });
   });
 
-  api.post("/terminal/kill", (c) => {
-    terminalManager.kill();
+  api.post("/terminal/kill", async (c) => {
+    const body = await c.req.json<{ terminalId?: string }>().catch(() => undefined);
+    const terminalId = body?.terminalId?.trim();
+    if (!terminalId) return c.json({ error: "terminalId is required" }, 400);
+    terminalManager.kill(terminalId);
     return c.json({ ok: true });
   });
 

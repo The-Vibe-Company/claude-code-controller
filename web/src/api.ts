@@ -620,12 +620,16 @@ export const api = {
     get<UsageLimits>(`/sessions/${encodeURIComponent(sessionId)}/usage-limits`),
 
   // Terminal
-  spawnTerminal: (cwd: string, cols?: number, rows?: number) =>
-    post<{ terminalId: string }>("/terminal/spawn", { cwd, cols, rows }),
-  killTerminal: () =>
-    post<{ ok: boolean }>("/terminal/kill"),
-  getTerminal: () =>
-    get<{ active: boolean; terminalId?: string; cwd?: string }>("/terminal"),
+  spawnTerminal: (cwd: string, cols?: number, rows?: number, opts?: { containerId?: string }) =>
+    post<{ terminalId: string }>("/terminal/spawn", { cwd, cols, rows, containerId: opts?.containerId }),
+  killTerminal: (terminalId: string) =>
+    post<{ ok: boolean }>("/terminal/kill", { terminalId }),
+  getTerminal: (terminalId?: string) =>
+    get<{ active: boolean; terminalId?: string; cwd?: string }>(
+      terminalId
+        ? `/terminal?terminalId=${encodeURIComponent(terminalId)}`
+        : "/terminal",
+    ),
 
   // Update checking
   checkForUpdate: () => get<UpdateInfo>("/update-check"),
