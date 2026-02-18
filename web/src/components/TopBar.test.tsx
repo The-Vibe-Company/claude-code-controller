@@ -18,8 +18,8 @@ interface MockStoreState {
   setTaskPanelOpen: ReturnType<typeof vi.fn>;
   activeTab: "chat" | "diff";
   setActiveTab: ReturnType<typeof vi.fn>;
-  sessions: Map<string, { cwd?: string }>;
-  sdkSessions: { sessionId: string; cwd?: string }[];
+  sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
+  sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
   changedFiles: Map<string, Set<string>>;
 }
 

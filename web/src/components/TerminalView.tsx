@@ -5,16 +5,17 @@ import "@xterm/xterm/css/xterm.css";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import {
-  connectTerminal,
-  sendTerminalInput,
-  sendTerminalResize,
-  disconnectTerminal,
+  createTerminalConnection,
+  type TerminalConnection,
 } from "../terminal-ws.js";
 
 interface TerminalViewProps {
   cwd: string;
+  containerId?: string;
+  title?: string;
   onClose?: () => void;
   embedded?: boolean;
+  visible?: boolean;
 }
 
 function getTerminalTheme(dark: boolean) {
@@ -26,10 +27,19 @@ function getTerminalTheme(dark: boolean) {
   };
 }
 
-export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewProps) {
+export function TerminalView({
+  cwd,
+  containerId,
+  title,
+  onClose,
+  embedded = false,
+  visible = true,
+}: TerminalViewProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const connectionRef = useRef<TerminalConnection | null>(null);
+  const terminalIdRef = useRef<string | null>(null);
   const darkMode = useStore((s) => s.darkMode);
 
   // Main effect: create xterm + spawn PTY — only depends on cwd
@@ -55,25 +65,28 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
 
     // Spawn terminal on server then connect WebSocket
     api
-      .spawnTerminal(cwd, xterm.cols, xterm.rows)
+      .spawnTerminal(cwd, xterm.cols, xterm.rows, { containerId })
       .then(({ terminalId }) => {
         if (cancelled) return;
         useStore.getState().setTerminalId(terminalId);
+        terminalIdRef.current = terminalId;
 
-        connectTerminal(
+        connectionRef.current = createTerminalConnection(
           terminalId,
-          (data) => xterm.write(data),
-          (exitCode) => {
-            xterm.writeln(`\r\n[Process exited with code ${exitCode}]`);
-          },
-          (errMsg) => {
-            xterm.writeln(`\r\n[${errMsg}]`);
-          },
-          () => {
-            // WebSocket is now open — send the actual fitted dimensions
-            // (ResizeObserver may have fired before the socket was ready)
-            fit.fit();
-            sendTerminalResize(xterm.cols, xterm.rows);
+          {
+            onData: (data) => xterm.write(data),
+            onExit: (exitCode) => {
+              xterm.writeln(`\r\n[Process exited with code ${exitCode}]`);
+            },
+            onError: (errMsg) => {
+              xterm.writeln(`\r\n[${errMsg}]`);
+            },
+            onOpen: () => {
+              // WebSocket is now open — send the actual fitted dimensions
+              // (ResizeObserver may have fired before the socket was ready)
+              fit.fit();
+              connectionRef.current?.sendResize(xterm.cols, xterm.rows);
+            },
           },
         );
       })
@@ -83,13 +96,13 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
       });
 
     // Forward xterm input to server
-    const inputDisposable = xterm.onData((data) => sendTerminalInput(data));
+    const inputDisposable = xterm.onData((data) => connectionRef.current?.sendInput(data));
 
     // Handle resize — also handles initial sizing once layout is ready
     const container = terminalRef.current;
     const resizeObserver = new ResizeObserver(() => {
       fit.fit();
-      sendTerminalResize(xterm.cols, xterm.rows);
+      connectionRef.current?.sendResize(xterm.cols, xterm.rows);
     });
     resizeObserver.observe(container);
 
@@ -97,13 +110,16 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
       cancelled = true;
       resizeObserver.disconnect();
       inputDisposable.dispose();
-      disconnectTerminal();
+      connectionRef.current?.disconnect();
+      connectionRef.current = null;
       xterm.dispose();
       xtermRef.current = null;
       fitRef.current = null;
-      api.killTerminal().catch(() => {});
+      const terminalId = terminalIdRef.current;
+      terminalIdRef.current = null;
+      api.killTerminal(terminalId ?? undefined).catch(() => {});
     };
-  }, [cwd]);
+  }, [cwd, containerId]);
 
   // Separate effect: update theme without recreating the terminal
   useEffect(() => {
@@ -111,6 +127,14 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
       xtermRef.current.options.theme = getTerminalTheme(darkMode);
     }
   }, [darkMode]);
+
+  // Refit when panel/tab becomes visible again.
+  useEffect(() => {
+    if (!visible) return;
+    if (!fitRef.current || !xtermRef.current) return;
+    fitRef.current.fit();
+    connectionRef.current?.sendResize(xtermRef.current.cols, xtermRef.current.rows);
+  }, [visible]);
 
   const terminalFrame = (
     <div
@@ -131,7 +155,7 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
             <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm2 1.5l3 2.5-3 2.5V4.5zM8.5 10h3v1h-3v-1z" />
           </svg>
           <span className="text-xs text-cc-muted font-mono-code truncate">
-            {cwd}
+            {title || cwd}
           </span>
         </div>
         {onClose && (
@@ -159,7 +183,7 @@ export function TerminalView({ cwd, onClose, embedded = false }: TerminalViewPro
 
   if (embedded) {
     return (
-      <div className="h-full">
+      <div className={`h-full ${visible ? "" : "hidden"}`}>
         {terminalFrame}
       </div>
     );

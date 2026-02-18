@@ -1,8 +1,16 @@
-import { useState, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { TerminalView } from "./TerminalView.js";
 import { parseHash } from "../utils/routing.js";
+
+interface QuickTerminalTab {
+  id: string;
+  label: string;
+  cwd: string;
+  containerId?: string;
+}
 
 export function TopBar() {
   const hash = useSyncExternalStore(
@@ -27,6 +35,9 @@ export function TopBar() {
   const activeTab = useStore((s) => s.activeTab);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const [claudeMdOpen, setClaudeMdOpen] = useState(false);
+  const [terminalPanelOpen, setTerminalPanelOpen] = useState(false);
+  const [terminalTabs, setTerminalTabs] = useState<QuickTerminalTab[]>([]);
+  const [activeTerminalTabId, setActiveTerminalTabId] = useState<string | null>(null);
   const changedFilesCount = useStore((s) => {
     if (!currentSessionId) return 0;
     const cwd =
@@ -47,6 +58,67 @@ export function TopBar() {
       null
     );
   });
+  const sdkSession = useStore((s) => {
+    if (!currentSessionId) return null;
+    return s.sdkSessions.find((sdk) => sdk.sessionId === currentSessionId) || null;
+  });
+  const bridgeSession = useStore((s) => {
+    if (!currentSessionId) return null;
+    return s.sessions.get(currentSessionId) || null;
+  });
+  const isContainerized = !!(sdkSession?.containerId || bridgeSession?.is_containerized);
+
+  const openQuickTerminal = (opts: { target: "host" | "docker"; cwd: string; containerId?: string }) => {
+    const key = `${opts.target}:${opts.cwd}:${opts.containerId || ""}`;
+    const existing = terminalTabs.find((t) => t.id === key);
+    if (existing) {
+      setActiveTerminalTabId(existing.id);
+      setTerminalPanelOpen(true);
+      return;
+    }
+
+    const next: QuickTerminalTab = {
+      id: key,
+      label: opts.target === "docker" ? "Docker" : "Machine",
+      cwd: opts.cwd,
+      containerId: opts.containerId,
+    };
+    setTerminalTabs((tabs) => [...tabs, next]);
+    setActiveTerminalTabId(next.id);
+    setTerminalPanelOpen(true);
+  };
+
+  const closeTerminalTab = (tabId: string) => {
+    setTerminalTabs((tabs) => {
+      const next = tabs.filter((t) => t.id !== tabId);
+      if (activeTerminalTabId === tabId) {
+        setActiveTerminalTabId(next[0]?.id || null);
+      }
+      if (next.length === 0) {
+        setTerminalPanelOpen(false);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      setTerminalTabs([]);
+      setActiveTerminalTabId(null);
+      setTerminalPanelOpen(false);
+    }
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "j") return;
+      if (!isSessionView || !cwd) return;
+      event.preventDefault();
+      openQuickTerminal({ target: "host", cwd });
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isSessionView, cwd, terminalTabs]);
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
@@ -60,7 +132,7 @@ export function TopBar() {
     : null;
 
   return (
-    <header className="shrink-0 flex items-center justify-between px-2 sm:px-4 py-2 sm:py-2.5 bg-cc-card border-b border-cc-border">
+    <header className="relative shrink-0 flex items-center justify-between px-2 sm:px-4 py-2 sm:py-2.5 bg-cc-card border-b border-cc-border">
       <div className="flex items-center gap-3">
         {/* Sidebar toggle */}
         <button
@@ -89,6 +161,22 @@ export function TopBar() {
                 )}
                 {sessionName}
               </span>
+            )}
+            {cwd && isSessionView && (
+              <button
+                onClick={() => openQuickTerminal({ target: "host", cwd })}
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors cursor-pointer ${
+                  terminalPanelOpen
+                    ? "bg-cc-active text-cc-primary border-cc-primary/30"
+                    : "bg-cc-hover text-cc-muted border-cc-border hover:text-cc-fg"
+                }`}
+                title="Quick terminal (Ctrl/Cmd+J)"
+              >
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                  <path d="M2 3.5A1.5 1.5 0 013.5 2h9A1.5 1.5 0 0114 3.5v9a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5v-9zm3.2 2.2a.7.7 0 00-.99.99L5.82 8.3 4.21 9.91a.7.7 0 00.99.99l2.1-2.1a.7.7 0 000-.99L5.2 5.7zm3.6 4.1h2.4a.7.7 0 000-1.4H8.8a.7.7 0 000 1.4z" />
+                </svg>
+                Terminal
+              </button>
             )}
             {!isConnected && (
               <button
@@ -187,6 +275,90 @@ export function TopBar() {
           open={claudeMdOpen}
           onClose={() => setClaudeMdOpen(false)}
         />
+      )}
+
+      {currentSessionId && isSessionView && terminalPanelOpen && terminalTabs.length > 0 && (
+        <div className="absolute left-2 right-2 top-[calc(100%+8px)] z-50 rounded-xl border border-cc-border bg-cc-card shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-2 py-1.5 border-b border-cc-border bg-cc-sidebar">
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+              {terminalTabs.map((tab) => (
+                <div
+                  key={tab.id}
+                  onClick={() => setActiveTerminalTabId(tab.id)}
+                  className={`group inline-flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-md text-[11px] font-medium border transition-colors cursor-pointer ${
+                    activeTerminalTabId === tab.id
+                      ? "text-cc-fg bg-cc-card border-cc-border"
+                      : "text-cc-muted bg-transparent border-transparent hover:text-cc-fg hover:bg-cc-hover"
+                  }`}
+                  title={tab.cwd}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setActiveTerminalTabId(tab.id);
+                    }
+                  }}
+                >
+                  <span>{tab.label}</span>
+                  <span className="font-mono-code text-[10px] opacity-80 max-w-[220px] truncate">{tab.cwd}</span>
+                  <button
+                    type="button"
+                    aria-label={`Close ${tab.label} terminal tab`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTerminalTab(tab.id);
+                    }}
+                    className="w-4 h-4 rounded-sm flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {cwd && (
+                <button
+                  onClick={() => openQuickTerminal({ target: "host", cwd })}
+                  className="px-2 py-1 rounded-md text-[11px] text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+                  title="Open terminal on machine"
+                >
+                  + Machine
+                </button>
+              )}
+              {isContainerized && sdkSession?.containerId && (
+                <button
+                  onClick={() => openQuickTerminal({ target: "docker", cwd: "/workspace", containerId: sdkSession.containerId })}
+                  className="px-2 py-1 rounded-md text-[11px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                  title="Open terminal in session container"
+                >
+                  + Docker
+                </button>
+              )}
+              <button
+                onClick={() => setTerminalPanelOpen(false)}
+                className="ml-1 px-2 py-1 rounded-md text-[11px] text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="h-[340px] bg-cc-bg p-2">
+            {terminalTabs.map((tab) => (
+              <div key={tab.id} className={activeTerminalTabId === tab.id ? "h-full" : "hidden"}>
+                <TerminalView
+                  cwd={tab.cwd}
+                  containerId={tab.containerId}
+                  title={tab.containerId ? `docker:${tab.cwd}` : tab.cwd}
+                  embedded
+                  visible={activeTerminalTabId === tab.id}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </header>
   );

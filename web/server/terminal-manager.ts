@@ -13,6 +13,7 @@ interface BunTerminalHandle {
 interface TerminalInstance {
   id: string;
   cwd: string;
+  containerId?: string;
   proc: ReturnType<typeof Bun.spawn>;
   terminal: BunTerminalHandle;
   browserSockets: Set<ServerWebSocket<SocketData>>;
@@ -28,21 +29,20 @@ function resolveShell(): string {
 }
 
 export class TerminalManager {
-  private instance: TerminalInstance | null = null;
+  private instances = new Map<string, TerminalInstance>();
 
-  /** Spawn a new global terminal in the given directory */
-  spawn(cwd: string, cols = 80, rows = 24): string {
-    // Kill existing instance if any
-    if (this.instance) {
-      this.kill();
-    }
-
+  /** Spawn a terminal in the given directory (host or container). */
+  spawn(cwd: string, cols = 80, rows = 24, options?: { containerId?: string }): string {
     const id = randomUUID();
-    const shell = resolveShell();
+    const containerId = options?.containerId?.trim() || undefined;
+    const shell = containerId ? "bash" : resolveShell();
     const sockets = new Set<ServerWebSocket<SocketData>>();
+    const cmd = containerId
+      ? ["docker", "exec", "-i", "-w", cwd, containerId, shell, "-l"]
+      : [shell, "-l"];
 
-    const proc = Bun.spawn([shell, "-l"], {
-      cwd,
+    const proc = Bun.spawn(cmd, {
+      cwd: containerId ? undefined : cwd,
       env: { ...process.env, TERM: "xterm-256color", CLAUDECODE: undefined },
       terminal: {
         cols,
@@ -59,8 +59,8 @@ export class TerminalManager {
         },
         exit: () => {
           // PTY stream closed — get exit code from proc
-          const inst = this.instance;
-          if (inst && inst.id === id) {
+          const inst = this.instances.get(id);
+          if (inst) {
             const exitMsg = JSON.stringify({ type: "exit", exitCode: proc.exitCode ?? 0 });
             for (const ws of inst.browserSockets) {
               try {
@@ -76,29 +76,58 @@ export class TerminalManager {
 
     // Extract the terminal handle from the proc — Bun attaches it when spawned with `terminal` option
     const terminal = (proc as any).terminal as BunTerminalHandle;
-    this.instance = { id, cwd, proc, terminal, browserSockets: sockets, cols, rows, orphanTimer: null };
-    console.log(`[terminal] Spawned terminal ${id} in ${cwd} (${shell}, ${cols}x${rows})`);
+    this.instances.set(id, {
+      id,
+      cwd,
+      containerId,
+      proc,
+      terminal,
+      browserSockets: sockets,
+      cols,
+      rows,
+      orphanTimer: null,
+    });
+    console.log(
+      `[terminal] Spawned terminal ${id} in ${cwd}${containerId ? ` (container ${containerId.slice(0, 12)})` : ""} (${shell}, ${cols}x${rows})`,
+    );
 
     // Handle process exit
     proc.exited.then((exitCode) => {
-      if (this.instance?.id === id) {
-        console.log(`[terminal] Terminal ${id} exited with code ${exitCode}`);
-      }
+      const inst = this.instances.get(id);
+      if (!inst) return;
+      console.log(`[terminal] Terminal ${id} exited with code ${exitCode}`);
+      this.cleanupInstance(id);
     });
 
     return id;
   }
 
+  private getTerminalIdFromSocket(ws: ServerWebSocket<SocketData>): string | null {
+    const data = ws.data;
+    if (data.kind !== "terminal") return null;
+    return data.terminalId;
+  }
+
+  private cleanupInstance(terminalId: string): void {
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
+    if (inst.orphanTimer) clearTimeout(inst.orphanTimer);
+    this.instances.delete(terminalId);
+  }
+
   /** Handle a message from a browser WebSocket */
   handleBrowserMessage(_ws: ServerWebSocket<SocketData>, msg: string | Buffer): void {
-    if (!this.instance) return;
+    const terminalId = this.getTerminalIdFromSocket(_ws);
+    if (!terminalId) return;
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
     try {
       const str = typeof msg === "string" ? msg : msg.toString();
       const parsed = JSON.parse(str);
       if (parsed.type === "input" && typeof parsed.data === "string") {
-        this.instance.terminal.write(parsed.data);
+        inst.terminal.write(parsed.data);
       } else if (parsed.type === "resize" && typeof parsed.cols === "number" && typeof parsed.rows === "number") {
-        this.resize(parsed.cols, parsed.rows);
+        this.resize(terminalId, parsed.cols, parsed.rows);
       }
     } catch {
       // Malformed message, ignore
@@ -106,26 +135,21 @@ export class TerminalManager {
   }
 
   /** Resize the PTY */
-  resize(cols: number, rows: number): void {
-    if (!this.instance) return;
-    this.instance.cols = cols;
-    this.instance.rows = rows;
+  resize(terminalId: string, cols: number, rows: number): void {
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
+    inst.cols = cols;
+    inst.rows = rows;
     try {
-      this.instance.terminal.resize(cols, rows);
+      inst.terminal.resize(cols, rows);
     } catch {
       // resize not available or failed
     }
   }
 
-  /** Kill the terminal process and clean up */
-  kill(): void {
-    if (!this.instance) return;
-    const inst = this.instance;
-    this.instance = null;
-
-    if (inst.orphanTimer) {
-      clearTimeout(inst.orphanTimer);
-    }
+  private killInstance(inst: TerminalInstance): void {
+    if (inst.orphanTimer) clearTimeout(inst.orphanTimer);
+    this.instances.delete(inst.id);
 
     try {
       inst.proc.kill();
@@ -147,37 +171,63 @@ export class TerminalManager {
     console.log(`[terminal] Killed terminal ${inst.id}`);
   }
 
+  /** Kill one terminal (or all terminals when terminalId is omitted). */
+  kill(terminalId?: string): void {
+    if (!terminalId) {
+      for (const inst of Array.from(this.instances.values())) {
+        this.killInstance(inst);
+      }
+      return;
+    }
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
+    this.killInstance(inst);
+  }
+
   /** Get current terminal info */
-  getInfo(): { id: string; cwd: string } | null {
-    if (!this.instance) return null;
-    return { id: this.instance.id, cwd: this.instance.cwd };
+  getInfo(terminalId?: string): { id: string; cwd: string; containerId?: string } | null {
+    if (terminalId) {
+      const inst = this.instances.get(terminalId);
+      if (!inst) return null;
+      return { id: inst.id, cwd: inst.cwd, containerId: inst.containerId };
+    }
+    const first = this.instances.values().next().value as TerminalInstance | undefined;
+    if (!first) return null;
+    return { id: first.id, cwd: first.cwd, containerId: first.containerId };
   }
 
   /** Attach a browser WebSocket to the terminal */
   addBrowserSocket(ws: ServerWebSocket<SocketData>): void {
-    if (!this.instance) return;
+    const terminalId = this.getTerminalIdFromSocket(ws);
+    if (!terminalId) return;
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
 
     // Cancel orphan kill timer if any
-    if (this.instance.orphanTimer) {
-      clearTimeout(this.instance.orphanTimer);
-      this.instance.orphanTimer = null;
+    if (inst.orphanTimer) {
+      clearTimeout(inst.orphanTimer);
+      inst.orphanTimer = null;
     }
 
-    this.instance.browserSockets.add(ws);
+    inst.browserSockets.add(ws);
   }
 
   /** Remove a browser WebSocket from the terminal */
   removeBrowserSocket(ws: ServerWebSocket<SocketData>): void {
-    if (!this.instance) return;
-    this.instance.browserSockets.delete(ws);
+    const terminalId = this.getTerminalIdFromSocket(ws);
+    if (!terminalId) return;
+    const inst = this.instances.get(terminalId);
+    if (!inst) return;
+    inst.browserSockets.delete(ws);
 
     // If no browsers remain, start a grace timer to kill the orphaned terminal
-    if (this.instance.browserSockets.size === 0) {
-      const id = this.instance.id;
-      this.instance.orphanTimer = setTimeout(() => {
-        if (this.instance?.id === id && this.instance.browserSockets.size === 0) {
+    if (inst.browserSockets.size === 0) {
+      const id = inst.id;
+      inst.orphanTimer = setTimeout(() => {
+        const alive = this.instances.get(id);
+        if (alive && alive.browserSockets.size === 0) {
           console.log(`[terminal] No browsers connected, killing orphaned terminal ${id}`);
-          this.kill();
+          this.kill(id);
         }
       }, 5_000);
     }
