@@ -154,6 +154,15 @@ function EditToolDetail({ input }: { input: Record<string, unknown> }) {
   const filePath = String(input.file_path || "");
   const oldStr = String(input.old_string || "");
   const newStr = String(input.new_string || "");
+  const rawChanges = Array.isArray(input.changes)
+    ? input.changes as Array<{ path?: unknown; kind?: unknown }>
+    : [];
+  const changes = rawChanges
+    .map((c) => ({
+      path: typeof c.path === "string" ? c.path : "",
+      kind: typeof c.kind === "string" ? c.kind : "update",
+    }))
+    .filter((c) => c.path);
 
   return (
     <div className="space-y-1.5">
@@ -162,7 +171,25 @@ function EditToolDetail({ input }: { input: Record<string, unknown> }) {
           replace all
         </span>
       )}
-      <DiffViewer oldText={oldStr} newText={newStr} fileName={filePath} mode="compact" />
+      {(oldStr || newStr) ? (
+        <DiffViewer oldText={oldStr} newText={newStr} fileName={filePath} mode="compact" />
+      ) : changes.length > 0 ? (
+        <div className="space-y-1.5">
+          {!!filePath && <div className="text-xs text-cc-muted font-mono-code">{filePath}</div>}
+          {changes.map((change, i) => (
+            <div key={`${change.path}-${i}`} className="flex items-center gap-2 text-[11px] text-cc-fg">
+              <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-cc-primary/10 text-cc-primary min-w-[54px] text-center">
+                {change.kind}
+              </span>
+              <span className="font-mono-code truncate">{change.path}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <pre className="text-[11px] text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+          {JSON.stringify(input, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -363,6 +390,12 @@ export function getPreview(name: string, input: Record<string, unknown>): string
   if ((name === "Read" || name === "Write" || name === "Edit") && input.file_path) {
     const path = String(input.file_path);
     return path.split("/").slice(-2).join("/");
+  }
+  if (name === "Edit" && Array.isArray(input.changes) && input.changes.length > 0) {
+    const first = input.changes[0] as { path?: string };
+    if (first?.path) {
+      return String(first.path).split("/").slice(-2).join("/");
+    }
   }
   if (name === "Glob" && input.pattern) return String(input.pattern);
   if (name === "Grep" && input.pattern) {

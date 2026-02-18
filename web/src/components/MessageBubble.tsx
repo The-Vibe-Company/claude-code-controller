@@ -54,6 +54,10 @@ interface ToolGroupItem {
   name: string;
   input: Record<string, unknown>;
 }
+interface ToolUseInfo {
+  name: string;
+  input: Record<string, unknown>;
+}
 
 type GroupedBlock =
   | { kind: "content"; block: ContentBlock }
@@ -82,10 +86,21 @@ function groupContentBlocks(blocks: ContentBlock[]): GroupedBlock[] {
   return groups;
 }
 
+function mapToolUsesById(blocks: ContentBlock[]): Map<string, ToolUseInfo> {
+  const map = new Map<string, ToolUseInfo>();
+  for (const block of blocks) {
+    if (block.type === "tool_use") {
+      map.set(block.id, { name: block.name, input: block.input });
+    }
+  }
+  return map;
+}
+
 function AssistantMessage({ message }: { message: ChatMessage }) {
   const blocks = message.contentBlocks || [];
 
   const grouped = useMemo(() => groupContentBlocks(blocks), [blocks]);
+  const toolUseById = useMemo(() => mapToolUsesById(blocks), [blocks]);
 
   if (blocks.length === 0 && message.content) {
     return (
@@ -104,7 +119,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       <div className="flex-1 min-w-0 space-y-3">
         {grouped.map((group, i) => {
           if (group.kind === "content") {
-            return <ContentBlockRenderer key={i} block={group.block} />;
+            return <ContentBlockRenderer key={i} block={group.block} toolUseById={toolUseById} />;
           }
           // Single tool_use renders as before
           if (group.items.length === 1) {
@@ -231,7 +246,13 @@ function MarkdownContent({ text }: { text: string }) {
   );
 }
 
-function ContentBlockRenderer({ block }: { block: ContentBlock }) {
+function ContentBlockRenderer({
+  block,
+  toolUseById,
+}: {
+  block: ContentBlock;
+  toolUseById: Map<string, ToolUseInfo>;
+}) {
   if (block.type === "text") {
     return <MarkdownContent text={block.text} />;
   }
@@ -246,7 +267,12 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
 
   if (block.type === "tool_result") {
     const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
-    const isError = block.is_error;
+    const linkedTool = toolUseById.get(block.tool_use_id);
+    const toolName = linkedTool?.name;
+    const isError = block.is_error ?? false;
+    if (toolName === "Bash" && typeof content === "string") {
+      return <BashResultBlock text={content} isError={isError} />;
+    }
     return (
       <div className={`text-xs font-mono-code rounded-lg px-3 py-2 border ${
         isError
@@ -259,6 +285,42 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
   }
 
   return null;
+}
+
+function BashResultBlock({ text, isError }: { text: string; isError: boolean }) {
+  const lines = text.split(/\r?\n/);
+  const hasMore = lines.length > 20;
+  const [showFull, setShowFull] = useState(false);
+  const rendered = showFull || !hasMore ? text : lines.slice(-20).join("\n");
+
+  return (
+    <div className={`rounded-lg border ${
+      isError
+        ? "bg-cc-error/5 border-cc-error/20"
+        : "bg-cc-card border-cc-border"
+    }`}>
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-cc-border">
+        <span className={`text-[10px] font-medium ${
+          isError ? "text-cc-error" : "text-cc-muted"
+        }`}>
+          {hasMore && !showFull ? "Output (last 20 lines)" : "Output"}
+        </span>
+        {hasMore && (
+          <button
+            onClick={() => setShowFull(!showFull)}
+            className="text-[10px] text-cc-primary hover:underline cursor-pointer"
+          >
+            {showFull ? "Show tail" : "Show full"}
+          </button>
+        )}
+      </div>
+      <pre className={`text-xs font-mono-code px-3 py-2 whitespace-pre-wrap max-h-60 overflow-y-auto ${
+        isError ? "text-cc-error" : "text-cc-muted"
+      }`}>
+        {rendered}
+      </pre>
+    </div>
+  );
 }
 
 function ToolGroupBlock({ name, items }: { name: string; items: ToolGroupItem[] }) {
@@ -304,13 +366,15 @@ function ToolGroupBlock({ name, items }: { name: string; items: ToolGroupItem[] 
 }
 
 function ThinkingBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+  const normalized = text.trim();
+  const preview = normalized.replace(/\s+/g, " ").slice(0, 90);
+  const [open, setOpen] = useState(Boolean(normalized));
 
   return (
-    <div className="border border-cc-border rounded-[10px] overflow-hidden">
+    <div className="border border-cc-border rounded-[12px] overflow-hidden bg-cc-card/70 backdrop-blur-[2px]">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-cc-muted hover:bg-cc-hover transition-colors cursor-pointer"
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-cc-muted hover:bg-cc-hover/70 transition-colors cursor-pointer"
       >
         <svg
           viewBox="0 0 16 16"
@@ -319,14 +383,41 @@ function ThinkingBlock({ text }: { text: string }) {
         >
           <path d="M6 4l4 4-4 4" />
         </svg>
-        <span className="font-medium">Thinking</span>
+        <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-cc-primary/10 text-cc-primary shrink-0">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+            <path d="M8 2.5a3.5 3.5 0 013.5 3.5c0 1.3-.7 2.1-1.4 2.8-.6.6-1.1 1.1-1.1 1.7V11" strokeLinecap="round" />
+            <circle cx="8" cy="13" r="0.7" fill="currentColor" stroke="none" />
+            <path d="M5.3 3.8A3.5 3.5 0 004.5 6c0 1.3.7 2.1 1.4 2.8.6.6 1.1 1.1 1.1 1.7V11" strokeLinecap="round" />
+          </svg>
+        </span>
+        <span className="font-medium text-cc-fg">Reasoning</span>
         <span className="text-cc-muted/60">{text.length} chars</span>
+        {!open && preview && (
+          <span className="text-cc-muted truncate max-w-[55%]">{preview}</span>
+        )}
       </button>
       {open && (
         <div className="px-3 pb-3 pt-0">
-          <pre className="text-xs text-cc-muted font-mono-code whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-            {text}
-          </pre>
+          <div className="border border-cc-border/70 rounded-lg px-3 py-2 bg-cc-bg/60 max-h-60 overflow-y-auto">
+            <div className="markdown-body text-[13px] text-cc-muted leading-relaxed">
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+                  li: ({ children }) => <li>{children}</li>,
+                  code: ({ children }) => (
+                    <code className="px-1 py-0.5 rounded bg-cc-code-bg/40 text-cc-primary font-mono-code text-[12px]">
+                      {children}
+                    </code>
+                  ),
+                }}
+              >
+                {normalized || "No thinking text captured."}
+              </Markdown>
+            </div>
+          </div>
         </div>
       )}
     </div>

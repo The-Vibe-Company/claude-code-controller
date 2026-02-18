@@ -235,6 +235,20 @@ function AskUserQuestionDisplay({
     }
   }
 
+  function handleCustomChange(questionIdx: number, value: string) {
+    const key = String(questionIdx);
+    setCustomText((prev) => ({ ...prev, [key]: value }));
+    const trimmed = value.trim();
+    setSelections((prev) => {
+      if (!trimmed) {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      }
+      return { ...prev, [key]: trimmed };
+    });
+  }
+
   function handleSubmitAll() {
     onSelect(selections);
   }
@@ -326,23 +340,16 @@ function AskUserQuestionDisplay({
                 </button>
 
                 {isCustom && (
-                  <div className="flex gap-2 pl-6">
+                  <div className="pl-6">
                     <input
                       type="text"
                       value={customText[key] || ""}
-                      onChange={(e) => setCustomText((prev) => ({ ...prev, [key]: e.target.value }))}
+                      onChange={(e) => handleCustomChange(i, e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") handleCustomSubmit(i); }}
                       placeholder="Type your answer..."
                       className="flex-1 px-2.5 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
                       autoFocus
                     />
-                    <button
-                      onClick={() => handleCustomSubmit(i)}
-                      disabled={!customText[key]?.trim()}
-                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-cc-primary hover:bg-cc-primary-hover text-white disabled:opacity-50 transition-colors cursor-pointer"
-                    >
-                      Send
-                    </button>
                   </div>
                 )}
               </div>
@@ -433,12 +440,38 @@ function ExitPlanModeDisplay({ input }: { input: Record<string, unknown> }) {
   return (
     <div className="space-y-2">
       {plan && (
-        <div className="rounded-lg border border-cc-border overflow-hidden">
-          <div className="px-2.5 py-1.5 bg-cc-code-bg/10 border-b border-cc-border text-[10px] text-cc-muted font-mono-code uppercase tracking-wider">
-            Plan
+        <div className="rounded-xl border border-cc-primary/25 overflow-hidden bg-gradient-to-b from-cc-primary/6 to-cc-card">
+          <div className="px-3 py-2 border-b border-cc-primary/20 flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-cc-primary/15 text-cc-primary shrink-0">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3">
+                <path d="M3 3.5h10M3 8h10M3 12.5h6" strokeLinecap="round" />
+              </svg>
+            </span>
+            <span className="text-[11px] text-cc-primary font-semibold tracking-wide uppercase">Plan</span>
           </div>
-          <div className="px-3 py-2.5 max-h-64 overflow-y-auto text-xs text-cc-fg leading-relaxed markdown-body">
-            <Markdown remarkPlugins={[remarkGfm]}>{plan}</Markdown>
+          <div className="px-3 py-3 max-h-72 overflow-y-auto markdown-body text-[13px] text-cc-fg leading-relaxed">
+            <Markdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => <h1 className="text-base font-semibold text-cc-fg mb-2">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-sm font-semibold text-cc-fg mb-1.5 mt-3 first:mt-0">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-sm font-medium text-cc-fg mb-1.5 mt-2">{children}</h3>,
+                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
+                li: ({ children }) => <li>{children}</li>,
+                code: ({ children }) => (
+                  <code className="px-1 py-0.5 rounded bg-cc-code-bg/50 text-cc-primary font-mono-code text-[12px]">
+                    {children}
+                  </code>
+                ),
+                blockquote: ({ children }) => (
+                  <blockquote className="border-l-2 border-cc-primary/40 pl-2 text-cc-muted italic my-2">{children}</blockquote>
+                ),
+              }}
+            >
+              {plan}
+            </Markdown>
           </div>
         </div>
       )}

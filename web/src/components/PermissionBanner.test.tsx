@@ -421,6 +421,39 @@ describe("AskUserQuestionDisplay", () => {
     expect(screen.queryByText("Allow")).toBeNull();
     expect(screen.queryByText("Deny")).toBeNull();
   });
+
+  it("removes Other send button and includes typed Other answer in submit", () => {
+    const perm = makePermission({
+      request_id: "req-ask-2",
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [
+          {
+            header: "Q1",
+            question: "Pick one",
+            options: [{ label: "A", description: "Option A" }],
+          },
+          {
+            header: "Q2",
+            question: "Add context",
+            options: [{ label: "B", description: "Option B" }],
+          },
+        ],
+      },
+    });
+    render(<PermissionBanner permission={perm} sessionId="s1" />);
+
+    const otherButtons = screen.getAllByText("Other...");
+    fireEvent.click(otherButtons[1]);
+    const input = screen.getByPlaceholderText("Type your answer...");
+    fireEvent.change(input, { target: { value: "Custom response" } });
+
+    expect(screen.queryByText("Send")).toBeNull();
+    fireEvent.click(screen.getByText("Submit answers"));
+
+    const payload = mockSendToSession.mock.calls[0][1];
+    expect(payload.updated_input.answers).toEqual({ "1": "Custom response" });
+  });
 });
 
 // ─── ExitPlanModeDisplay ─────────────────────────────────────────────────────

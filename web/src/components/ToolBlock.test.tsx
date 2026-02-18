@@ -124,6 +124,12 @@ describe("getPreview", () => {
     expect(getPreview("Edit", { file_path: "/a/b/c/d.txt" })).toBe("c/d.txt");
   });
 
+  it("extracts preview from Codex-style Edit changes when file_path is absent", () => {
+    expect(getPreview("Edit", {
+      changes: [{ path: "/repo/src/foo.ts", kind: "update" }],
+    })).toBe("src/foo.ts");
+  });
+
   it("handles short paths for file tools", () => {
     expect(getPreview("Read", { file_path: "file.txt" })).toBe("file.txt");
   });
@@ -327,6 +333,28 @@ describe("ToolBlock", () => {
     // DiffViewer renders del/add lines
     expect(container.querySelector(".diff-line-del")).toBeTruthy();
     expect(container.querySelector(".diff-line-add")).toBeTruthy();
+  });
+
+  it("renders Codex-style Edit changes list when diff strings are absent", () => {
+    render(
+      <ToolBlock
+        name="Edit"
+        input={{
+          file_path: "/repo/src/foo.ts",
+          changes: [
+            { path: "/repo/src/foo.ts", kind: "update" },
+            { path: "/repo/src/bar.ts", kind: "create" },
+          ],
+        }}
+        toolUseId="tool-7b"
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByText("update")).toBeTruthy();
+    expect(screen.getByText("create")).toBeTruthy();
+    expect(screen.getAllByText("/repo/src/foo.ts").length).toBeGreaterThan(0);
+    expect(screen.getByText("/repo/src/bar.ts")).toBeTruthy();
   });
 
   it("renders Read file path when expanded", () => {

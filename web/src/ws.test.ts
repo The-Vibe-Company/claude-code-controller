@@ -436,6 +436,25 @@ describe("handleMessage: stream_event content_block_delta", () => {
 
     expect(useStore.getState().streaming.get("s1")).toBe("Hello world");
   });
+
+  it("accumulates streaming text from thinking_delta events", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Analyzing " } },
+      parent_tool_use_id: null,
+    });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "context" } },
+      parent_tool_use_id: null,
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Analyzing context");
+  });
 });
 
 // ===========================================================================

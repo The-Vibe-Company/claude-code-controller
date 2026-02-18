@@ -306,6 +306,10 @@ function handleParsedMessage(
             const current = store.streaming.get(sessionId) || "";
             store.setStreaming(sessionId, current + delta.text);
           }
+          if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+            const current = store.streaming.get(sessionId) || "";
+            store.setStreaming(sessionId, current + delta.thinking);
+          }
         }
 
         // message_delta → extract output token count

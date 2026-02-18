@@ -642,6 +642,17 @@ export function Playground() {
             <ToolBlock name="Bash" input={{ command: "git status && npm run lint", description: "Check git status and lint" }} toolUseId="tb-1" />
             <ToolBlock name="Read" input={{ file_path: "/Users/stan/Dev/project/src/index.ts", offset: 10, limit: 50 }} toolUseId="tb-2" />
             <ToolBlock name="Edit" input={{ file_path: "src/utils.ts", old_string: "const x = 1;", new_string: "const x = 2;", replace_all: true }} toolUseId="tb-3" />
+            <ToolBlock
+              name="Edit"
+              input={{
+                file_path: "/Users/stan/Dev/project/src/store.ts",
+                changes: [
+                  { path: "/Users/stan/Dev/project/src/store.ts", kind: "update" },
+                  { path: "/Users/stan/Dev/project/src/ws.ts", kind: "update" },
+                ],
+              }}
+              toolUseId="tb-3b"
+            />
             <ToolBlock name="Write" input={{ file_path: "src/new-file.ts", content: 'export const hello = "world";\n' }} toolUseId="tb-4" />
             <ToolBlock name="Glob" input={{ pattern: "**/*.tsx", path: "/Users/stan/Dev/project/src" }} toolUseId="tb-5" />
             <ToolBlock name="Grep" input={{ pattern: "useEffect", path: "src/", glob: "*.tsx", output_mode: "content", context: 3, head_limit: 20 }} toolUseId="tb-6" />
