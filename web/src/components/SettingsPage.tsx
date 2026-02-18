@@ -18,6 +18,8 @@ export function SettingsPage({ embedded = false }: SettingsPageProps) {
   const [saved, setSaved] = useState(false);
   const darkMode = useStore((s) => s.darkMode);
   const toggleDarkMode = useStore((s) => s.toggleDarkMode);
+  const diffBase = useStore((s) => s.diffBase);
+  const setDiffBase = useStore((s) => s.setDiffBase);
   const notificationSound = useStore((s) => s.notificationSound);
   const toggleNotificationSound = useStore((s) => s.toggleNotificationSound);
   const notificationDesktop = useStore((s) => s.notificationDesktop);
@@ -293,6 +295,23 @@ export function SettingsPage({ embedded = false }: SettingsPageProps) {
             <span>Theme</span>
             <span className="text-xs text-cc-muted">{darkMode ? "Dark" : "Light"}</span>
           </button>
+        </div>
+
+        <div className="mt-4 bg-cc-card border border-cc-border rounded-xl p-4 sm:p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-cc-fg">Diff</h2>
+          <button
+            type="button"
+            onClick={() => setDiffBase(diffBase === "last-commit" ? "default-branch" : "last-commit")}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm bg-cc-hover text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
+          >
+            <span>Compare against</span>
+            <span className="text-xs text-cc-muted">
+              {diffBase === "last-commit" ? "Last commit (HEAD)" : "Default branch"}
+            </span>
+          </button>
+          <p className="text-xs text-cc-muted">
+            Last commit shows only uncommitted changes. Default branch shows all changes since diverging from main.
+          </p>
         </div>
 
         <div className="mt-4 bg-cc-card border border-cc-border rounded-xl p-4 sm:p-5 space-y-3">

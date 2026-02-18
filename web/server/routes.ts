@@ -1018,6 +1018,7 @@ export function createRoutes(
   api.get("/fs/diff", (c) => {
     const filePath = c.req.query("path");
     if (!filePath) return c.json({ error: "path required" }, 400);
+    const base = c.req.query("base"); // "last-commit" | "default-branch" | undefined
     const absPath = resolve(filePath);
     try {
       const repoRoot = execSync("git rev-parse --show-toplevel", {
@@ -1031,21 +1032,36 @@ export function createRoutes(
       }).trim() || absPath;
 
       let diff = "";
-      const diffBases = resolveBranchDiffBases(repoRoot);
-      for (const base of diffBases) {
+
+      if (base === "default-branch") {
+        // Diff against the resolved default branch (origin/HEAD, main, master)
+        const diffBases = resolveBranchDiffBases(repoRoot);
+        for (const b of diffBases) {
+          try {
+            diff = execCaptureStdout(`git diff ${b} -- "${relPath}"`, {
+              cwd: repoRoot,
+              encoding: "utf-8",
+              timeout: 5000,
+            });
+            break;
+          } catch {
+            // If a base ref is unavailable, try the next candidate.
+          }
+        }
+      } else {
+        // Default ("last-commit" or absent): diff against HEAD (uncommitted changes only)
         try {
-          diff = execCaptureStdout(`git diff ${base} -- "${relPath}"`, {
+          diff = execCaptureStdout(`git diff HEAD -- "${relPath}"`, {
             cwd: repoRoot,
             encoding: "utf-8",
             timeout: 5000,
           });
-          break;
         } catch {
-          // If a base ref is unavailable, try the next candidate.
+          // HEAD may not exist in a fresh repo with no commits; fall through to untracked handling.
         }
       }
 
-      // For untracked files, base-branch diff is empty. Show full file as added.
+      // For untracked files, the diff above is empty. Show full file as added.
       if (!diff.trim()) {
         const untracked = execSync(`git ls-files --others --exclude-standard -- "${relPath}"`, {
           cwd: repoRoot,

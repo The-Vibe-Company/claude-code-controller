@@ -1393,7 +1393,34 @@ describe("GET /api/fs/diff", () => {
     expect(json).toEqual({ error: "path required" });
   });
 
-  it("returns unified diff for a file", async () => {
+  it("diffs against HEAD by default when no base param is provided", async () => {
+    // Validates that /api/fs/diff defaults to HEAD (uncommitted changes only).
+    const diffOutput = `diff --git a/file.ts b/file.ts
+--- a/file.ts
++++ b/file.ts
+@@ -1,3 +1,3 @@
+ line1
+-old line
++new line
+ line3`;
+    vi.mocked(execSync)
+      .mockReturnValueOnce("/repo\n") // rev-parse --show-toplevel
+      .mockReturnValueOnce("file.ts\n") // ls-files --full-name
+      .mockReturnValueOnce(diffOutput); // git diff HEAD
+
+    const res = await app.request("/api/fs/diff?path=/repo/file.ts", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.diff).toBe(diffOutput);
+    expect(json.path).toContain("file.ts");
+    expect(vi.mocked(execSync)).toHaveBeenCalledWith(
+      expect.stringContaining("git diff HEAD"),
+      expect.objectContaining({ encoding: "utf-8", timeout: 5000 }),
+    );
+  });
+
+  it("diffs against default branch when base=default-branch", async () => {
     // Validates that /api/fs/diff uses the repository default branch as base (origin/main here).
     const diffOutput = `diff --git a/file.ts b/file.ts
 --- a/file.ts
@@ -1409,7 +1436,7 @@ describe("GET /api/fs/diff", () => {
       .mockReturnValueOnce("refs/remotes/origin/main\n") // symbolic-ref refs/remotes/origin/HEAD
       .mockReturnValueOnce(diffOutput); // git diff origin/main
 
-    const res = await app.request("/api/fs/diff?path=/repo/file.ts", { method: "GET" });
+    const res = await app.request("/api/fs/diff?path=/repo/file.ts&base=default-branch", { method: "GET" });
 
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -1443,7 +1470,7 @@ index 0000000..e69de29
         throw err;
       }); // git diff --no-index
 
-    const res = await app.request("/api/fs/diff?path=/repo/new.txt", { method: "GET" });
+    const res = await app.request("/api/fs/diff?path=/repo/new.txt&base=default-branch", { method: "GET" });
     const json = await res.json();
 
     expect(res.status).toBe(200);
@@ -1473,7 +1500,7 @@ index 0000000..e69de29
       .mockReturnValueOnce("main\n") // branch --list fallback
       .mockReturnValueOnce(diffOutput); // git diff main
 
-    const res = await app.request("/api/fs/diff?path=/repo/file.ts", { method: "GET" });
+    const res = await app.request("/api/fs/diff?path=/repo/file.ts&base=default-branch", { method: "GET" });
 
     expect(res.status).toBe(200);
     const json = await res.json();

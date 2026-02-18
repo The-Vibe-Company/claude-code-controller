@@ -11,6 +11,8 @@ export interface QuickTerminalTab {
 
 export type QuickTerminalPlacement = "top" | "right" | "bottom" | "left";
 
+export type DiffBase = "last-commit" | "default-branch";
+
 interface AppState {
   // Sessions
   sessions: Map<string, SessionState>;
@@ -169,6 +171,9 @@ interface AppState {
   quickTerminalNextHostIndex: number;
   quickTerminalNextDockerIndex: number;
 
+  // Diff settings
+  diffBase: DiffBase;
+
   // Session quick terminal actions
   setQuickTerminalOpen: (open: boolean) => void;
   openQuickTerminal: (opts: { target: "host" | "docker"; cwd: string; containerId?: string; reuseIfExists?: boolean }) => void;
@@ -176,6 +181,9 @@ interface AppState {
   setActiveQuickTerminalTabId: (tabId: string | null) => void;
   setQuickTerminalPlacement: (placement: QuickTerminalPlacement) => void;
   resetQuickTerminal: () => void;
+
+  // Diff settings actions
+  setDiffBase: (base: DiffBase) => void;
 
   // Terminal state
   terminalOpen: boolean;
@@ -248,6 +256,13 @@ function getInitialQuickTerminalPlacement(): QuickTerminalPlacement {
   return "bottom";
 }
 
+function getInitialDiffBase(): DiffBase {
+  if (typeof window === "undefined") return "last-commit";
+  const stored = window.localStorage.getItem("cc-diff-base");
+  if (stored === "last-commit" || stored === "default-branch") return stored;
+  return "last-commit";
+}
+
 export const useStore = create<AppState>((set) => ({
   sessions: new Map(),
   sdkSessions: [],
@@ -290,6 +305,7 @@ export const useStore = create<AppState>((set) => ({
   quickTerminalPlacement: getInitialQuickTerminalPlacement(),
   quickTerminalNextHostIndex: 1,
   quickTerminalNextDockerIndex: 1,
+  diffBase: getInitialDiffBase(),
   terminalOpen: false,
   terminalCwd: null,
   terminalId: null,
@@ -743,6 +759,12 @@ export const useStore = create<AppState>((set) => ({
     }
     set({ quickTerminalPlacement: placement });
   },
+  setDiffBase: (base) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cc-diff-base", base);
+    }
+    set({ diffBase: base });
+  },
   resetQuickTerminal: () =>
     set({
       quickTerminalOpen: false,
@@ -788,6 +810,7 @@ export const useStore = create<AppState>((set) => ({
       quickTerminalPlacement: getInitialQuickTerminalPlacement(),
       quickTerminalNextHostIndex: 1,
       quickTerminalNextDockerIndex: 1,
+      diffBase: getInitialDiffBase(),
       terminalOpen: false,
       terminalCwd: null,
       terminalId: null,

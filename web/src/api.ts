@@ -581,9 +581,9 @@ export const api = {
     ),
   writeFile: (path: string, content: string) =>
     put<{ ok: boolean; path: string }>("/fs/write", { path, content }),
-  getFileDiff: (path: string) =>
+  getFileDiff: (path: string, base?: "last-commit" | "default-branch") =>
     get<{ path: string; diff: string }>(
-      `/fs/diff?path=${encodeURIComponent(path)}`,
+      `/fs/diff?path=${encodeURIComponent(path)}${base ? `&base=${encodeURIComponent(base)}` : ""}`,
     ),
   getClaudeMdFiles: (cwd: string) =>
     get<{ cwd: string; files: { path: string; content: string }[] }>(
