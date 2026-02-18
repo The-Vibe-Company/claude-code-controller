@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.1...the-companion-v0.47.0) (2026-02-18)
+
+
+### Features
+
+* **terminal:** add quick session terminal tabs for host and docker ([#299](https://github.com/The-Vibe-Company/companion/issues/299)) ([e4dfc51](https://github.com/The-Vibe-Company/companion/commit/e4dfc5141c54a898b0a5d4583ef3733b23a7d25d))
+
 ## [0.46.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.0...the-companion-v0.46.1) (2026-02-17)
 
 
