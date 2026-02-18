@@ -114,6 +114,7 @@ export function TopBar() {
       `Session ${currentSessionId.slice(0, 8)}`)
     : null;
   const showWorkspaceControls = !!(currentSessionId && isSessionView);
+  const showContextToggle = route.page === "session" && !!currentSessionId;
   const workspaceTabs = useMemo(() => {
     const tabs: Array<"chat" | "diff" | "terminal"> = ["chat"];
     tabs.push("diff");
@@ -316,21 +317,23 @@ export function TopBar() {
               </svg>
             </button>
           )}
-          <button
-            onClick={() => setTaskPanelOpen(!taskPanelOpen)}
-            className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg transition-colors cursor-pointer ${
-              taskPanelOpen
-                ? "text-cc-primary bg-cc-active"
-                : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
-            }`}
-            title="Toggle context panel"
-            aria-label="Toggle context panel"
-          >
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 3a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h4a1 1 0 100-2H7z" clipRule="evenodd" />
-            </svg>
-            <span className="hidden sm:inline text-[11px] font-medium">Context</span>
-          </button>
+          {showContextToggle && (
+            <button
+              onClick={() => setTaskPanelOpen(!taskPanelOpen)}
+              className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg transition-colors cursor-pointer ${
+                taskPanelOpen
+                  ? "text-cc-primary bg-cc-active"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              title="Toggle context panel"
+              aria-label="Toggle context panel"
+            >
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V4a2 2 0 00-2-2H6zm1 3a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h6a1 1 0 100-2H7zm0 4a1 1 0 000 2h4a1 1 0 100-2H7z" clipRule="evenodd" />
+              </svg>
+              <span className="hidden sm:inline text-[11px] font-medium">Context</span>
+            </button>
+          )}
         </div>
       </div>
 
