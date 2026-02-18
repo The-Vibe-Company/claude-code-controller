@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.3](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.2...the-companion-v0.50.3) (2026-02-18)
+
+
+### Bug Fixes
+
+* **topbar:** hide context button on home page ([#317](https://github.com/The-Vibe-Company/companion/issues/317)) ([e5152e5](https://github.com/The-Vibe-Company/companion/commit/e5152e573ffc43ee5ad9aecc7bd76c937dd03d79))
+
 ## [0.50.2](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.1...the-companion-v0.50.2) (2026-02-18)
 
 
