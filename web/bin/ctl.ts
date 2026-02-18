@@ -16,16 +16,22 @@ function getPort(argv: string[]): number {
   return Number(process.env.COMPANION_PORT) || DEFAULT_PORT;
 }
 
-function getBase(argv: string[]): string {
-  return `http://localhost:${getPort(argv)}/api`;
+function getHostname(argv: string[]): string {
+  const idx = argv.indexOf("--hostname");
+  if (idx !== -1 && argv[idx + 1]) return argv[idx + 1];
+  return process.env.COMPANION_HOSTNAME || "localhost";
 }
 
-/** Strip --port <n> from argv so subcommand parsers don't see it */
+function getBase(argv: string[]): string {
+  return `http://${getHostname(argv)}:${getPort(argv)}/api`;
+}
+
+/** Strip --port <n> and --hostname <h> from argv so subcommand parsers don't see them */
 function stripGlobalFlags(argv: string[]): string[] {
   const result: string[] = [];
   let i = 0;
   while (i < argv.length) {
-    if (argv[i] === "--port" && argv[i + 1]) {
+    if ((argv[i] === "--port" || argv[i] === "--hostname") && argv[i + 1]) {
       i += 2;
       continue;
     }
@@ -472,7 +478,8 @@ Management commands:
   companion assistant <subcommand>        Manage the Companion Assistant
 
 Global options:
-  --port <n>    Override the Companion API port (default: 3456, or COMPANION_PORT env)
+  --port <n>       Override the Companion API port (default: 3456, or COMPANION_PORT env)
+  --hostname <h>   Override the hostname (default: localhost, or COMPANION_HOSTNAME env)
 
 Run 'companion <command>' without subcommand for available subcommands.
 `);
