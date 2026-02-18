@@ -314,7 +314,7 @@ function handleParsedMessage(
           if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
             const current = store.streaming.get(sessionId) || "";
             const prefix = "Thinking:\n";
-            const base = current.startsWith(prefix) ? current : `${prefix}${current}`;
+            const base = current.startsWith(prefix) ? current : prefix;
             store.setStreaming(sessionId, base + delta.thinking);
           }
         }

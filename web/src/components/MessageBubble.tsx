@@ -270,7 +270,7 @@ function ContentBlockRenderer({
     const linkedTool = toolUseById.get(block.tool_use_id);
     const toolName = linkedTool?.name;
     const isError = block.is_error ?? false;
-    if (toolName === "Bash" && typeof content === "string") {
+    if (toolName === "Bash") {
       return <BashResultBlock text={content} isError={isError} />;
     }
     return (
