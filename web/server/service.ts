@@ -636,7 +636,7 @@ export function refreshServiceDefinition(): void {
       const content = readFileSync(UNIT_PATH, "utf-8");
       const portMatch = content.match(/Environment=PORT=(\d+)/);
       if (portMatch) port = Number(portMatch[1]);
-      const hostnameMatch = content.match(/Environment=COMPANION_HOSTNAME=(.+)/);
+      const hostnameMatch = content.match(/Environment=COMPANION_HOSTNAME=(\S+)/);
       if (hostnameMatch) hostname = hostnameMatch[1];
     } catch { /* use default */ }
 

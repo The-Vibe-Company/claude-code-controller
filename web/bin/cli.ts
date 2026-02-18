@@ -8,6 +8,10 @@ process.env.__COMPANION_PACKAGE_ROOT = resolve(__dirname, "..");
 
 const command = process.argv[2];
 
+// Parse --hostname once for commands that set COMPANION_HOSTNAME env var
+const hostnameIdx = process.argv.indexOf("--hostname");
+const hostnameArg = hostnameIdx !== -1 ? process.argv[hostnameIdx + 1] : undefined;
+
 // Management subcommands that delegate to ctl.ts
 const CTL_COMMANDS = new Set([
   "sessions", "envs", "cron", "skills", "settings", "assistant", "ctl-help",
@@ -51,20 +55,14 @@ switch (command) {
     break;
 
   case "serve": {
-    const hostnameIdx = process.argv.indexOf("--hostname");
-    if (hostnameIdx !== -1 && process.argv[hostnameIdx + 1]) {
-      process.env.COMPANION_HOSTNAME = process.argv[hostnameIdx + 1];
-    }
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     process.env.NODE_ENV = process.env.NODE_ENV || "production";
     await import("../server/index.ts");
     break;
   }
 
   case "start": {
-    const startHostnameIdx = process.argv.indexOf("--hostname");
-    if (startHostnameIdx !== -1 && process.argv[startHostnameIdx + 1]) {
-      process.env.COMPANION_HOSTNAME = process.argv[startHostnameIdx + 1];
-    }
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     // Internal service process should stay in foreground server mode.
     const forceForeground = process.argv.includes("--foreground");
     const launchedByInit = (() => {
@@ -94,9 +92,7 @@ switch (command) {
     const portIdx = process.argv.indexOf("--port");
     const rawPort = portIdx !== -1 ? Number(process.argv[portIdx + 1]) : undefined;
     const port = rawPort && !Number.isNaN(rawPort) ? rawPort : undefined;
-    const installHostnameIdx = process.argv.indexOf("--hostname");
-    const hostname = installHostnameIdx !== -1 ? process.argv[installHostnameIdx + 1] : undefined;
-    await install({ port, hostname });
+    await install({ port, hostname: hostnameArg });
     break;
   }
 
@@ -161,10 +157,7 @@ switch (command) {
 
   case undefined: {
     // Default: start server in foreground
-    const defaultHostnameIdx = process.argv.indexOf("--hostname");
-    if (defaultHostnameIdx !== -1 && process.argv[defaultHostnameIdx + 1]) {
-      process.env.COMPANION_HOSTNAME = process.argv[defaultHostnameIdx + 1];
-    }
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     process.env.NODE_ENV = process.env.NODE_ENV || "production";
     await import("../server/index.ts");
     break;

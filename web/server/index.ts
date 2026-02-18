@@ -217,9 +217,10 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://${server.hostname}:${server.port}`);
-console.log(`  CLI WebSocket:     ws://${server.hostname}:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://${server.hostname}:${server.port}/ws/browser/:sessionId`);
+const displayHost = server.hostname === "0.0.0.0" || server.hostname === "::" ? "localhost" : server.hostname;
+console.log(`Server running on http://${displayHost}:${server.port}`);
+console.log(`  CLI WebSocket:     ws://${displayHost}:${server.port}/ws/cli/:sessionId`);
+console.log(`  Browser WebSocket: ws://${displayHost}:${server.port}/ws/browser/:sessionId`);
 
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
