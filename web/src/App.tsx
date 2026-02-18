@@ -152,25 +152,17 @@ export default function App() {
 
           {isSessionView && (
             <>
-              {/* Chat tab — visible when activeTab is "chat" or no session */}
-              <div className={`absolute inset-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
+              <div className="absolute inset-0">
                 {currentSessionId ? (
                   <SessionTerminalDock sessionId={currentSessionId}>
-                    <ChatView sessionId={currentSessionId} />
+                    {activeTab === "diff" && currentSessionId !== assistantSessionId
+                      ? <DiffPanel sessionId={currentSessionId} />
+                      : <ChatView sessionId={currentSessionId} />}
                   </SessionTerminalDock>
                 ) : (
                   <HomePage key={homeResetKey} />
                 )}
               </div>
-
-              {/* Diff tab — not shown for assistant session */}
-              {currentSessionId && activeTab === "diff" && currentSessionId !== assistantSessionId && (
-                <div className="absolute inset-0">
-                  <SessionTerminalDock sessionId={currentSessionId}>
-                    <DiffPanel sessionId={currentSessionId} />
-                  </SessionTerminalDock>
-                </div>
-              )}
 
               {/* Session launch overlay — shown during creation */}
               {sessionCreating && creationProgress && creationProgress.length > 0 && (

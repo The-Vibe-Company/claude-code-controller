@@ -19,7 +19,9 @@ interface MockStoreState {
   activeTab: "chat" | "diff";
   setActiveTab: ReturnType<typeof vi.fn>;
   quickTerminalOpen: boolean;
+  quickTerminalTabs: { id: string; label: string; cwd: string; containerId?: string }[];
   openQuickTerminal: ReturnType<typeof vi.fn>;
+  setQuickTerminalOpen: ReturnType<typeof vi.fn>;
   resetQuickTerminal: ReturnType<typeof vi.fn>;
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
@@ -40,7 +42,9 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     activeTab: "chat",
     setActiveTab: vi.fn(),
     quickTerminalOpen: false,
+    quickTerminalTabs: [],
     openQuickTerminal: vi.fn(),
+    setQuickTerminalOpen: vi.fn(),
     resetQuickTerminal: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
@@ -94,7 +98,7 @@ describe("TopBar", () => {
     expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
 
     fireEvent.click(btn);
-    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({ target: "host", cwd: "/repo" });
+    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({ target: "host", cwd: "/repo", reuseIfExists: true });
   });
 
   it("opens docker quick terminal in containerized sessions", () => {
@@ -108,6 +112,19 @@ describe("TopBar", () => {
       target: "docker",
       cwd: "/workspace",
       containerId: "ctr-1",
+      reuseIfExists: true,
     });
+  });
+
+  it("toggles quick terminal closed when already open with tabs", () => {
+    resetStore({
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    expect(storeState.setQuickTerminalOpen).toHaveBeenCalledWith(false);
+    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
   });
 });

@@ -28,7 +28,9 @@ export function TopBar() {
   const setActiveTab = useStore((s) => s.setActiveTab);
   const [claudeMdOpen, setClaudeMdOpen] = useState(false);
   const quickTerminalOpen = useStore((s) => s.quickTerminalOpen);
+  const quickTerminalTabs = useStore((s) => s.quickTerminalTabs);
   const openQuickTerminal = useStore((s) => s.openQuickTerminal);
+  const setQuickTerminalOpen = useStore((s) => s.setQuickTerminalOpen);
   const resetQuickTerminal = useStore((s) => s.resetQuickTerminal);
   const changedFilesCount = useStore((s) => {
     if (!currentSessionId) return 0;
@@ -79,11 +81,15 @@ export function TopBar() {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "j") return;
       if (!isSessionView || !cwd) return;
       event.preventDefault();
-      openQuickTerminal(defaultTerminalOpts);
+      if (quickTerminalOpen && quickTerminalTabs.length > 0) {
+        setQuickTerminalOpen(false);
+      } else {
+        openQuickTerminal({ ...defaultTerminalOpts, reuseIfExists: true });
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isSessionView, cwd, openQuickTerminal, defaultTerminalOpts]);
+  }, [isSessionView, cwd, openQuickTerminal, defaultTerminalOpts, quickTerminalOpen, quickTerminalTabs.length, setQuickTerminalOpen]);
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
@@ -129,7 +135,13 @@ export function TopBar() {
             )}
             {cwd && isSessionView && (
               <button
-                onClick={() => openQuickTerminal(defaultTerminalOpts)}
+                onClick={() => {
+                  if (quickTerminalOpen && quickTerminalTabs.length > 0) {
+                    setQuickTerminalOpen(false);
+                  } else {
+                    openQuickTerminal({ ...defaultTerminalOpts, reuseIfExists: true });
+                  }
+                }}
                 className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors cursor-pointer ${
                   quickTerminalOpen
                     ? "bg-cc-active text-cc-primary border-cc-primary/30"

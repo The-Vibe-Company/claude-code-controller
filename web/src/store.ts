@@ -166,10 +166,12 @@ interface AppState {
   quickTerminalTabs: QuickTerminalTab[];
   activeQuickTerminalTabId: string | null;
   quickTerminalPlacement: QuickTerminalPlacement;
+  quickTerminalNextHostIndex: number;
+  quickTerminalNextDockerIndex: number;
 
   // Session quick terminal actions
   setQuickTerminalOpen: (open: boolean) => void;
-  openQuickTerminal: (opts: { target: "host" | "docker"; cwd: string; containerId?: string }) => void;
+  openQuickTerminal: (opts: { target: "host" | "docker"; cwd: string; containerId?: string; reuseIfExists?: boolean }) => void;
   closeQuickTerminalTab: (tabId: string) => void;
   setActiveQuickTerminalTabId: (tabId: string | null) => void;
   setQuickTerminalPlacement: (placement: QuickTerminalPlacement) => void;
@@ -291,6 +293,8 @@ export const useStore = create<AppState>((set) => ({
   quickTerminalTabs: [],
   activeQuickTerminalTabId: null,
   quickTerminalPlacement: getInitialQuickTerminalPlacement(),
+  quickTerminalNextHostIndex: 1,
+  quickTerminalNextDockerIndex: 1,
   terminalOpen: false,
   terminalCwd: null,
   terminalId: null,
@@ -695,13 +699,29 @@ export const useStore = create<AppState>((set) => ({
   setQuickTerminalOpen: (open) => set({ quickTerminalOpen: open }),
   openQuickTerminal: (opts) =>
     set((s) => {
-      const hostCount = s.quickTerminalTabs.filter((t) => !t.containerId).length;
-      const dockerCount = s.quickTerminalTabs.filter((t) => !!t.containerId).length;
+      if (opts.reuseIfExists) {
+        const existing = s.quickTerminalTabs.find((t) =>
+          t.cwd === opts.cwd
+          && t.containerId === opts.containerId,
+        );
+        if (existing) {
+          return {
+            quickTerminalOpen: true,
+            activeQuickTerminalTabId: existing.id,
+          };
+        }
+      }
+
+      const isDocker = opts.target === "docker";
+      const hostIndex = s.quickTerminalNextHostIndex;
+      const dockerIndex = s.quickTerminalNextDockerIndex;
+      const nextHostIndex = isDocker ? hostIndex : hostIndex + 1;
+      const nextDockerIndex = isDocker ? dockerIndex + 1 : dockerIndex;
       const nextTab: QuickTerminalTab = {
         id: `${opts.target}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        label: opts.target === "docker"
-          ? `Docker ${dockerCount + 1}`
-          : (hostCount === 0 ? "Terminal" : `Terminal ${hostCount + 1}`),
+        label: isDocker
+          ? `Docker ${dockerIndex}`
+          : (hostIndex === 1 ? "Terminal" : `Terminal ${hostIndex}`),
         cwd: opts.cwd,
         containerId: opts.containerId,
       };
@@ -709,6 +729,8 @@ export const useStore = create<AppState>((set) => ({
         quickTerminalOpen: true,
         quickTerminalTabs: [...s.quickTerminalTabs, nextTab],
         activeQuickTerminalTabId: nextTab.id,
+        quickTerminalNextHostIndex: nextHostIndex,
+        quickTerminalNextDockerIndex: nextDockerIndex,
       };
     }),
   closeQuickTerminalTab: (tabId) =>
@@ -733,6 +755,8 @@ export const useStore = create<AppState>((set) => ({
       quickTerminalOpen: false,
       quickTerminalTabs: [],
       activeQuickTerminalTabId: null,
+      quickTerminalNextHostIndex: 1,
+      quickTerminalNextDockerIndex: 1,
     }),
 
   setTerminalOpen: (open) => set({ terminalOpen: open }),
@@ -769,6 +793,8 @@ export const useStore = create<AppState>((set) => ({
       quickTerminalTabs: [],
       activeQuickTerminalTabId: null,
       quickTerminalPlacement: getInitialQuickTerminalPlacement(),
+      quickTerminalNextHostIndex: 1,
+      quickTerminalNextDockerIndex: 1,
       terminalOpen: false,
       terminalCwd: null,
       terminalId: null,
