@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.0...the-companion-v0.50.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* **codex:** use container cwd for docker runtime context ([#313](https://github.com/The-Vibe-Company/companion/issues/313)) ([ba6347b](https://github.com/The-Vibe-Company/companion/commit/ba6347ba90e93ba3e750b13b8687b7e428484725))
+
 ## [0.50.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.49.0...the-companion-v0.50.0) (2026-02-18)
 
 
