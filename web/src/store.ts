@@ -279,7 +279,7 @@ export const useStore = create<AppState>((set) => ({
   notificationSound: getInitialNotificationSound(),
   notificationDesktop: getInitialNotificationDesktop(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
-  taskPanelOpen: true,
+  taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   homeResetKey: 0,
   activeTab: "chat",
   chatTabReentryTickBySession: new Map(),

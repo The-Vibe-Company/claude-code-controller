@@ -878,23 +878,23 @@ export function Playground() {
           <div className="max-w-3xl">
             <Card label="Connected — code mode">
               <div className="border-t border-cc-border bg-cc-card px-4 py-3">
-                <div className="bg-cc-input-bg border border-cc-border rounded-[14px] overflow-hidden">
-                  <textarea
-                    readOnly
-                    value="Can you refactor the auth module to use JWT?"
-                    rows={1}
-                    className="w-full px-4 pt-3 pb-1 text-sm bg-transparent resize-none text-cc-fg font-sans-ui"
-                    style={{ minHeight: "36px" }}
-                  />
-                  <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
+                <div className="relative bg-cc-input-bg/95 border border-cc-border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
+                  <div className="flex items-end gap-2 px-2.5 py-2">
+                    <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                         <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                       </svg>
                       <span>code</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <textarea
+                      readOnly
+                      value="Can you refactor the auth module to use JWT?"
+                      rows={1}
+                      className="flex-1 min-w-0 px-2 py-1.5 text-sm bg-transparent resize-none text-cc-fg font-sans-ui"
+                      style={{ minHeight: "36px" }}
+                    />
+                    <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
@@ -902,16 +902,12 @@ export function Playground() {
                           <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
-                      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-primary text-white">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-primary text-white shadow-[0_6px_20px_rgba(0,0,0,0.18)]">
                         <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
                         </svg>
                       </div>
                     </div>
-                  </div>
-                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
-                    <span>/ for commands</span>
-                    <span>Enter send · Shift+Enter newline</span>
                   </div>
                 </div>
               </div>
@@ -919,24 +915,24 @@ export function Playground() {
             <div className="mt-4" />
             <Card label="Plan mode active">
               <div className="border-t border-cc-border bg-cc-card px-4 py-3">
-                <div className="bg-cc-input-bg border border-cc-primary/40 rounded-[14px] overflow-hidden">
-                  <textarea
-                    readOnly
-                    value=""
-                    placeholder="Type a message... (/ for commands)"
-                    rows={1}
-                    className="w-full px-4 pt-3 pb-1 text-sm bg-transparent resize-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
-                    style={{ minHeight: "36px" }}
-                  />
-                  <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-primary/40 text-[12px] font-semibold text-cc-primary bg-cc-primary/8">
+                <div className="relative bg-cc-input-bg/95 border border-cc-primary/40 rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
+                  <div className="flex items-end gap-2 px-2.5 py-2">
+                    <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-primary/40 text-[12px] font-semibold text-cc-primary bg-cc-primary/8">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
                         <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
                       </svg>
                       <span>plan</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <textarea
+                      readOnly
+                      value=""
+                      placeholder="Type a message... (/ for commands)"
+                      rows={1}
+                      className="flex-1 min-w-0 px-2 py-1.5 text-sm bg-transparent resize-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
+                      style={{ minHeight: "36px" }}
+                    />
+                    <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
@@ -951,34 +947,30 @@ export function Playground() {
                       </div>
                     </div>
                   </div>
-                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
-                    <span>/ for commands</span>
-                    <span>Enter send · Shift+Enter newline</span>
-                  </div>
                 </div>
               </div>
             </Card>
             <div className="mt-4" />
             <Card label="Running — stop button visible">
               <div className="border-t border-cc-border bg-cc-card px-4 py-3">
-                <div className="bg-cc-input-bg border border-cc-border rounded-[14px] overflow-hidden">
-                  <textarea
-                    readOnly
-                    value=""
-                    placeholder="Type a message... (/ for commands)"
-                    rows={1}
-                    className="w-full px-4 pt-3 pb-1 text-sm bg-transparent resize-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
-                    style={{ minHeight: "36px" }}
-                  />
-                  <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
+                <div className="relative bg-cc-input-bg/95 border border-cc-border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
+                  <div className="flex items-end gap-2 px-2.5 py-2">
+                    <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                         <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                       </svg>
                       <span>code</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <textarea
+                      readOnly
+                      value=""
+                      placeholder="Type a message... (/ for commands)"
+                      rows={1}
+                      className="flex-1 min-w-0 px-2 py-1.5 text-sm bg-transparent resize-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
+                      style={{ minHeight: "36px" }}
+                    />
+                    <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
@@ -992,10 +984,6 @@ export function Playground() {
                         </svg>
                       </div>
                     </div>
-                  </div>
-                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
-                    <span>/ for commands</span>
-                    <span>Enter send · Shift+Enter newline</span>
                   </div>
                 </div>
               </div>

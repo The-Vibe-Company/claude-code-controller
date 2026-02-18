@@ -1,30 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
 import { parseHash } from "../utils/routing.js";
 
-function fallbackTabSurfaceColor(tab: "chat" | "diff" | "terminal"): string {
-  // Fallback semantic mapping when sampling is unavailable (e.g. during SSR/jsdom tests).
-  return tab === "terminal" ? "var(--cc-card)" : "var(--cc-bg)";
-}
-
-function getSurfaceColorBelowTab(tabEl: HTMLElement | null, activeTab: "chat" | "diff" | "terminal"): string {
-  if (!tabEl || typeof window === "undefined" || typeof document === "undefined") {
-    return fallbackTabSurfaceColor(activeTab);
-  }
-
-  const rect = tabEl.getBoundingClientRect();
-  const x = Math.max(0, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
-  const y = Math.max(0, Math.min(window.innerHeight - 1, rect.bottom + 2));
-
-  let el: HTMLElement | null = document.elementFromPoint(x, y) as HTMLElement | null;
-  while (el) {
-    const bg = window.getComputedStyle(el).backgroundColor;
-    if (bg && bg !== "transparent" && bg !== "rgba(0, 0, 0, 0)") return bg;
-    el = el.parentElement;
-  }
-
-  return fallbackTabSurfaceColor(activeTab);
+function getActiveTabSurfaceColor(tab: "chat" | "diff" | "terminal"): string {
+  // Deterministic mapping to the primary surface of the active workspace pane.
+  if (tab === "terminal") return "var(--cc-card)";
+  return "var(--cc-bg)";
 }
 
 export function TopBar() {
@@ -38,6 +20,7 @@ export function TopBar() {
   const route = useMemo(() => parseHash(hash), [hash]);
   const isSessionView = route.page === "session" || route.page === "home";
   const currentSessionId = useStore((s) => s.currentSessionId);
+  const cliConnected = useStore((s) => s.cliConnected);
   const sessionStatus = useStore((s) => s.sessionStatus);
   const sessionNames = useStore((s) => s.sessionNames);
   const sdkSessions = useStore((s) => s.sdkSessions);
@@ -49,13 +32,8 @@ export function TopBar() {
   const setActiveTab = useStore((s) => s.setActiveTab);
   const markChatTabReentry = useStore((s) => s.markChatTabReentry);
   const [claudeMdOpen, setClaudeMdOpen] = useState(false);
-  const [activeTabSurfaceColor, setActiveTabSurfaceColor] = useState<string>(fallbackTabSurfaceColor(activeTab));
-  const sessionTabRef = useRef<HTMLButtonElement>(null);
-  const diffTabRef = useRef<HTMLButtonElement>(null);
-  const shellTabRef = useRef<HTMLButtonElement>(null);
   const quickTerminalOpen = useStore((s) => s.quickTerminalOpen);
   const quickTerminalTabs = useStore((s) => s.quickTerminalTabs);
-  const quickTerminalPlacement = useStore((s) => s.quickTerminalPlacement);
   const openQuickTerminal = useStore((s) => s.openQuickTerminal);
   const resetQuickTerminal = useStore((s) => s.resetQuickTerminal);
   const changedFilesCount = useStore((s) => {
@@ -98,6 +76,8 @@ export function TopBar() {
       ? "Open terminal in session container (Ctrl/Cmd+J)"
       : "Quick terminal (Ctrl/Cmd+J)";
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
+  const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
+  const activeTabSurfaceColor = useMemo(() => getActiveTabSurfaceColor(activeTab), [activeTab]);
   const sessionName = currentSessionId
     ? (sessionNames?.get(currentSessionId) ||
       sdkSessions.find((s) => s.sessionId === currentSessionId)?.name ||
@@ -151,32 +131,6 @@ export function TopBar() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [showWorkspaceControls, workspaceTabs, activeTab, cwd, quickTerminalOpen, quickTerminalTabs.length, openQuickTerminal, defaultTerminalOpts, setActiveTab, markChatTabReentry, currentSessionId]);
 
-  useEffect(() => {
-    if (!showWorkspaceControls) return;
-    const currentTabEl = activeTab === "chat"
-      ? sessionTabRef.current
-      : activeTab === "diff"
-        ? diffTabRef.current
-        : shellTabRef.current;
-    const update = () => setActiveTabSurfaceColor(getSurfaceColorBelowTab(currentTabEl, activeTab));
-    const raf = window.requestAnimationFrame(update);
-    return () => window.cancelAnimationFrame(raf);
-  }, [showWorkspaceControls, activeTab, quickTerminalOpen, quickTerminalPlacement, taskPanelOpen]);
-
-  useEffect(() => {
-    if (!showWorkspaceControls) return;
-    const onResize = () => {
-      const currentTabEl = activeTab === "chat"
-        ? sessionTabRef.current
-        : activeTab === "diff"
-          ? diffTabRef.current
-          : shellTabRef.current;
-      setActiveTabSurfaceColor(getSurfaceColorBelowTab(currentTabEl, activeTab));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [showWorkspaceControls, activeTab]);
-
   return (
     <header className={`relative shrink-0 h-12 px-2 sm:px-4 bg-cc-sidebar ${showWorkspaceControls ? "" : "border-b border-cc-border"}`}>
       <div className="h-full flex items-end gap-2 min-w-0">
@@ -194,7 +148,6 @@ export function TopBar() {
           <div className="flex-1 min-w-0">
             <div className="flex items-end gap-1 min-w-0">
               <button
-                ref={sessionTabRef}
                 onClick={() => activateWorkspaceTab("chat")}
                 className={`h-9 px-3.5 border text-[12px] font-semibold transition-colors cursor-pointer min-w-0 max-w-[44vw] sm:max-w-[30vw] truncate ${
                   activeTab === "chat"
@@ -207,13 +160,18 @@ export function TopBar() {
               >
                 <span className="inline-flex items-center gap-2 min-w-0">
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    status === "running" ? "bg-cc-primary" : status === "compacting" ? "bg-cc-warning" : "bg-cc-success"
+                    !isConnected
+                      ? "bg-cc-muted opacity-45"
+                      : status === "running"
+                        ? "bg-cc-primary"
+                        : status === "compacting"
+                          ? "bg-cc-warning"
+                          : "bg-cc-success"
                   }`} />
                   <span className="truncate">{sessionName || "Session"}</span>
                 </span>
               </button>
               <button
-                ref={diffTabRef}
                 onClick={() => activateWorkspaceTab("diff")}
                 className={`px-3.5 border text-[12px] font-semibold transition-colors cursor-pointer flex items-center gap-1.5 ${
                   activeTab === "diff"
@@ -231,7 +189,6 @@ export function TopBar() {
                 )}
               </button>
               <button
-                ref={shellTabRef}
                 onClick={() => activateWorkspaceTab("terminal")}
                 disabled={!cwd}
                 className={`px-3.5 border text-[12px] font-semibold transition-colors ${
