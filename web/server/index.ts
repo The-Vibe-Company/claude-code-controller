@@ -26,7 +26,7 @@ import { getSettings } from "./settings-manager.js";
 import { PRPoller } from "./pr-poller.js";
 import { RecorderManager } from "./recorder.js";
 import { CronScheduler } from "./cron-scheduler.js";
-import { AssistantManager } from "./assistant-manager.js";
+
 import { startPeriodicCheck, setServiceMode } from "./update-checker.js";
 import { isRunningAsService } from "./service.js";
 import type { SocketData } from "./ws-bridge.js";
@@ -48,7 +48,6 @@ const terminalManager = new TerminalManager();
 const prPoller = new PRPoller(wsBridge);
 const recorder = new RecorderManager();
 const cronScheduler = new CronScheduler(launcher, wsBridge);
-const assistantManager = new AssistantManager(launcher, wsBridge, port);
 
 // ── Restore persisted sessions from disk ────────────────────────────────────
 wsBridge.setStore(sessionStore);
@@ -62,20 +61,11 @@ containerManager.restoreState(CONTAINER_STATE_PATH);
 // When the CLI reports its internal session_id, store it for --resume on relaunch
 wsBridge.onCLISessionIdReceived((sessionId, cliSessionId) => {
   launcher.setCLISessionId(sessionId, cliSessionId);
-  // Also store for the assistant manager (for --resume across server restarts)
-  if (assistantManager.isAssistantSession(sessionId)) {
-    assistantManager.setCLISessionId(cliSessionId);
-  }
 });
 
 // When a Codex adapter is created, attach it to the WsBridge
 launcher.onCodexAdapterCreated((sessionId, adapter) => {
   wsBridge.attachCodexAdapter(sessionId, adapter);
-});
-
-// When a CLI process exits, notify the assistant manager for auto-relaunch
-launcher.onSessionExited((sessionId) => {
-  assistantManager.handleCliExit(sessionId);
 });
 
 // Start watching PRs when git info is resolved for a session
@@ -105,10 +95,8 @@ wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
 
 // Auto-generate session title after first turn completes
 wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
-  // Don't overwrite a name that was already set (manual rename, prior auto-name, or assistant)
+  // Don't overwrite a name that was already set (manual rename or prior auto-name)
   if (sessionNames.getName(sessionId)) return;
-  // Skip auto-naming for the assistant session
-  if (assistantManager.isAssistantSession(sessionId)) return;
   if (!getSettings().openrouterApiKey.trim()) return;
   const info = launcher.getSession(sessionId);
   const model = info?.model || "claude-sonnet-4-5-20250929";
@@ -130,7 +118,7 @@ if (recorder.isGloballyEnabled()) {
 const app = new Hono();
 
 app.use("/api/*", cors());
-app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder, cronScheduler, assistantManager));
+app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder, cronScheduler));
 
 // In production, serve built frontend using absolute path (works when installed as npm package)
 if (process.env.NODE_ENV === "production") {
@@ -225,14 +213,6 @@ if (process.env.NODE_ENV !== "production") {
 
 // ── Cron scheduler ──────────────────────────────────────────────────────────
 cronScheduler.startAll();
-
-// ── Companion Assistant ─────────────────────────────────────────────────────
-const assistantConfig = assistantManager.getConfig();
-if (assistantConfig.enabled) {
-  assistantManager.start().catch((e) => {
-    console.error("[server] Failed to auto-start assistant:", e);
-  });
-}
 
 // ── Update checker ──────────────────────────────────────────────────────────
 startPeriodicCheck();

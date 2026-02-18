@@ -29,7 +29,6 @@ import {
   setUpdateInProgress,
 } from "./update-checker.js";
 import { refreshServiceDefinition } from "./service.js";
-import type { AssistantManager } from "./assistant-manager.js";
 
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
@@ -86,7 +85,6 @@ export function createRoutes(
   prPoller?: import("./pr-poller.js").PRPoller,
   recorder?: import("./recorder.js").RecorderManager,
   cronScheduler?: import("./cron-scheduler.js").CronScheduler,
-  assistantManager?: AssistantManager,
 ) {
   const api = new Hono();
 
@@ -757,9 +755,6 @@ export function createRoutes(
 
   api.delete("/sessions/:id", async (c) => {
     const id = c.req.param("id");
-    if (assistantManager?.isAssistantSession(id)) {
-      return c.json({ error: "Cannot delete the assistant session. Use companion assistant stop instead." }, 403);
-    }
     await launcher.kill(id);
 
     // Clean up container if any
@@ -774,9 +769,6 @@ export function createRoutes(
 
   api.post("/sessions/:id/archive", async (c) => {
     const id = c.req.param("id");
-    if (assistantManager?.isAssistantSession(id)) {
-      return c.json({ error: "Cannot archive the assistant session. Use companion assistant stop instead." }, 403);
-    }
     const body = await c.req.json().catch(() => ({}));
     await launcher.kill(id);
 
@@ -1584,42 +1576,6 @@ export function createRoutes(
     }
     wsBridge.injectUserMessage(id, body.content);
     return c.json({ ok: true, sessionId: id });
-  });
-
-  // ─── Companion Assistant ──────────────────────────────────────────
-
-  api.get("/assistant/status", (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    return c.json(assistantManager.getStatus());
-  });
-
-  api.post("/assistant/launch", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const session = await assistantManager.start();
-    if (!session) return c.json({ error: "Failed to launch assistant" }, 500);
-    return c.json({ ok: true, sessionId: session.sessionId });
-  });
-
-  api.post("/assistant/stop", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const stopped = await assistantManager.stop();
-    return c.json({ ok: stopped });
-  });
-
-  api.get("/assistant/config", (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    return c.json(assistantManager.getConfig());
-  });
-
-  api.put("/assistant/config", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const body = await c.req.json().catch(() => ({}));
-    const config = assistantManager.updateConfig({
-      model: typeof body.model === "string" ? body.model : undefined,
-      permissionMode: typeof body.permissionMode === "string" ? body.permissionMode : undefined,
-      enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    });
-    return c.json(config);
   });
 
   // ─── Skills ─────────────────────────────────────────────────────────

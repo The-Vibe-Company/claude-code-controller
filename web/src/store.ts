@@ -16,7 +16,6 @@ interface AppState {
   sessions: Map<string, SessionState>;
   sdkSessions: SdkSessionInfo[];
   currentSessionId: string | null;
-  assistantSessionId: string | null;
 
   // Messages per session
   messages: Map<string, ChatMessage[]>;
@@ -101,7 +100,6 @@ interface AppState {
 
   // Session actions
   setCurrentSession: (id: string | null) => void;
-  setAssistantSessionId: (id: string | null) => void;
   addSession: (session: SessionState) => void;
   updateSession: (sessionId: string, updates: Partial<SessionState>) => void;
   removeSession: (sessionId: string) => void;
@@ -232,11 +230,6 @@ function getInitialDismissedVersion(): string | null {
   return localStorage.getItem("cc-update-dismissed") || null;
 }
 
-function getInitialAssistantSessionId(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("cc-assistant-session-id") || null;
-}
-
 function getInitialCollapsedProjects(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
@@ -257,7 +250,6 @@ export const useStore = create<AppState>((set) => ({
   sessions: new Map(),
   sdkSessions: [],
   currentSessionId: getInitialSessionId(),
-  assistantSessionId: getInitialAssistantSessionId(),
   messages: new Map(),
   streaming: new Map(),
   streamingStartedAt: new Map(),
@@ -357,15 +349,6 @@ export const useStore = create<AppState>((set) => ({
       localStorage.removeItem("cc-current-session");
     }
     set({ currentSessionId: id });
-  },
-
-  setAssistantSessionId: (id) => {
-    if (id) {
-      localStorage.setItem("cc-assistant-session-id", id);
-    } else {
-      localStorage.removeItem("cc-assistant-session-id");
-    }
-    set({ assistantSessionId: id });
   },
 
   addSession: (session) =>
@@ -770,7 +753,6 @@ export const useStore = create<AppState>((set) => ({
       sessions: new Map(),
       sdkSessions: [],
       currentSessionId: null,
-      assistantSessionId: null,
       messages: new Map(),
       streaming: new Map(),
       streamingStartedAt: new Map(),

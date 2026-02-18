@@ -84,56 +84,6 @@
   animation: name-appear 0.5s ease-out;
 }
 
-/* Companion button — breathing glow border */
-@keyframes companion-glow {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-
-.companion-btn {
-  position: relative;
-}
-
-.companion-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    var(--color-cc-primary) 0%,
-    transparent 40%,
-    transparent 60%,
-    var(--color-cc-primary) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
-
-.companion-btn:hover::before,
-.companion-btn.companion-active::before {
-  opacity: 1;
-  animation: companion-glow 3s ease-in-out infinite;
-}
-
-.companion-btn.companion-active::before {
-  opacity: 1;
-}
-
-@keyframes companion-sparkle {
-  0%, 100% { transform: scale(1) rotate(0deg); }
-  50% { transform: scale(1.15) rotate(8deg); }
-}
-
-.companion-sparkle-active {
-  animation: companion-sparkle 3s ease-in-out infinite;
-}
-
 /* Dark mode overrides */
 .dark {
   --color-cc-bg: #2b2a27;

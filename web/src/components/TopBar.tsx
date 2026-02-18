@@ -19,7 +19,6 @@ export function TopBar() {
   const sessionStatus = useStore((s) => s.sessionStatus);
   const sessionNames = useStore((s) => s.sessionNames);
   const sdkSessions = useStore((s) => s.sdkSessions);
-  const assistantSessionId = useStore((s) => s.assistantSessionId);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const taskPanelOpen = useStore((s) => s.taskPanelOpen);
@@ -93,13 +92,10 @@ export function TopBar() {
 
   const isConnected = currentSessionId ? (cliConnected.get(currentSessionId) ?? false) : false;
   const status = currentSessionId ? (sessionStatus.get(currentSessionId) ?? null) : null;
-  const isAssistant = !!(currentSessionId && assistantSessionId && currentSessionId === assistantSessionId);
   const sessionName = currentSessionId
-    ? isAssistant
-      ? "Companion"
-      : (sessionNames?.get(currentSessionId) ||
-        sdkSessions.find((s) => s.sessionId === currentSessionId)?.name ||
-        `Session ${currentSessionId.slice(0, 8)}`)
+    ? (sessionNames?.get(currentSessionId) ||
+      sdkSessions.find((s) => s.sessionId === currentSessionId)?.name ||
+      `Session ${currentSessionId.slice(0, 8)}`)
     : null;
 
   return (
@@ -125,11 +121,6 @@ export function TopBar() {
             />
             {sessionName && (
               <span className="text-[11px] font-medium text-cc-fg max-w-[9rem] sm:max-w-none truncate flex items-center gap-1" title={sessionName}>
-                {isAssistant && (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary shrink-0">
-                    <path d="M8 0l1.5 5.2L14.8 4 9.8 6.5 14 11l-5.2-1.5L8 16l-1-6.5L1.2 11l5-4.5L1.2 4l5.3 1.2z" />
-                  </svg>
-                )}
                 {sessionName}
               </span>
             )}
@@ -181,39 +172,35 @@ export function TopBar() {
             </div>
           )}
 
-          {/* Chat / Editor tab toggle — hidden for assistant (no git/diffs) */}
-          {!isAssistant && (
-            <div className="flex items-center bg-cc-hover rounded-lg p-0.5">
-              <button
-                onClick={() => setActiveTab("chat")}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
-                  activeTab === "chat"
-                    ? "bg-cc-card text-cc-fg shadow-sm"
-                    : "text-cc-muted hover:text-cc-fg"
-                }`}
-              >
-                Chat
-              </button>
-              <button
-                onClick={() => setActiveTab("diff")}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === "diff"
-                    ? "bg-cc-card text-cc-fg shadow-sm"
-                    : "text-cc-muted hover:text-cc-fg"
-                }`}
-              >
-                Diffs
-                {changedFilesCount > 0 && (
-                  <span className="text-[9px] bg-cc-warning text-white rounded-full w-4 h-4 flex items-center justify-center font-semibold leading-none">
-                    {changedFilesCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center bg-cc-hover rounded-lg p-0.5">
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                activeTab === "chat"
+                  ? "bg-cc-card text-cc-fg shadow-sm"
+                  : "text-cc-muted hover:text-cc-fg"
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => setActiveTab("diff")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "diff"
+                  ? "bg-cc-card text-cc-fg shadow-sm"
+                  : "text-cc-muted hover:text-cc-fg"
+              }`}
+            >
+              Diffs
+              {changedFilesCount > 0 && (
+                <span className="text-[9px] bg-cc-warning text-white rounded-full w-4 h-4 flex items-center justify-center font-semibold leading-none">
+                  {changedFilesCount}
+                </span>
+              )}
+            </button>
+          </div>
 
-          {/* CLAUDE.md editor — hidden for assistant */}
-          {cwd && !isAssistant && (
+          {cwd && (
             <button
               onClick={() => setClaudeMdOpen(true)}
               className={`flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${

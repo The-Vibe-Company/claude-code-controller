@@ -25,8 +25,6 @@ export function Sidebar() {
   const recentlyRenamed = useStore((s) => s.recentlyRenamed);
   const clearRecentlyRenamed = useStore((s) => s.clearRecentlyRenamed);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
-  const assistantSessionId = useStore((s) => s.assistantSessionId);
-  const setAssistantSessionId = useStore((s) => s.setAssistantSessionId);
   const collapsedProjects = useStore((s) => s.collapsedProjects);
   const toggleProjectCollapse = useStore((s) => s.toggleProjectCollapse);
   const route = parseHash(hash);
@@ -70,20 +68,6 @@ export function Sidebar() {
       active = false;
       clearInterval(interval);
     };
-  }, []);
-
-  // Hydrate assistant session ID from server on mount
-  useEffect(() => {
-    api.getAssistantStatus().then((status) => {
-      if (status.running && status.sessionId) {
-        useStore.getState().setAssistantSessionId(status.sessionId);
-      } else {
-        // Clear stale session ID if the assistant is not running
-        useStore.getState().setAssistantSessionId(null);
-      }
-    }).catch(() => {
-      // server not ready
-    });
   }, []);
 
   useEffect(() => {
@@ -241,9 +225,9 @@ export function Sidebar() {
     };
   }).sort((a, b) => b.createdAt - a.createdAt);
 
-  const activeSessions = allSessionList.filter((s) => !s.archived && s.id !== assistantSessionId && !s.cronJobId);
-  const cronSessions = allSessionList.filter((s) => !s.archived && s.id !== assistantSessionId && !!s.cronJobId);
-  const archivedSessions = allSessionList.filter((s) => s.archived && s.id !== assistantSessionId);
+  const activeSessions = allSessionList.filter((s) => !s.archived && !s.cronJobId);
+  const cronSessions = allSessionList.filter((s) => !s.archived && !!s.cronJobId);
+  const archivedSessions = allSessionList.filter((s) => s.archived);
   const currentSession = currentSessionId ? allSessionList.find((s) => s.id === currentSessionId) : null;
   const logoSrc = currentSession?.backendType === "codex" ? "/logo-codex.svg" : "/logo.svg";
   const [showCronSessions, setShowCronSessions] = useState(true);
@@ -289,66 +273,6 @@ export function Sidebar() {
           New Session
         </button>
 
-        {(() => {
-          const isActive = !!(currentSessionId === assistantSessionId && assistantSessionId);
-          const isAlive = !!(assistantSessionId && cliConnected.get(assistantSessionId));
-          return (
-            <button
-              onClick={async () => {
-                useStore.getState().closeTerminal();
-                if (assistantSessionId) {
-                  handleSelectSession(assistantSessionId);
-                } else {
-                  try {
-                    const result = await api.launchAssistant();
-                    if (result.sessionId) {
-                      setAssistantSessionId(result.sessionId);
-                      navigateToSession(result.sessionId);
-                    }
-                  } catch (e) {
-                    console.error("[sidebar] Failed to launch assistant:", e);
-                  }
-                }
-                if (window.innerWidth < 768) {
-                  useStore.getState().setSidebarOpen(false);
-                }
-              }}
-              className={`companion-btn ${isActive ? "companion-active" : ""} group/companion w-full mt-2.5 py-2.5 px-3 rounded-[12px] transition-all duration-300 flex items-center gap-3 cursor-pointer relative ${
-                isActive
-                  ? "bg-cc-primary/[0.06] text-cc-fg"
-                  : "text-cc-muted hover:text-cc-fg"
-              }`}
-            >
-              {/* Icon — constellation sparkle */}
-              <span className={`relative flex items-center justify-center w-7 h-7 rounded-[8px] transition-all duration-300 ${
-                isAlive ? "companion-sparkle-active" : ""
-              } ${
-                isActive
-                  ? "bg-cc-primary text-white shadow-[0_2px_8px_rgba(174,86,48,0.3)]"
-                  : "bg-cc-primary/10 text-cc-primary group-hover/companion:bg-cc-primary/15 group-hover/companion:shadow-[0_1px_4px_rgba(174,86,48,0.15)]"
-              }`}>
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                  <path d="M8 0c.2 2.7 1.4 5 3.5 6.5C13.7 8 16 8 16 8s-2.3.2-4.5 1.5C9.4 11 8.2 13.3 8 16c-.2-2.7-1.4-5-3.5-6.5C2.3 8.2 0 8 0 8s2.3-.2 4.5-1.5C6.6 5 7.8 2.7 8 0z" />
-                </svg>
-              </span>
-
-              {/* Label + subtitle */}
-              <div className="flex flex-col min-w-0">
-                <span className="text-[13px] font-semibold leading-tight tracking-tight">Companion</span>
-                {isAlive ? (
-                  <span className="text-[10px] text-cc-success leading-tight mt-0.5 flex items-center gap-1">
-                    <span className="w-1 h-1 rounded-full bg-cc-success inline-block" />
-                    online
-                  </span>
-                ) : assistantSessionId ? (
-                  <span className="text-[10px] text-cc-muted leading-tight mt-0.5">offline</span>
-                ) : (
-                  <span className="text-[10px] text-cc-muted leading-tight mt-0.5">click to start</span>
-                )}
-              </div>
-            </button>
-          );
-        })()}
       </div>
 
       {/* Container archive confirmation */}

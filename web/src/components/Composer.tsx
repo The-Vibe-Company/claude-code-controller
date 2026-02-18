@@ -40,7 +40,6 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const cliConnected = useStore((s) => s.cliConnected);
-  const assistantSessionId = useStore((s) => s.assistantSessionId);
   const sessionData = useStore((s) => s.sessions.get(sessionId));
   const previousMode = useStore((s) => s.previousPermissionMode.get(sessionId) || "acceptEdits");
 
@@ -331,9 +330,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={isConnected
-              ? (sessionId === assistantSessionId
-                ? "Ask the assistant to manage sessions, schedule tasks..."
-                : "Type a message... (/ for commands)")
+              ? "Type a message... (/ for commands)"
               : "Waiting for CLI connection..."}
             disabled={!isConnected}
             rows={1}
@@ -341,8 +338,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
             style={{ minHeight: "36px", maxHeight: "200px" }}
           />
 
-          {/* Git branch + lines info — hidden for assistant */}
-          {sessionData?.git_branch && sessionId !== assistantSessionId && (
+          {sessionData?.git_branch && (
             <div className="flex items-center gap-2 px-2 sm:px-4 pb-1 text-[11px] text-cc-muted overflow-hidden">
               <span className="flex items-center gap-1 truncate min-w-0">
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
@@ -388,42 +384,32 @@ export function Composer({ sessionId }: { sessionId: string }) {
 
           {/* Bottom toolbar */}
           <div className="flex items-center justify-between px-2.5 pb-2.5">
-            {/* Left: mode indicator — static for assistant (always bypass) */}
-            {sessionId === assistantSessionId ? (
-              <span className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-medium text-cc-muted select-none">
+            {/* Left: mode indicator */}
+            <button
+              onClick={toggleMode}
+              disabled={!isConnected || isCodex}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all select-none ${
+                !isConnected || isCodex
+                  ? "opacity-30 cursor-not-allowed text-cc-muted"
+                  : isPlan
+                  ? "text-cc-primary hover:bg-cc-primary/10 cursor-pointer"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+              }`}
+              title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
+            >
+              {isPlan ? (
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                  <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
+                  <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
+                </svg>
+              ) : (
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-                <span>bypass</span>
-              </span>
-            ) : (
-              <button
-                onClick={toggleMode}
-                disabled={!isConnected || isCodex}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all select-none ${
-                  !isConnected || isCodex
-                    ? "opacity-30 cursor-not-allowed text-cc-muted"
-                    : isPlan
-                    ? "text-cc-primary hover:bg-cc-primary/10 cursor-pointer"
-                    : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
-                }`}
-                title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
-              >
-                {isPlan ? (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                    <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
-                    <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                    <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                  </svg>
-                )}
-                <span>{modeLabel}</span>
-              </button>
-            )}
+              )}
+              <span>{modeLabel}</span>
+            </button>
 
             {/* Right: image + send/stop */}
             <div className="flex items-center gap-1">

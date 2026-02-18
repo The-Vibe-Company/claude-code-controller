@@ -354,28 +354,6 @@ export interface CronJobExecution {
   costUsd?: number;
 }
 
-export interface AssistantStatus {
-  running: boolean;
-  sessionId: string | null;
-  config: {
-    enabled: boolean;
-    sessionId: string | null;
-    cliSessionId: string | null;
-    model: string;
-    permissionMode: string;
-    createdAt: number;
-    lastActiveAt: number;
-    contextRestorations: number;
-  };
-  cwd: string;
-}
-
-export interface AssistantConfig {
-  enabled: boolean;
-  model: string;
-  permissionMode: string;
-}
-
 // ─── SSE Session Creation ────────────────────────────────────────────────────
 
 export interface CreationProgressEvent {
@@ -648,14 +626,6 @@ export const api = {
   runCronJob: (id: string) => post(`/cron/jobs/${encodeURIComponent(id)}/run`),
   getCronJobExecutions: (id: string) =>
     get<CronJobExecution[]>(`/cron/jobs/${encodeURIComponent(id)}/executions`),
-
-  // Assistant
-  getAssistantStatus: () => get<AssistantStatus>("/assistant/status"),
-  launchAssistant: () => post<{ ok: boolean; sessionId: string }>("/assistant/launch"),
-  stopAssistant: () => post<{ ok: boolean }>("/assistant/stop"),
-  getAssistantConfig: () => get<AssistantConfig>("/assistant/config"),
-  updateAssistantConfig: (data: Partial<AssistantConfig>) =>
-    put<AssistantConfig>("/assistant/config", data),
 
   // Cross-session messaging
   sendSessionMessage: (sessionId: string, content: string) =>
