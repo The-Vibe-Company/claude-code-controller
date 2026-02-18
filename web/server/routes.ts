@@ -196,44 +196,35 @@ export function createRoutes(
       // return an explicit error.
       if (effectiveImage) {
         if (!containerManager.imageExists(effectiveImage)) {
-          // Auto-build for default images (the-companion or legacy companion-dev)
-          const isDefaultImage = effectiveImage === "the-companion:latest" || effectiveImage === "companion-dev:latest";
+          // Auto-build for the default base image.
+          const isDefaultImage = effectiveImage === "the-companion:latest";
           if (isDefaultImage) {
-            // Try fallback: if the-companion requested but companion-dev exists, use it
-            if (effectiveImage === "the-companion:latest" && containerManager.imageExists("companion-dev:latest")) {
-              console.warn("[routes] the-companion:latest not found, falling back to companion-dev:latest (deprecated)");
-              effectiveImage = "companion-dev:latest";
-            } else {
-              // Try pulling from Docker Hub first, fall back to local build
-              const registryImage = ContainerManager.getRegistryImage(effectiveImage);
-              let pulled = false;
-              if (registryImage) {
-                console.log(`[routes] ${effectiveImage} missing locally, trying docker pull ${registryImage}...`);
-                pulled = await containerManager.pullImage(registryImage, effectiveImage);
-              }
+            // Try pulling from Docker Hub first, fall back to local build
+            const registryImage = ContainerManager.getRegistryImage(effectiveImage);
+            let pulled = false;
+            if (registryImage) {
+              console.log(`[routes] ${effectiveImage} missing locally, trying docker pull ${registryImage}...`);
+              pulled = await containerManager.pullImage(registryImage, effectiveImage);
+            }
 
-              if (!pulled) {
-                // Fall back to local Dockerfile build
-                const dockerfileName = effectiveImage === "the-companion:latest"
-                  ? "Dockerfile.the-companion"
-                  : "Dockerfile.companion-dev";
-                const dockerfilePath = join(WEB_DIR, "docker", dockerfileName);
-                if (!existsSync(dockerfilePath)) {
-                  return c.json({
-                    error:
-                      `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
-                  }, 503);
-                }
-                try {
-                  console.log(`[routes] Pull failed/unavailable, building ${effectiveImage} from Dockerfile...`);
-                  containerManager.buildImage(dockerfilePath, effectiveImage);
-                } catch (err) {
-                  const reason = err instanceof Error ? err.message : String(err);
-                  return c.json({
-                    error:
-                      `Docker image ${effectiveImage} is missing: pull and build both failed: ${reason}`,
-                  }, 503);
-                }
+            if (!pulled) {
+              // Fall back to local Dockerfile build
+              const dockerfilePath = join(WEB_DIR, "docker", "Dockerfile.the-companion");
+              if (!existsSync(dockerfilePath)) {
+                return c.json({
+                  error:
+                    `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
+                }, 503);
+              }
+              try {
+                console.log(`[routes] Pull failed/unavailable, building ${effectiveImage} from Dockerfile...`);
+                containerManager.buildImage(dockerfilePath, effectiveImage);
+              } catch (err) {
+                const reason = err instanceof Error ? err.message : String(err);
+                return c.json({
+                  error:
+                    `Docker image ${effectiveImage} is missing: pull and build both failed: ${reason}`,
+                }, 503);
               }
             }
           } else {
@@ -495,55 +486,48 @@ export function createRoutes(
 
         if (effectiveImage) {
           if (!containerManager.imageExists(effectiveImage)) {
-            const isDefaultImage = effectiveImage === "the-companion:latest" || effectiveImage === "companion-dev:latest";
+            const isDefaultImage = effectiveImage === "the-companion:latest";
             if (isDefaultImage) {
-              if (effectiveImage === "the-companion:latest" && containerManager.imageExists("companion-dev:latest")) {
-                effectiveImage = "companion-dev:latest";
-              } else {
-                // Try pulling from Docker Hub first
-                const registryImage = ContainerManager.getRegistryImage(effectiveImage);
-                let pulled = false;
-                if (registryImage) {
-                  await emitProgress(stream, "pulling_image", "Pulling Docker image...", "in_progress");
-                  pulled = await containerManager.pullImage(registryImage, effectiveImage);
-                  if (pulled) {
-                    await emitProgress(stream, "pulling_image", "Image pulled", "done");
-                  } else {
-                    await emitProgress(stream, "pulling_image", "Pull failed, falling back to build", "error");
-                  }
+              // Try pulling from Docker Hub first
+              const registryImage = ContainerManager.getRegistryImage(effectiveImage);
+              let pulled = false;
+              if (registryImage) {
+                await emitProgress(stream, "pulling_image", "Pulling Docker image...", "in_progress");
+                pulled = await containerManager.pullImage(registryImage, effectiveImage);
+                if (pulled) {
+                  await emitProgress(stream, "pulling_image", "Image pulled", "done");
+                } else {
+                  await emitProgress(stream, "pulling_image", "Pull failed, falling back to build", "error");
                 }
+              }
 
-                // Fall back to local build if pull failed
-                if (!pulled) {
-                  const dockerfileName = effectiveImage === "the-companion:latest"
-                    ? "Dockerfile.the-companion"
-                    : "Dockerfile.companion-dev";
-                  const dockerfilePath = join(WEB_DIR, "docker", dockerfileName);
-                  if (!existsSync(dockerfilePath)) {
-                    await stream.writeSSE({
-                      event: "error",
-                      data: JSON.stringify({
-                        error: `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
-                        step: "building_image",
-                      }),
-                    });
-                    return;
-                  }
-                  try {
-                    await emitProgress(stream, "building_image", "Building Docker image (this may take a minute)...", "in_progress");
-                    containerManager.buildImage(dockerfilePath, effectiveImage);
-                    await emitProgress(stream, "building_image", "Image built", "done");
-                  } catch (err) {
-                    const reason = err instanceof Error ? err.message : String(err);
-                    await stream.writeSSE({
-                      event: "error",
-                      data: JSON.stringify({
-                        error: `Docker image build failed: ${reason}`,
-                        step: "building_image",
-                      }),
-                    });
-                    return;
-                  }
+              // Fall back to local build if pull failed
+              if (!pulled) {
+                const dockerfilePath = join(WEB_DIR, "docker", "Dockerfile.the-companion");
+                if (!existsSync(dockerfilePath)) {
+                  await stream.writeSSE({
+                    event: "error",
+                    data: JSON.stringify({
+                      error: `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
+                      step: "building_image",
+                    }),
+                  });
+                  return;
+                }
+                try {
+                  await emitProgress(stream, "building_image", "Building Docker image (this may take a minute)...", "in_progress");
+                  containerManager.buildImage(dockerfilePath, effectiveImage);
+                  await emitProgress(stream, "building_image", "Image built", "done");
+                } catch (err) {
+                  const reason = err instanceof Error ? err.message : String(err);
+                  await stream.writeSSE({
+                    event: "error",
+                    data: JSON.stringify({
+                      error: `Docker image build failed: ${reason}`,
+                      step: "building_image",
+                    }),
+                  });
+                  return;
                 }
               }
             } else {

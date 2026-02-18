@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 // ---------------------------------------------------------------------------
 
 export interface ContainerConfig {
-  /** Docker image to use (e.g. "companion-dev", "node:22-slim") */
+  /** Docker image to use (e.g. "the-companion:latest", "node:22-slim") */
   image: string;
   /** Container ports to expose (e.g. [3000, 8080]) */
   ports: number[];
@@ -707,10 +707,10 @@ export class ContainerManager {
   // ---------------------------------------------------------------------------
 
   /**
-   * Build the companion-dev Docker image from the Dockerfile.dev.
+   * Build a Docker image from a provided Dockerfile path.
    * Returns the build output log. Throws on failure.
    */
-  buildImage(dockerfilePath: string, tag: string = "companion-dev:latest"): string {
+  buildImage(dockerfilePath: string, tag: string = "the-companion:latest"): string {
     const contextDir = dockerfilePath.replace(/\/[^/]+$/, "") || ".";
     try {
       const output = exec(

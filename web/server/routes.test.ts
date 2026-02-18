@@ -389,11 +389,11 @@ describe("POST /api/sessions/create", () => {
       name: "Companion",
       slug: "companion",
       variables: { CLAUDE_CODE_OAUTH_TOKEN: "token" },
-      baseImage: "companion-dev:latest",
+      baseImage: "the-companion:latest",
       createdAt: 1000,
       updatedAt: 1000,
     } as any);
-    vi.mocked(envManager.getEffectiveImage).mockReturnValue("companion-dev:latest");
+    vi.mocked(envManager.getEffectiveImage).mockReturnValue("the-companion:latest");
     vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(true);
     vi.spyOn(containerManager, "createContainer").mockImplementationOnce(() => {
       throw new Error("docker daemon timeout");
@@ -477,18 +477,19 @@ describe("POST /api/sessions/create", () => {
       name: "Companion",
       slug: "companion",
       variables: { CLAUDE_CODE_OAUTH_TOKEN: "token" },
-      baseImage: "companion-dev:latest",
+      baseImage: "the-companion:latest",
       createdAt: 1000,
       updatedAt: 1000,
     } as any);
-    vi.mocked(envManager.getEffectiveImage).mockReturnValue("companion-dev:latest");
+    vi.mocked(envManager.getEffectiveImage).mockReturnValue("the-companion:latest");
     vi.mocked(existsSync).mockReturnValueOnce(true);
     vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(false);
+    vi.spyOn(containerManager, "pullImage").mockResolvedValueOnce(false);
     const buildSpy = vi.spyOn(containerManager, "buildImage").mockReturnValue("ok");
     vi.spyOn(containerManager, "createContainer").mockReturnValueOnce({
       containerId: "cid-1",
       name: "companion-temp",
-      image: "companion-dev:latest",
+      image: "the-companion:latest",
       portMappings: [],
       hostCwd: "/test",
       containerCwd: "/workspace",
@@ -504,8 +505,8 @@ describe("POST /api/sessions/create", () => {
 
     expect(res.status).toBe(200);
     expect(buildSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Dockerfile.companion-dev"),
-      "companion-dev:latest",
+      expect.stringContaining("Dockerfile.the-companion"),
+      "the-companion:latest",
     );
     expect(launcher.launch).toHaveBeenCalled();
   });
@@ -1891,8 +1892,8 @@ describe("POST /api/sessions/create-stream", () => {
       updatedAt: 1000,
     } as any);
     vi.mocked(envManager.getEffectiveImage).mockReturnValue("the-companion:latest");
-    // First call: the-companion:latest not found; second call: companion-dev:latest not found either
-    vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(false).mockReturnValueOnce(false);
+    // the-companion:latest is not found locally
+    vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(false);
     const pullSpy = vi.spyOn(containerManager, "pullImage").mockResolvedValueOnce(true);
     vi.spyOn(containerManager, "createContainer").mockReturnValueOnce({
       containerId: "cid-pulled",
@@ -1938,8 +1939,8 @@ describe("POST /api/sessions/create-stream", () => {
       updatedAt: 1000,
     } as any);
     vi.mocked(envManager.getEffectiveImage).mockReturnValue("the-companion:latest");
-    // First call: the-companion:latest not found; second call: companion-dev:latest not found either
-    vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(false).mockReturnValueOnce(false);
+    // the-companion:latest is not found locally
+    vi.spyOn(containerManager, "imageExists").mockReturnValueOnce(false);
     vi.spyOn(containerManager, "pullImage").mockResolvedValueOnce(false);
     vi.mocked(existsSync).mockReturnValueOnce(true); // Dockerfile exists
     const buildSpy = vi.spyOn(containerManager, "buildImage").mockReturnValue("ok");

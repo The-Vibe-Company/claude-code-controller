@@ -21,7 +21,7 @@ export interface CompanionEnv {
   dockerfile?: string;
   /** Tag of the built image (e.g. "companion-env-myproject:latest") */
   imageTag?: string;
-  /** Base image to use when no custom Dockerfile is provided (e.g. "companion-dev:latest") */
+  /** Base image to use when no custom Dockerfile is provided (e.g. "the-companion:latest") */
   baseImage?: string;
   /** Current build status */
   buildStatus?: "idle" | "building" | "success" | "error";
