@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.48.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.47.0...the-companion-v0.48.0) (2026-02-18)
+
+
+### Features
+
+* **session-ui:** redesign tabs, terminal persistence and composer ([#306](https://github.com/The-Vibe-Company/companion/issues/306)) ([4a7fe9f](https://github.com/The-Vibe-Company/companion/commit/4a7fe9f4bdeef0dd41bb24d16dd530ed8c6e1939))
+
+
+### Bug Fixes
+
+* **ui:** dock session terminal inside workspace and prioritize docker target ([#302](https://github.com/The-Vibe-Company/companion/issues/302)) ([b3f0dd4](https://github.com/The-Vibe-Company/companion/commit/b3f0dd4196af53fd05fd8c432afdc40547a3f2c9))
+
 ## [0.47.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.1...the-companion-v0.47.0) (2026-02-18)
 
 
