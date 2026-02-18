@@ -178,6 +178,17 @@ describe("generatePlist", () => {
     expect(plist).toContain("<key>ThrottleInterval</key>");
     expect(plist).toContain("<integer>5</integer>");
   });
+
+  it("includes COMPANION_HOSTNAME when hostname is specified", () => {
+    const plist = service.generatePlist({ binPath: "/usr/local/bin/the-companion", hostname: "127.0.0.1" });
+    expect(plist).toContain("<key>COMPANION_HOSTNAME</key>");
+    expect(plist).toContain("<string>127.0.0.1</string>");
+  });
+
+  it("omits COMPANION_HOSTNAME when hostname is not specified", () => {
+    const plist = service.generatePlist({ binPath: "/usr/local/bin/the-companion" });
+    expect(plist).not.toContain("COMPANION_HOSTNAME");
+  });
 });
 
 // ===========================================================================
@@ -238,6 +249,16 @@ describe("generateSystemdUnit", () => {
   it("targets default.target for user service", () => {
     const unit = service.generateSystemdUnit({ binPath: "/usr/local/bin/the-companion" });
     expect(unit).toContain("WantedBy=default.target");
+  });
+
+  it("includes COMPANION_HOSTNAME when hostname is specified", () => {
+    const unit = service.generateSystemdUnit({ binPath: "/usr/local/bin/the-companion", hostname: "127.0.0.1" });
+    expect(unit).toContain("Environment=COMPANION_HOSTNAME=127.0.0.1");
+  });
+
+  it("omits COMPANION_HOSTNAME when hostname is not specified", () => {
+    const unit = service.generateSystemdUnit({ binPath: "/usr/local/bin/the-companion" });
+    expect(unit).not.toContain("COMPANION_HOSTNAME");
   });
 });
 
@@ -312,6 +333,20 @@ describe("install", () => {
 
     const content = readFileSync(plistPath(), "utf-8");
     expect(content).toContain("<string>9000</string>");
+  });
+
+  it("passes hostname through to plist", async () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("launchctl")) return "";
+      return "";
+    });
+
+    await service.install({ hostname: "127.0.0.1" });
+
+    const content = readFileSync(plistPath(), "utf-8");
+    expect(content).toContain("<key>COMPANION_HOSTNAME</key>");
+    expect(content).toContain("<string>127.0.0.1</string>");
   });
 
   it("cleans up plist if launchctl load fails", async () => {
@@ -433,6 +468,19 @@ describe("install (linux)", () => {
 
     const content = readFileSync(unitPath(), "utf-8");
     expect(content).toContain("Environment=PORT=9000");
+  });
+
+  it("passes hostname through to systemd unit", async () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+
+    await service.install({ hostname: "127.0.0.1" });
+
+    const content = readFileSync(unitPath(), "utf-8");
+    expect(content).toContain("Environment=COMPANION_HOSTNAME=127.0.0.1");
   });
 
   it("cleans up unit file if systemctl enable fails", async () => {
@@ -1285,6 +1333,33 @@ describe("refreshServiceDefinition (macOS)", () => {
     expect(updatedContent).toContain("9999");
   });
 
+  it("preserves custom hostname from existing plist", async () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("launchctl")) return "";
+      return "";
+    });
+    await service.install({ hostname: "127.0.0.1" });
+
+    const originalContent = readFileSync(plistPath(), "utf-8");
+    expect(originalContent).toContain("COMPANION_HOSTNAME");
+    expect(originalContent).toContain("127.0.0.1");
+
+    vi.resetModules();
+    service = await import("./service.js");
+    mockExecSync.mockReset();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      return "";
+    });
+
+    service.refreshServiceDefinition();
+
+    const updatedContent = readFileSync(plistPath(), "utf-8");
+    expect(updatedContent).toContain("<key>COMPANION_HOSTNAME</key>");
+    expect(updatedContent).toContain("<string>127.0.0.1</string>");
+  });
+
   it("is a no-op when service is not installed", () => {
     // Should not throw
     service.refreshServiceDefinition();
@@ -1359,6 +1434,32 @@ describe("refreshServiceDefinition (linux)", () => {
 
     const updatedContent = readFileSync(unitPath(), "utf-8");
     expect(updatedContent).toContain("PORT=9999");
+  });
+
+  it("preserves custom hostname from existing unit", async () => {
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+    await service.install({ hostname: "127.0.0.1" });
+
+    const originalContent = readFileSync(unitPath(), "utf-8");
+    expect(originalContent).toContain("COMPANION_HOSTNAME=127.0.0.1");
+
+    vi.resetModules();
+    service = await import("./service.js");
+    mockExecSync.mockReset();
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (cmd.startsWith("which")) return "/usr/local/bin/the-companion\n";
+      if (cmd.startsWith("systemctl")) return "";
+      return "";
+    });
+
+    service.refreshServiceDefinition();
+
+    const updatedContent = readFileSync(unitPath(), "utf-8");
+    expect(updatedContent).toContain("Environment=COMPANION_HOSTNAME=127.0.0.1");
   });
 
   it("is a no-op when service is not installed", () => {
