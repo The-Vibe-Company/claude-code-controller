@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.49.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.48.0...the-companion-v0.49.0) (2026-02-18)
+
+
+### Features
+
+* **diff:** add diff base setting (last commit vs default branch) ([#308](https://github.com/The-Vibe-Company/companion/issues/308)) ([2a7f427](https://github.com/The-Vibe-Company/companion/commit/2a7f4271ef021db67c5b57d6509fe54853e930cc))
+
+
+### Bug Fixes
+
+* **docker:** propagate host git identity into containers ([#310](https://github.com/The-Vibe-Company/companion/issues/310)) ([81be828](https://github.com/The-Vibe-Company/companion/commit/81be828db84efb74772ef4cb89d4d83fc5b4e9f5))
+
 ## [0.48.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.47.0...the-companion-v0.48.0) (2026-02-18)
 
 
