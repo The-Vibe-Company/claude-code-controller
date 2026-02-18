@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.49.0...the-companion-v0.50.0) (2026-02-18)
+
+
+### Features
+
+* **docker:** background image pulls and streaming creation progress ([#311](https://github.com/The-Vibe-Company/companion/issues/311)) ([f3a7a5e](https://github.com/The-Vibe-Company/companion/commit/f3a7a5e48bbb371b828f8ffe53c8ad3448f1c07b))
+
 ## [0.49.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.48.0...the-companion-v0.49.0) (2026-02-18)
 
 
