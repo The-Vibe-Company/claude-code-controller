@@ -689,6 +689,7 @@ export function sendToSession(sessionId: string, msg: BrowserOutgoingMessage) {
       case "interrupt":
       case "set_model":
       case "set_permission_mode":
+      case "set_max_thinking_tokens":
       case "mcp_get_status":
       case "mcp_toggle":
       case "mcp_reconnect":
