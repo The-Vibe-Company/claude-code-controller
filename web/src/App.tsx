@@ -17,6 +17,7 @@ import { EnvManager } from "./components/EnvManager.js";
 import { CronManager } from "./components/CronManager.js";
 import { TerminalPage } from "./components/TerminalPage.js";
 import { SessionLaunchOverlay } from "./components/SessionLaunchOverlay.js";
+import { SessionTerminalDock } from "./components/SessionTerminalDock.js";
 
 function useHash() {
   return useSyncExternalStore(
@@ -154,7 +155,9 @@ export default function App() {
               {/* Chat tab — visible when activeTab is "chat" or no session */}
               <div className={`absolute inset-0 ${activeTab === "chat" || !currentSessionId ? "" : "hidden"}`}>
                 {currentSessionId ? (
-                  <ChatView sessionId={currentSessionId} />
+                  <SessionTerminalDock sessionId={currentSessionId}>
+                    <ChatView sessionId={currentSessionId} />
+                  </SessionTerminalDock>
                 ) : (
                   <HomePage key={homeResetKey} />
                 )}
@@ -163,7 +166,9 @@ export default function App() {
               {/* Diff tab — not shown for assistant session */}
               {currentSessionId && activeTab === "diff" && currentSessionId !== assistantSessionId && (
                 <div className="absolute inset-0">
-                  <DiffPanel sessionId={currentSessionId} />
+                  <SessionTerminalDock sessionId={currentSessionId}>
+                    <DiffPanel sessionId={currentSessionId} />
+                  </SessionTerminalDock>
                 </div>
               )}
 

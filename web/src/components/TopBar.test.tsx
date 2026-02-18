@@ -8,12 +8,6 @@ vi.mock("../api.js", () => ({
   },
 }));
 
-vi.mock("./TerminalView.js", () => ({
-  TerminalView: ({ title, cwd }: { title?: string; cwd: string }) => (
-    <div data-testid="terminal-view">{title || cwd}</div>
-  ),
-}));
-
 interface MockStoreState {
   currentSessionId: string | null;
   cliConnected: Map<string, boolean>;
@@ -24,6 +18,9 @@ interface MockStoreState {
   setTaskPanelOpen: ReturnType<typeof vi.fn>;
   activeTab: "chat" | "diff";
   setActiveTab: ReturnType<typeof vi.fn>;
+  quickTerminalOpen: boolean;
+  openQuickTerminal: ReturnType<typeof vi.fn>;
+  resetQuickTerminal: ReturnType<typeof vi.fn>;
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
   changedFiles: Map<string, Set<string>>;
@@ -42,6 +39,9 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     setTaskPanelOpen: vi.fn(),
     activeTab: "chat",
     setActiveTab: vi.fn(),
+    quickTerminalOpen: false,
+    openQuickTerminal: vi.fn(),
+    resetQuickTerminal: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
     changedFiles: new Map(),
@@ -86,15 +86,28 @@ describe("TopBar", () => {
     expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 
-  it("opens quick terminal panel on click (not on hover)", () => {
+  it("opens quick terminal on click (not on hover)", () => {
     render(<TopBar />);
 
     const btn = screen.getByRole("button", { name: "Terminal" });
     fireEvent.mouseOver(btn);
-    expect(screen.queryByText("Host 1")).not.toBeInTheDocument();
+    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
 
     fireEvent.click(btn);
-    expect(screen.getByText("Host 1")).toBeInTheDocument();
-    expect(screen.getByTestId("terminal-view")).toHaveTextContent("/repo");
+    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({ target: "host", cwd: "/repo" });
+  });
+
+  it("opens docker quick terminal in containerized sessions", () => {
+    resetStore({
+      sdkSessions: [{ sessionId: "s1", cwd: "/repo", containerId: "ctr-1" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({
+      target: "docker",
+      cwd: "/workspace",
+      containerId: "ctr-1",
+    });
   });
 });
