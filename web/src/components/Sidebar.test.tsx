@@ -20,6 +20,7 @@ const mockApi = {
   deleteSession: vi.fn().mockResolvedValue({}),
   archiveSession: vi.fn().mockResolvedValue({}),
   unarchiveSession: vi.fn().mockResolvedValue({}),
+  getAssistantStatus: vi.fn().mockResolvedValue({ running: false, sessionId: null }),
 };
 
 vi.mock("../api.js", () => ({
@@ -28,6 +29,7 @@ vi.mock("../api.js", () => ({
     deleteSession: (...args: unknown[]) => mockApi.deleteSession(...args),
     archiveSession: (...args: unknown[]) => mockApi.archiveSession(...args),
     unarchiveSession: (...args: unknown[]) => mockApi.unarchiveSession(...args),
+    getAssistantStatus: (...args: unknown[]) => mockApi.getAssistantStatus(...args),
   },
 }));
 
@@ -40,6 +42,7 @@ interface MockStoreState {
   sessions: Map<string, SessionState>;
   sdkSessions: SdkSessionInfo[];
   currentSessionId: string | null;
+  assistantSessionId: string | null;
   cliConnected: Map<string, boolean>;
   sessionStatus: Map<string, "idle" | "running" | "compacting" | null>;
   sessionNames: Map<string, string>;
@@ -47,6 +50,7 @@ interface MockStoreState {
   pendingPermissions: Map<string, Map<string, unknown>>;
   collapsedProjects: Set<string>;
   setCurrentSession: ReturnType<typeof vi.fn>;
+  setAssistantSessionId: ReturnType<typeof vi.fn>;
   toggleProjectCollapse: ReturnType<typeof vi.fn>;
   removeSession: ReturnType<typeof vi.fn>;
   newSession: ReturnType<typeof vi.fn>;
@@ -104,6 +108,7 @@ function createMockState(overrides: Partial<MockStoreState> = {}): MockStoreStat
     sessions: new Map(),
     sdkSessions: [],
     currentSessionId: null,
+    assistantSessionId: null,
     cliConnected: new Map(),
     sessionStatus: new Map(),
     sessionNames: new Map(),
@@ -111,6 +116,7 @@ function createMockState(overrides: Partial<MockStoreState> = {}): MockStoreStat
     pendingPermissions: new Map(),
     collapsedProjects: new Set(),
     setCurrentSession: vi.fn(),
+    setAssistantSessionId: vi.fn(),
     toggleProjectCollapse: vi.fn(),
     removeSession: vi.fn(),
     newSession: vi.fn(),

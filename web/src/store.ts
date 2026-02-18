@@ -16,6 +16,7 @@ interface AppState {
   sessions: Map<string, SessionState>;
   sdkSessions: SdkSessionInfo[];
   currentSessionId: string | null;
+  assistantSessionId: string | null;
 
   // Messages per session
   messages: Map<string, ChatMessage[]>;
@@ -84,7 +85,8 @@ interface AppState {
   sidebarOpen: boolean;
   taskPanelOpen: boolean;
   homeResetKey: number;
-  activeTab: "chat" | "diff";
+  activeTab: "chat" | "diff" | "terminal";
+  chatTabReentryTickBySession: Map<string, number>;
   diffPanelSelectedFile: Map<string, string>;
 
   // Actions
@@ -100,6 +102,7 @@ interface AppState {
 
   // Session actions
   setCurrentSession: (id: string | null) => void;
+  setAssistantSessionId: (id: string | null) => void;
   addSession: (session: SessionState) => void;
   updateSession: (sessionId: string, updates: Partial<SessionState>) => void;
   removeSession: (sessionId: string) => void;
@@ -156,7 +159,8 @@ interface AppState {
   dismissUpdate: (version: string) => void;
 
   // Diff panel actions
-  setActiveTab: (tab: "chat" | "diff") => void;
+  setActiveTab: (tab: "chat" | "diff" | "terminal") => void;
+  markChatTabReentry: (sessionId: string) => void;
   setDiffPanelSelectedFile: (sessionId: string, filePath: string | null) => void;
 
   // Session quick terminal (docked in session workspace)
@@ -230,6 +234,11 @@ function getInitialDismissedVersion(): string | null {
   return localStorage.getItem("cc-update-dismissed") || null;
 }
 
+function getInitialAssistantSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("cc-assistant-session-id") || null;
+}
+
 function getInitialCollapsedProjects(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
@@ -250,6 +259,7 @@ export const useStore = create<AppState>((set) => ({
   sessions: new Map(),
   sdkSessions: [],
   currentSessionId: getInitialSessionId(),
+  assistantSessionId: getInitialAssistantSessionId(),
   messages: new Map(),
   streaming: new Map(),
   streamingStartedAt: new Map(),
@@ -277,9 +287,10 @@ export const useStore = create<AppState>((set) => ({
   notificationSound: getInitialNotificationSound(),
   notificationDesktop: getInitialNotificationDesktop(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
-  taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : false,
+  taskPanelOpen: true,
   homeResetKey: 0,
   activeTab: "chat",
+  chatTabReentryTickBySession: new Map(),
   diffPanelSelectedFile: new Map(),
   quickTerminalOpen: false,
   quickTerminalTabs: [],
@@ -349,6 +360,15 @@ export const useStore = create<AppState>((set) => ({
       localStorage.removeItem("cc-current-session");
     }
     set({ currentSessionId: id });
+  },
+
+  setAssistantSessionId: (id) => {
+    if (id) {
+      localStorage.setItem("cc-assistant-session-id", id);
+    } else {
+      localStorage.removeItem("cc-assistant-session-id");
+    }
+    set({ assistantSessionId: id });
   },
 
   addSession: (session) =>
@@ -667,6 +687,13 @@ export const useStore = create<AppState>((set) => ({
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  markChatTabReentry: (sessionId) =>
+    set((s) => {
+      const chatTabReentryTickBySession = new Map(s.chatTabReentryTickBySession);
+      const nextTick = (chatTabReentryTickBySession.get(sessionId) ?? 0) + 1;
+      chatTabReentryTickBySession.set(sessionId, nextTick);
+      return { chatTabReentryTickBySession };
+    }),
 
   setDiffPanelSelectedFile: (sessionId, filePath) =>
     set((s) => {
@@ -753,6 +780,7 @@ export const useStore = create<AppState>((set) => ({
       sessions: new Map(),
       sdkSessions: [],
       currentSessionId: null,
+      assistantSessionId: null,
       messages: new Map(),
       streaming: new Map(),
       streamingStartedAt: new Map(),
@@ -770,6 +798,7 @@ export const useStore = create<AppState>((set) => ({
       toolProgress: new Map(),
       prStatus: new Map(),
       activeTab: "chat" as const,
+      chatTabReentryTickBySession: new Map(),
       diffPanelSelectedFile: new Map(),
       quickTerminalOpen: false,
       quickTerminalTabs: [],

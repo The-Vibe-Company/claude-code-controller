@@ -85,6 +85,18 @@ describe("SessionTerminalDock", () => {
     expect(storeState.setQuickTerminalOpen).toHaveBeenCalledWith(false);
   });
 
+  it("keeps terminal mounted when panel is suppressed", () => {
+    // Ensures tab switches can hide the panel without unmounting TerminalView (which would kill PTY).
+    render(
+      <SessionTerminalDock sessionId="s1" suppressPanel>
+        <div>Session content</div>
+      </SessionTerminalDock>,
+    );
+
+    expect(screen.getByText("Session content")).toBeInTheDocument();
+    expect(screen.getByTestId("terminal-view")).toBeInTheDocument();
+  });
+
   it("opens host terminal from + Terminal in non-container sessions", () => {
     render(
       <SessionTerminalDock sessionId="s1">

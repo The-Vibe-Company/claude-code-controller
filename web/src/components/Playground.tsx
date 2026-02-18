@@ -887,27 +887,31 @@ export function Playground() {
                     style={{ minHeight: "36px" }}
                   />
                   <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium text-cc-muted">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                         <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                       </svg>
                       <span>code</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
                           <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
                           <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cc-primary text-white">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-primary text-white">
                         <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
                         </svg>
                       </div>
                     </div>
+                  </div>
+                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
+                    <span>/ for commands</span>
+                    <span>Enter send · Shift+Enter newline</span>
                   </div>
                 </div>
               </div>
@@ -925,27 +929,31 @@ export function Playground() {
                     style={{ minHeight: "36px" }}
                   />
                   <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium text-cc-primary">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-primary/40 text-[12px] font-semibold text-cc-primary bg-cc-primary/8">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
                         <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
                       </svg>
                       <span>plan</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
                           <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
                           <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-cc-hover text-cc-muted">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-hover text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
                         </svg>
                       </div>
                     </div>
+                  </div>
+                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
+                    <span>/ for commands</span>
+                    <span>Enter send · Shift+Enter newline</span>
                   </div>
                 </div>
               </div>
@@ -962,45 +970,32 @@ export function Playground() {
                     className="w-full px-4 pt-3 pb-1 text-sm bg-transparent resize-none text-cc-fg font-sans-ui placeholder:text-cc-muted"
                     style={{ minHeight: "36px" }}
                   />
-                  {/* Git branch info */}
-                  <div className="flex items-center gap-2 px-4 pb-1 text-[11px] text-cc-muted overflow-hidden">
-                    <span className="flex items-center gap-1 truncate min-w-0">
-                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                        <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                      </svg>
-                      <span className="truncate">feat/jwt-auth</span>
-                      <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">container</span>
-                    </span>
-                    <span className="flex items-center gap-0.5 text-[10px]">
-                      <span className="text-green-500">3&#8593;</span>
-                    </span>
-                    <span className="flex items-center gap-1 shrink-0">
-                      <span className="text-green-500">+142</span>
-                      <span className="text-red-400">-38</span>
-                    </span>
-                  </div>
                   <div className="flex items-center justify-between px-2.5 pb-2.5">
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium text-cc-muted">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
                       <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                         <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                         <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                       </svg>
                       <span>code</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
                         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
                           <rect x="2" y="2" width="12" height="12" rx="2" />
                           <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
                           <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
-                      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-cc-error/10 text-cc-error">
+                      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-cc-error/10 text-cc-error">
                         <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <rect x="3" y="3" width="10" height="10" rx="1" />
                         </svg>
                       </div>
                     </div>
+                  </div>
+                  <div className="px-3 pb-2 text-[10px] text-cc-muted flex items-center justify-between">
+                    <span>/ for commands</span>
+                    <span>Enter send · Shift+Enter newline</span>
                   </div>
                 </div>
               </div>

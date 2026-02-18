@@ -16,12 +16,12 @@ interface MockStoreState {
   setSidebarOpen: ReturnType<typeof vi.fn>;
   taskPanelOpen: boolean;
   setTaskPanelOpen: ReturnType<typeof vi.fn>;
-  activeTab: "chat" | "diff";
+  activeTab: "chat" | "diff" | "terminal";
   setActiveTab: ReturnType<typeof vi.fn>;
+  markChatTabReentry: ReturnType<typeof vi.fn>;
   quickTerminalOpen: boolean;
   quickTerminalTabs: { id: string; label: string; cwd: string; containerId?: string }[];
   openQuickTerminal: ReturnType<typeof vi.fn>;
-  setQuickTerminalOpen: ReturnType<typeof vi.fn>;
   resetQuickTerminal: ReturnType<typeof vi.fn>;
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
@@ -41,10 +41,10 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     setTaskPanelOpen: vi.fn(),
     activeTab: "chat",
     setActiveTab: vi.fn(),
+    markChatTabReentry: vi.fn(),
     quickTerminalOpen: false,
     quickTerminalTabs: [],
     openQuickTerminal: vi.fn(),
-    setQuickTerminalOpen: vi.fn(),
     resetQuickTerminal: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
@@ -90,15 +90,13 @@ describe("TopBar", () => {
     expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 
-  it("opens quick terminal on click (not on hover)", () => {
+  it("opens quick terminal on shell-tab click", () => {
     render(<TopBar />);
 
-    const btn = screen.getByRole("button", { name: "Terminal" });
-    fireEvent.mouseOver(btn);
-    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
-
+    const btn = screen.getByRole("button", { name: "Shell tab" });
     fireEvent.click(btn);
     expect(storeState.openQuickTerminal).toHaveBeenCalledWith({ target: "host", cwd: "/repo", reuseIfExists: true });
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
   });
 
   it("opens docker quick terminal in containerized sessions", () => {
@@ -107,7 +105,7 @@ describe("TopBar", () => {
     });
     render(<TopBar />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
     expect(storeState.openQuickTerminal).toHaveBeenCalledWith({
       target: "docker",
       cwd: "/workspace",
@@ -116,15 +114,60 @@ describe("TopBar", () => {
     });
   });
 
-  it("toggles quick terminal closed when already open with tabs", () => {
+  it("reuses an existing quick terminal when already open", () => {
     resetStore({
       quickTerminalOpen: true,
       quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
     });
     render(<TopBar />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
-    expect(storeState.setQuickTerminalOpen).toHaveBeenCalledWith(false);
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
     expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
+  });
+
+  it("shows terminal tab disabled when cwd is unavailable", () => {
+    resetStore({
+      sessions: new Map([["s1", {}]]),
+      sdkSessions: [],
+    });
+    render(<TopBar />);
+
+    const btn = screen.getByRole("button", { name: "Shell tab" });
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal tab active when clicking shell while already active", () => {
+    resetStore({
+      activeTab: "terminal",
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
+  });
+
+  it("keeps terminal session alive when switching back to the session tab", () => {
+    resetStore({
+      activeTab: "terminal",
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Session tab" }));
+    expect(storeState.markChatTabReentry).toHaveBeenCalledWith("s1");
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("chat");
+  });
+
+  it("cycles to the next workspace tab on Cmd/Ctrl+J", () => {
+    render(<TopBar />);
+
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("diff");
   });
 });

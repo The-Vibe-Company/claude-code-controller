@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useStore } from "../store.js";
 import { sendToSession } from "../ws.js";
-import { api } from "../api.js";
 import { CLAUDE_MODES, CODEX_MODES } from "../utils/backends.js";
 import type { ModeOption } from "../utils/backends.js";
 
@@ -40,6 +39,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const cliConnected = useStore((s) => s.cliConnected);
+  const assistantSessionId = useStore((s) => s.assistantSessionId);
   const sessionData = useStore((s) => s.sessions.get(sessionId));
   const previousMode = useStore((s) => s.previousPermissionMode.get(sessionId) || "acceptEdits");
 
@@ -245,8 +245,8 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const canSend = text.trim().length > 0 && isConnected;
 
   return (
-    <div className="shrink-0 border-t border-cc-border bg-cc-card px-2 sm:px-4 py-2 sm:py-3">
-      <div className="max-w-3xl mx-auto">
+    <div className="shrink-0 px-2 sm:px-4 pt-2.5 sm:pt-3 pb-3 sm:pb-4 bg-transparent">
+      <div className="max-w-4xl mx-auto">
         {/* Image thumbnails */}
         {images.length > 0 && (
           <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -281,7 +281,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
         />
 
         {/* Unified input card */}
-        <div className={`relative bg-cc-input-bg border rounded-[14px] overflow-visible transition-colors ${
+        <div className={`relative bg-cc-input-bg/95 border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible transition-colors backdrop-blur-sm ${
           isPlan
             ? "border-cc-primary/40"
             : "border-cc-border focus-within:border-cc-primary/30"
@@ -323,103 +323,70 @@ export function Composer({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={isConnected
-              ? "Type a message... (/ for commands)"
-              : "Waiting for CLI connection..."}
-            disabled={!isConnected}
-            rows={1}
-            className="w-full px-4 pt-3 pb-1 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto"
-            style={{ minHeight: "36px", maxHeight: "200px" }}
-          />
-
-          {sessionData?.git_branch && (
-            <div className="flex items-center gap-2 px-2 sm:px-4 pb-1 text-[11px] text-cc-muted overflow-hidden">
-              <span className="flex items-center gap-1 truncate min-w-0">
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                  <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                </svg>
-                <span className="truncate max-w-[100px] sm:max-w-[160px]">{sessionData.git_branch}</span>
-                {sessionData.is_containerized && (
-                  <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">container</span>
-                )}
-              </span>
-              {((sessionData.git_ahead || 0) > 0 || (sessionData.git_behind || 0) > 0) && (
-                <span className="flex items-center gap-0.5 text-[10px]">
-                  {(sessionData.git_ahead || 0) > 0 && <span className="text-green-500">{sessionData.git_ahead}&#8593;</span>}
-                  {(sessionData.git_behind || 0) > 0 && (
-                    <button
-                      className="text-cc-warning hover:text-amber-400 cursor-pointer hover:underline"
-                      title="Pull latest changes"
-                      onClick={() => {
-                        const cwd = sessionData.repo_root || sessionData.cwd;
-                        if (!cwd) return;
-                        api.gitPull(cwd).then((r) => {
-                          useStore.getState().updateSession(sessionId, {
-                            git_ahead: r.git_ahead,
-                            git_behind: r.git_behind,
-                          });
-                          if (!r.success) console.warn("[git pull]", r.output);
-                        }).catch((e) => console.error("[git pull]", e));
-                      }}
-                    >
-                      {sessionData.git_behind}&#8595;
-                    </button>
-                  )}
-                </span>
-              )}
-              {((sessionData.total_lines_added || 0) > 0 || (sessionData.total_lines_removed || 0) > 0) && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <span className="text-green-500">+{sessionData.total_lines_added || 0}</span>
-                  <span className="text-red-400">-{sessionData.total_lines_removed || 0}</span>
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Bottom toolbar */}
-          <div className="flex items-center justify-between px-2.5 pb-2.5">
-            {/* Left: mode indicator */}
-            <button
-              onClick={toggleMode}
-              disabled={!isConnected || isCodex}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all select-none ${
-                !isConnected || isCodex
-                  ? "opacity-30 cursor-not-allowed text-cc-muted"
-                  : isPlan
-                  ? "text-cc-primary hover:bg-cc-primary/10 cursor-pointer"
-                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
-              }`}
-              title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
-            >
-              {isPlan ? (
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                  <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
-                  <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
-                </svg>
-              ) : (
+          <div className="flex items-end gap-2 px-2.5 py-2">
+            {/* Left: mode indicator — static for assistant (always bypass) */}
+            {sessionId === assistantSessionId ? (
+              <span className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold text-cc-muted bg-cc-hover/70 select-none shrink-0">
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-              )}
-              <span>{modeLabel}</span>
-            </button>
+                <span>bypass</span>
+              </span>
+            ) : (
+              <button
+                onClick={toggleMode}
+                disabled={!isConnected || isCodex}
+                className={`mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold transition-all border select-none shrink-0 ${
+                  !isConnected || isCodex
+                    ? "opacity-30 cursor-not-allowed text-cc-muted border-transparent"
+                    : isPlan
+                    ? "text-cc-primary border-cc-primary/30 bg-cc-primary/8 hover:bg-cc-primary/12 cursor-pointer"
+                    : "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+                }`}
+                title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
+              >
+                {isPlan ? (
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                    <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
+                    <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                    <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                )}
+                <span>{modeLabel}</span>
+              </button>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleInput}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              placeholder={isConnected
+                ? (sessionId === assistantSessionId
+                  ? "Ask the assistant to manage sessions, schedule tasks..."
+                  : "Type a message... (/ for commands)")
+                : "Waiting for CLI connection..."}
+              disabled={!isConnected}
+              rows={1}
+              className="flex-1 min-w-0 px-2 py-1.5 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto"
+              style={{ minHeight: "36px", maxHeight: "200px" }}
+            />
 
             {/* Right: image + send/stop */}
-            <div className="flex items-center gap-1">
+            <div className="mb-0.5 flex items-center gap-1.5 shrink-0">
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!isConnected}
-                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
                   isConnected
-                    ? "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
-                    : "text-cc-muted opacity-30 cursor-not-allowed"
+                    ? "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+                    : "text-cc-muted opacity-30 border-cc-border/60 cursor-not-allowed"
                 }`}
                 title="Upload image"
               >
@@ -433,7 +400,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               {isRunning ? (
                 <button
                   onClick={handleInterrupt}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-cc-error/10 hover:bg-cc-error/20 text-cc-error transition-colors cursor-pointer"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg bg-cc-error/10 hover:bg-cc-error/20 text-cc-error transition-colors cursor-pointer"
                   title="Stop generation"
                 >
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
@@ -444,9 +411,9 @@ export function Composer({ sessionId }: { sessionId: string }) {
                 <button
                   onClick={handleSend}
                   disabled={!canSend}
-                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
                     canSend
-                      ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
+                      ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer shadow-[0_6px_20px_rgba(0,0,0,0.18)]"
                       : "bg-cc-hover text-cc-muted cursor-not-allowed"
                   }`}
                   title="Send message"
@@ -458,6 +425,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               )}
             </div>
           </div>
+
         </div>
       </div>
     </div>
