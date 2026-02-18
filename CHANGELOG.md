@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.51.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.3...the-companion-v0.51.0) (2026-02-18)
+
+
+### Features
+
+* **prompts:** add global prompt library with @ insertion ([#319](https://github.com/The-Vibe-Company/companion/issues/319)) ([10b97b4](https://github.com/The-Vibe-Company/companion/commit/10b97b450c26e57ee0a2a5c96f42bc2c27cbb0c7))
+* **server:** allow configuring session storage directory via COMPANION_SESSION_DIR ([#266](https://github.com/The-Vibe-Company/companion/issues/266)) ([3a63bc9](https://github.com/The-Vibe-Company/companion/commit/3a63bc915a16844aa2fbf33f08b60587efb9ea4a))
+
 ## [0.50.3](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.2...the-companion-v0.50.3) (2026-02-18)
 
 
