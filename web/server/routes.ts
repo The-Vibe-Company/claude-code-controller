@@ -13,6 +13,8 @@ import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
 import { getUsageLimits } from "./usage-limits.js";
 
+const whichCmd = process.platform === "win32" ? "where" : "which";
+
 export function createRoutes(
   launcher: CliLauncher,
   wsBridge: WsBridge,
@@ -219,7 +221,7 @@ export function createRoutes(
     // Check Claude Code
     let claudeAvailable = false;
     try {
-      execSync("which claude", { encoding: "utf-8", timeout: 3000 });
+      execSync(`${whichCmd} claude`, { encoding: "utf-8", timeout: 3000 });
       claudeAvailable = true;
     } catch {}
     backends.push({ id: "claude", name: "Claude Code", available: claudeAvailable });
@@ -227,7 +229,7 @@ export function createRoutes(
     // Check Codex
     let codexAvailable = false;
     try {
-      execSync("which codex", { encoding: "utf-8", timeout: 3000 });
+      execSync(`${whichCmd} codex`, { encoding: "utf-8", timeout: 3000 });
       codexAvailable = true;
     } catch {}
     backends.push({ id: "codex", name: "Codex", available: codexAvailable });

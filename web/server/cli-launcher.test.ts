@@ -8,7 +8,10 @@ import { tmpdir } from "node:os";
 // Mock randomUUID so session IDs are deterministic
 vi.mock("node:crypto", () => ({ randomUUID: () => "test-session-id" }));
 
-// Mock execSync for `which` command resolution
+// Mock execSync for `which`/`where` command resolution
+const mockResolvedBinary = process.platform === "win32"
+  ? "C:\\Program Files\\claude\\claude.exe"
+  : "/usr/bin/claude";
 const mockExecSync = vi.hoisted(() => vi.fn(() => "/usr/bin/claude"));
 vi.mock("node:child_process", () => ({ execSync: mockExecSync }));
 
@@ -92,7 +95,7 @@ beforeEach(() => {
   launcher = new CliLauncher(3456);
   launcher.setStore(store);
   mockSpawn.mockReturnValue(createMockProc());
-  mockExecSync.mockReturnValue("/usr/bin/claude");
+  mockExecSync.mockReturnValue(mockResolvedBinary);
 });
 
 afterEach(() => {
@@ -117,8 +120,8 @@ describe("launch", () => {
     expect(mockSpawn).toHaveBeenCalledOnce();
     const [cmdAndArgs, options] = mockSpawn.mock.calls[0];
 
-    // Binary should be resolved via execSync
-    expect(cmdAndArgs[0]).toBe("/usr/bin/claude");
+    // Binary should be resolved via execSync (which/where)
+    expect(cmdAndArgs[0]).toBe(mockResolvedBinary);
 
     // Core required flags
     expect(cmdAndArgs).toContain("--sdk-url");
@@ -175,15 +178,16 @@ describe("launch", () => {
     expect(toolFlags).toEqual(["Read", "Write", "Bash"]);
   });
 
-  it("resolves binary path with `which` when not absolute", () => {
+  it("resolves binary path with system command locator when not absolute", () => {
     launcher.launch({ claudeBinary: "claude-dev", cwd: "/tmp" });
 
-    expect(mockExecSync).toHaveBeenCalledWith("which claude-dev", {
+    const expectedCmd = process.platform === "win32" ? "where claude-dev" : "which claude-dev";
+    expect(mockExecSync).toHaveBeenCalledWith(expectedCmd, {
       encoding: "utf-8",
     });
   });
 
-  it("skips `which` resolution when binary path is absolute", () => {
+  it("skips resolution when binary path is absolute (Unix)", () => {
     launcher.launch({
       claudeBinary: "/opt/bin/claude",
       cwd: "/tmp",
@@ -192,6 +196,17 @@ describe("launch", () => {
     expect(mockExecSync).not.toHaveBeenCalled();
     const [cmdAndArgs] = mockSpawn.mock.calls[0];
     expect(cmdAndArgs[0]).toBe("/opt/bin/claude");
+  });
+
+  it("skips resolution when binary path is absolute (Windows)", () => {
+    launcher.launch({
+      claudeBinary: "C:\\Program Files\\claude\\claude.exe",
+      cwd: "/tmp",
+    });
+
+    expect(mockExecSync).not.toHaveBeenCalled();
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    expect(cmdAndArgs[0]).toBe("C:\\Program Files\\claude\\claude.exe");
   });
 
   it("stores worktree metadata when worktreeInfo provided", () => {
@@ -321,11 +336,11 @@ describe("launch", () => {
     expect(info.pid).toBe(99999);
   });
 
-  it("includes CLAUDECODE=1 in environment", () => {
+  it("unsets CLAUDECODE to prevent nesting detection", () => {
     launcher.launch({ cwd: "/tmp" });
 
     const [, options] = mockSpawn.mock.calls[0];
-    expect(options.env.CLAUDECODE).toBe("1");
+    expect(options.env.CLAUDECODE).toBeUndefined();
   });
 
   it("merges custom env variables", () => {
@@ -336,7 +351,6 @@ describe("launch", () => {
 
     const [, options] = mockSpawn.mock.calls[0];
     expect(options.env.MY_VAR).toBe("hello");
-    expect(options.env.CLAUDECODE).toBe("1");
   });
 });
 

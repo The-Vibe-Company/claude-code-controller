@@ -1,11 +1,37 @@
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import type { Subprocess } from "bun";
 import type { SessionStore } from "./session-store.js";
 import type { BackendType } from "./session-types.js";
 import { CodexAdapter } from "./codex-adapter.js";
+
+const isWindows = process.platform === "win32";
+
+/**
+ * Resolve a command name to its absolute path using the system's command locator.
+ * Uses `where` on Windows and `which` on Unix-like systems.
+ * On Windows, `where` can return multiple results (e.g. extensionless shim, .cmd, .exe).
+ * We prefer .exe > .cmd since Bun.spawn cannot execute extensionless bash shims.
+ * Returns the original name if resolution fails (fallback to PATH lookup at spawn time).
+ */
+function resolveCommand(name: string): string {
+  if (isAbsolute(name)) return name;
+  try {
+    const cmd = isWindows ? `where ${name}` : `which ${name}`;
+    const resolved = execSync(cmd, { encoding: "utf-8" }).trim();
+    if (!isWindows) return resolved.split(/\r?\n/)[0] || name;
+    // On Windows, prefer .exe > .cmd > first result
+    const lines = resolved.split(/\r?\n/).filter(Boolean);
+    return lines.find(l => l.endsWith(".exe"))
+      || lines.find(l => l.endsWith(".cmd"))
+      || lines[0]
+      || name;
+  } catch {
+    return name;
+  }
+}
 
 export interface SdkSessionInfo {
   sessionId: string;
@@ -191,7 +217,12 @@ export class CliLauncher {
       this.processes.delete(sessionId);
     } else if (info.pid) {
       // Process from a previous server instance — kill by PID
-      try { process.kill(info.pid, "SIGTERM"); } catch {}
+      try {
+        process.kill(info.pid, 0); // check alive first to avoid Windows taskkill noise
+        process.kill(info.pid, "SIGTERM");
+      } catch {
+        // Process already dead — nothing to do
+      }
     }
 
     info.state = "starting";
@@ -221,14 +252,7 @@ export class CliLauncher {
   }
 
   private spawnCLI(sessionId: string, info: SdkSessionInfo, options: LaunchOptions & { resumeSessionId?: string }): void {
-    let binary = options.claudeBinary || "claude";
-    if (!binary.startsWith("/")) {
-      try {
-        binary = execSync(`which ${binary}`, { encoding: "utf-8" }).trim();
-      } catch {
-        // fall through, hope it's in PATH
-      }
-    }
+    const binary = resolveCommand(options.claudeBinary || "claude");
 
     const sdkUrl = `ws://localhost:${this.port}/ws/cli/${sessionId}`;
 
@@ -271,7 +295,9 @@ export class CliLauncher {
 
     const env: Record<string, string | undefined> = {
       ...process.env,
-      CLAUDECODE: "1",
+      // Unset CLAUDECODE so spawned CLI doesn't think it's nested inside another
+      // Claude Code session (which happens when the server itself runs under Claude Code).
+      CLAUDECODE: undefined,
       ...options.env,
     };
 
@@ -319,14 +345,7 @@ export class CliLauncher {
    * Unlike Claude Code (which connects back via WebSocket), Codex uses stdio.
    */
   private spawnCodex(sessionId: string, info: SdkSessionInfo, options: LaunchOptions): void {
-    let binary = options.codexBinary || "codex";
-    if (!binary.startsWith("/")) {
-      try {
-        binary = execSync(`which ${binary}`, { encoding: "utf-8" }).trim();
-      } catch {
-        // fall through, hope it's in PATH
-      }
-    }
+    const binary = resolveCommand(options.codexBinary || "codex");
 
     const args: string[] = ["app-server"];
 

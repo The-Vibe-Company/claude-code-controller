@@ -1,26 +1,39 @@
 import { execSync } from "node:child_process";
 import type { BackendType } from "./session-types.js";
 
+const isWindows = process.platform === "win32";
+
 let resolvedClaudeBinary: string | null = null;
 let resolvedCodexBinary: string | null = null;
 
+/**
+ * Resolve a command name using the system's command locator.
+ * On Windows, prefers .exe > .cmd to avoid Bun.spawn ENOENT on extensionless shims.
+ */
+function resolveSystemCommand(name: string): string {
+  try {
+    const cmd = isWindows ? `where ${name}` : `which ${name}`;
+    const resolved = execSync(cmd, { encoding: "utf-8" }).trim();
+    if (!isWindows) return resolved.split(/\r?\n/)[0] || name;
+    const lines = resolved.split(/\r?\n/).filter(Boolean);
+    return lines.find(l => l.endsWith(".exe"))
+      || lines.find(l => l.endsWith(".cmd"))
+      || lines[0]
+      || name;
+  } catch {
+    return name;
+  }
+}
+
 function resolveClaudeBinary(): string {
   if (resolvedClaudeBinary) return resolvedClaudeBinary;
-  try {
-    resolvedClaudeBinary = execSync("which claude", { encoding: "utf-8" }).trim();
-  } catch {
-    resolvedClaudeBinary = "claude";
-  }
+  resolvedClaudeBinary = resolveSystemCommand("claude");
   return resolvedClaudeBinary;
 }
 
 function resolveCodexBinary(): string {
   if (resolvedCodexBinary) return resolvedCodexBinary;
-  try {
-    resolvedCodexBinary = execSync("which codex", { encoding: "utf-8" }).trim();
-  } catch {
-    resolvedCodexBinary = "codex";
-  }
+  resolvedCodexBinary = resolveSystemCommand("codex");
   return resolvedCodexBinary;
 }
 
