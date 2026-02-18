@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.2](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.1...the-companion-v0.50.2) (2026-02-18)
+
+
+### Bug Fixes
+
+* **topbar:** sample active tab color from underlying surface ([#315](https://github.com/The-Vibe-Company/companion/issues/315)) ([ebce0ec](https://github.com/The-Vibe-Company/companion/commit/ebce0ec12b5280ac46a8b63b4511202801009fcc))
+
 ## [0.50.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.0...the-companion-v0.50.1) (2026-02-18)
 
 
