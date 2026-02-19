@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.52.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.51.0...the-companion-v0.52.0) (2026-02-19)
+
+
+### Features
+
+* **codex:** add plan mode with runtime Auto↔Plan toggle ([#325](https://github.com/The-Vibe-Company/companion/issues/325)) ([21ef723](https://github.com/The-Vibe-Company/companion/commit/21ef7237b9666ebd4cc5689c5db05a4b26f10bdd))
+* **integrations:** add linear setup, issue search, and startup context ([#326](https://github.com/The-Vibe-Company/companion/issues/326)) ([4612288](https://github.com/The-Vibe-Company/companion/commit/461228845965c45236c0e492f6bef50b71e80a24))
+
+
+### Bug Fixes
+
+* **integrations:** refine linear settings flow and home card UX ([#328](https://github.com/The-Vibe-Company/companion/issues/328)) ([443b3ec](https://github.com/The-Vibe-Company/companion/commit/443b3ecef48565f13d27c0a913d4504d1d0ef66e))
+* **server:** prevent settings undefined overwrite crash ([#327](https://github.com/The-Vibe-Company/companion/issues/327)) ([9173ee2](https://github.com/The-Vibe-Company/companion/commit/9173ee2ed959a6333fb180d3e34f4deaa180c0d9))
+* **ui:** improve thinking, tool results, and question prompts ([#321](https://github.com/The-Vibe-Company/companion/issues/321)) ([5c3dd7c](https://github.com/The-Vibe-Company/companion/commit/5c3dd7c501bc23b52c56fee6d5a3995545f8730b))
+
 ## [0.51.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.3...the-companion-v0.51.0) (2026-02-18)
 
 
