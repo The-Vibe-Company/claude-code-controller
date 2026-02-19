@@ -131,6 +131,12 @@ When submitting a pull request:
 - Explain simply what the PR does and why it's needed
 - Tell me if the code was reviewed by a human or simply generated directly by an AI. 
 
+## Linear Issues
+
+When creating or updating Linear issues:
+- do not use commitzen-style titles in Linear
+- use clear product-style titles that describe user value/outcome
+
 ### How To Open A PR With GitHub CLI
 
 Use this flow from the repository root:

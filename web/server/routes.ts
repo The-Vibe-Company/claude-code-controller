@@ -411,7 +411,17 @@ export function createRoutes(
 
             if (repoInfo.currentBranch !== body.branch) {
               await emitProgress(stream, "checkout_branch", `Checking out ${body.branch}...`, "in_progress");
-              gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+              try {
+                gitUtils.checkoutBranch(repoInfo.repoRoot, body.branch);
+              } catch {
+                // Branch doesn't exist locally — create it if requested
+                if (body.createBranch) {
+                  const base = repoInfo.defaultBranch;
+                  gitUtils.createAndCheckoutBranch(repoInfo.repoRoot, body.branch, base);
+                } else {
+                  throw new Error(`Branch "${body.branch}" does not exist. Enable "create branch" to create it.`);
+                }
+              }
               await emitProgress(stream, "checkout_branch", `On branch ${body.branch}`, "done");
             }
 
@@ -1370,6 +1380,7 @@ export function createRoutes(
                 title
                 description
                 url
+                branchName
                 priorityLabel
                 state { name type }
                 team { id key name }
@@ -1392,6 +1403,7 @@ export function createRoutes(
             title: string;
             description?: string | null;
             url: string;
+            branchName?: string | null;
             priorityLabel?: string | null;
             state?: { name?: string | null; type?: string | null } | null;
             team?: { id?: string | null; key?: string | null; name?: string | null } | null;
@@ -1412,6 +1424,7 @@ export function createRoutes(
       title: issue.title,
       description: issue.description || "",
       url: issue.url,
+      branchName: issue.branchName || "",
       priorityLabel: issue.priorityLabel || "",
       stateName: issue.state?.name || "",
       stateType: issue.state?.type || "",
