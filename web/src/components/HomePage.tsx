@@ -598,7 +598,7 @@ export function HomePage() {
                           setSelectedBranch(gitRepoInfo.currentBranch);
                           setIsNewBranch(false);
                         }
-                      }
+                      }}
                       className="shrink-0 rounded px-1 text-cc-muted hover:text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
                       title="Remove Linear issue"
                     >
@@ -1118,7 +1118,7 @@ export function HomePage() {
                             setSelectedBranch(branch);
                             // Mark as new branch — session creation will create it if it doesn't exist
                             setIsNewBranch(true);
-                          }
+                          }}
                           className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
                         >
                           <div className="text-xs text-cc-fg truncate">
