@@ -1303,6 +1303,7 @@ export function createRoutes(
     return c.json({
       openrouterApiKeyConfigured: !!settings.openrouterApiKey.trim(),
       openrouterModel: settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
+      linearApiKeyConfigured: !!settings.linearApiKey.trim(),
     });
   });
 
@@ -1314,7 +1315,10 @@ export function createRoutes(
     if (body.openrouterModel !== undefined && typeof body.openrouterModel !== "string") {
       return c.json({ error: "openrouterModel must be a string" }, 400);
     }
-    if (body.openrouterApiKey === undefined && body.openrouterModel === undefined) {
+    if (body.linearApiKey !== undefined && typeof body.linearApiKey !== "string") {
+      return c.json({ error: "linearApiKey must be a string" }, 400);
+    }
+    if (body.openrouterApiKey === undefined && body.openrouterModel === undefined && body.linearApiKey === undefined) {
       return c.json({ error: "At least one settings field is required" }, 400);
     }
 
@@ -1327,11 +1331,146 @@ export function createRoutes(
         typeof body.openrouterModel === "string"
           ? (body.openrouterModel.trim() || DEFAULT_OPENROUTER_MODEL)
           : undefined,
+      linearApiKey:
+        typeof body.linearApiKey === "string"
+          ? body.linearApiKey.trim()
+          : undefined,
     });
 
     return c.json({
       openrouterApiKeyConfigured: !!settings.openrouterApiKey.trim(),
       openrouterModel: settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
+      linearApiKeyConfigured: !!settings.linearApiKey.trim(),
+    });
+  });
+
+  // ─── Linear ────────────────────────────────────────────────────────
+
+  api.get("/linear/issues", async (c) => {
+    const query = (c.req.query("query") || "").trim();
+    const limitRaw = Number(c.req.query("limit") || "8");
+    const limit = Math.min(20, Math.max(1, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 8));
+    if (!query) return c.json({ issues: [] });
+
+    const settings = getSettings();
+    const linearApiKey = settings.linearApiKey.trim();
+    if (!linearApiKey) {
+      return c.json({ error: "Linear API key is not configured" }, 400);
+    }
+
+    const response = await fetch("https://api.linear.app/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: linearApiKey,
+      },
+      body: JSON.stringify({
+        query: `
+          query CompanionIssueSearch($query: String!, $first: Int!) {
+            issueSearch(query: $query, first: $first) {
+              nodes {
+                id
+                identifier
+                title
+                description
+                url
+                priorityLabel
+                state { name type }
+                team { key name }
+              }
+            }
+          }
+        `,
+        variables: { query, first: limit },
+      }),
+    }).catch((e: unknown) => {
+      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+    });
+
+    const json = await response.json().catch(() => ({})) as {
+      data?: {
+        issueSearch?: {
+          nodes?: Array<{
+            id: string;
+            identifier: string;
+            title: string;
+            description?: string | null;
+            url: string;
+            priorityLabel?: string | null;
+            state?: { name?: string | null; type?: string | null } | null;
+            team?: { key?: string | null; name?: string | null } | null;
+          }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+
+    if (!response.ok || (json.errors && json.errors.length > 0)) {
+      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+      return c.json({ error: firstError }, 502);
+    }
+
+    const issues = (json.data?.issueSearch?.nodes || []).map((issue) => ({
+      id: issue.id,
+      identifier: issue.identifier,
+      title: issue.title,
+      description: issue.description || "",
+      url: issue.url,
+      priorityLabel: issue.priorityLabel || "",
+      stateName: issue.state?.name || "",
+      stateType: issue.state?.type || "",
+      teamName: issue.team?.name || "",
+      teamKey: issue.team?.key || "",
+    }));
+
+    return c.json({ issues });
+  });
+
+  api.get("/linear/connection", async (c) => {
+    const settings = getSettings();
+    const linearApiKey = settings.linearApiKey.trim();
+    if (!linearApiKey) {
+      return c.json({ error: "Linear API key is not configured" }, 400);
+    }
+
+    const response = await fetch("https://api.linear.app/graphql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: linearApiKey,
+      },
+      body: JSON.stringify({
+        query: `
+          query CompanionLinearConnection {
+            viewer { id name email }
+            teams(first: 1) { nodes { id key name } }
+          }
+        `,
+      }),
+    }).catch((e: unknown) => {
+      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+    });
+
+    const json = await response.json().catch(() => ({})) as {
+      data?: {
+        viewer?: { id?: string; name?: string | null; email?: string | null } | null;
+        teams?: { nodes?: Array<{ id?: string; key?: string | null; name?: string | null }> } | null;
+      };
+      errors?: Array<{ message?: string }>;
+    };
+
+    if (!response.ok || (json.errors && json.errors.length > 0)) {
+      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+      return c.json({ error: firstError }, 502);
+    }
+
+    const firstTeam = json.data?.teams?.nodes?.[0];
+    return c.json({
+      connected: true,
+      viewerName: json.data?.viewer?.name || "",
+      viewerEmail: json.data?.viewer?.email || "",
+      teamName: firstTeam?.name || "",
+      teamKey: firstTeam?.key || "",
     });
   });
 

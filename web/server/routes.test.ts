@@ -61,11 +61,13 @@ vi.mock("./settings-manager.js", () => ({
   getSettings: vi.fn(() => ({
     openrouterApiKey: "",
     openrouterModel: "openrouter/free",
+    linearApiKey: "",
     updatedAt: 0,
   })),
   updateSettings: vi.fn((patch) => ({
     openrouterApiKey: patch.openrouterApiKey ?? "",
     openrouterModel: patch.openrouterModel ?? "openrouter/free",
+    linearApiKey: patch.linearApiKey ?? "",
     updatedAt: Date.now(),
   })),
 }));
@@ -1182,6 +1184,7 @@ describe("GET /api/settings", () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "or-secret",
       openrouterModel: "openrouter/free",
+      linearApiKey: "",
       updatedAt: 123,
     });
 
@@ -1192,6 +1195,7 @@ describe("GET /api/settings", () => {
     expect(json).toEqual({
       openrouterApiKeyConfigured: true,
       openrouterModel: "openrouter/free",
+      linearApiKeyConfigured: false,
     });
   });
 
@@ -1199,6 +1203,7 @@ describe("GET /api/settings", () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "",
       openrouterModel: "openai/gpt-4o-mini",
+      linearApiKey: "lin_api_123",
       updatedAt: 123,
     });
 
@@ -1209,6 +1214,7 @@ describe("GET /api/settings", () => {
     expect(json).toEqual({
       openrouterApiKeyConfigured: false,
       openrouterModel: "openai/gpt-4o-mini",
+      linearApiKeyConfigured: true,
     });
   });
 });
@@ -1218,6 +1224,7 @@ describe("PUT /api/settings", () => {
     vi.mocked(settingsManager.updateSettings).mockReturnValue({
       openrouterApiKey: "new-key",
       openrouterModel: "openrouter/free",
+      linearApiKey: "",
       updatedAt: 456,
     });
 
@@ -1231,11 +1238,13 @@ describe("PUT /api/settings", () => {
     expect(settingsManager.updateSettings).toHaveBeenCalledWith({
       openrouterApiKey: "new-key",
       openrouterModel: undefined,
+      linearApiKey: undefined,
     });
     const json = await res.json();
     expect(json).toEqual({
       openrouterApiKeyConfigured: true,
       openrouterModel: "openrouter/free",
+      linearApiKeyConfigured: false,
     });
   });
 
@@ -1243,19 +1252,21 @@ describe("PUT /api/settings", () => {
     vi.mocked(settingsManager.updateSettings).mockReturnValue({
       openrouterApiKey: "trimmed-key",
       openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_trimmed",
       updatedAt: 789,
     });
 
     const res = await app.request("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ openrouterApiKey: "  trimmed-key  ", openrouterModel: "   " }),
+      body: JSON.stringify({ openrouterApiKey: "  trimmed-key  ", openrouterModel: "   ", linearApiKey: "  lin_api_trimmed  " }),
     });
 
     expect(res.status).toBe(200);
     expect(settingsManager.updateSettings).toHaveBeenCalledWith({
       openrouterApiKey: "trimmed-key",
       openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_trimmed",
     });
   });
 
@@ -1263,6 +1274,7 @@ describe("PUT /api/settings", () => {
     vi.mocked(settingsManager.updateSettings).mockReturnValue({
       openrouterApiKey: "existing-key",
       openrouterModel: "openai/gpt-4o-mini",
+      linearApiKey: "lin_api_existing",
       updatedAt: 999,
     });
 
@@ -1276,7 +1288,20 @@ describe("PUT /api/settings", () => {
     expect(settingsManager.updateSettings).toHaveBeenCalledWith({
       openrouterApiKey: undefined,
       openrouterModel: "openai/gpt-4o-mini",
+      linearApiKey: undefined,
     });
+  });
+
+  it("returns 400 for non-string linear key", async () => {
+    const res = await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linearApiKey: 123 }),
+    });
+
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "linearApiKey must be a string" });
   });
 
   it("returns 400 for non-string model", async () => {
@@ -1313,6 +1338,135 @@ describe("PUT /api/settings", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json).toEqual({ error: "At least one settings field is required" });
+  });
+});
+
+describe("GET /api/linear/issues", () => {
+  it("returns empty list when query is blank", async () => {
+    const res = await app.request("/api/linear/issues?query=   ", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ issues: [] });
+  });
+
+  it("returns 400 when linear key is not configured", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "",
+      updatedAt: 0,
+    });
+
+    const res = await app.request("/api/linear/issues?query=auth", { method: "GET" });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "Linear API key is not configured" });
+  });
+
+  it("proxies Linear issue search results", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_123",
+      updatedAt: 0,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: "OK",
+      json: async () => ({
+        data: {
+          issueSearch: {
+            nodes: [{
+              id: "issue-id",
+              identifier: "ENG-123",
+              title: "Fix auth flow",
+              description: "401 on refresh token",
+              url: "https://linear.app/acme/issue/ENG-123/fix-auth-flow",
+              priorityLabel: "High",
+              state: { name: "In Progress", type: "started" },
+              team: { key: "ENG", name: "Engineering" },
+            }],
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request("/api/linear/issues?query=auth&limit=5", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      issues: [{
+        id: "issue-id",
+        identifier: "ENG-123",
+        title: "Fix auth flow",
+        description: "401 on refresh token",
+        url: "https://linear.app/acme/issue/ENG-123/fix-auth-flow",
+        priorityLabel: "High",
+        stateName: "In Progress",
+        stateType: "started",
+        teamName: "Engineering",
+        teamKey: "ENG",
+      }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.linear.app/graphql",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "lin_api_123" }),
+      }),
+    );
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("GET /api/linear/connection", () => {
+  it("returns 400 when linear key is not configured", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "",
+      updatedAt: 0,
+    });
+
+    const res = await app.request("/api/linear/connection", { method: "GET" });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json).toEqual({ error: "Linear API key is not configured" });
+  });
+
+  it("returns viewer/team info when connection works", async () => {
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_123",
+      updatedAt: 0,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: "OK",
+      json: async () => ({
+        data: {
+          viewer: { id: "u1", name: "Ada", email: "ada@example.com" },
+          teams: { nodes: [{ id: "t1", key: "ENG", name: "Engineering" }] },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request("/api/linear/connection", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({
+      connected: true,
+      viewerName: "Ada",
+      viewerEmail: "ada@example.com",
+      teamName: "Engineering",
+      teamKey: "ENG",
+    });
+    vi.unstubAllGlobals();
   });
 });
 

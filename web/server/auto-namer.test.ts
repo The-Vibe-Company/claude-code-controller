@@ -16,6 +16,7 @@ beforeEach(() => {
   vi.mocked(settingsManager.getSettings).mockReturnValue({
     openrouterApiKey: "or-key",
     openrouterModel: "openrouter/free",
+    linearApiKey: "",
     updatedAt: 0,
   });
 });
@@ -38,6 +39,7 @@ describe("generateSessionTitle", () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "",
       openrouterModel: "openrouter/free",
+      linearApiKey: "",
       updatedAt: 0,
     });
 
@@ -67,6 +69,7 @@ describe("generateSessionTitle", () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "or-key",
       openrouterModel: "openai/gpt-4o-mini",
+      linearApiKey: "",
       updatedAt: 0,
     });
     mockFetch.mockResolvedValueOnce({
@@ -137,6 +140,7 @@ describe("generateSessionTitle", () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "or-key",
       openrouterModel: "",
+      linearApiKey: "",
       updatedAt: 0,
     });
     mockFetch.mockResolvedValueOnce({
