@@ -38,6 +38,16 @@ const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = dirname(ROUTES_DIR);
 
+function linearIssueStateCategory(issue: { stateType?: string; stateName?: string }): 0 | 1 | 2 {
+  const stateType = (issue.stateType || "").trim().toLowerCase();
+  const stateName = (issue.stateName || "").trim().toLowerCase();
+  const isDone = stateType === "completed" || stateType === "canceled" || stateType === "cancelled"
+    || stateName === "done" || stateName === "completed" || stateName === "canceled" || stateName === "cancelled";
+  if (isDone) return 2;
+  if (stateType === "started") return 1;
+  return 0;
+}
+
 function execCaptureStdout(
   command: string,
   options: { cwd: string; encoding: "utf-8"; timeout: number },
@@ -1458,7 +1468,9 @@ export function createRoutes(
       teamName: issue.team?.name || "",
       teamKey: issue.team?.key || "",
       teamId: issue.team?.id || "",
-    }));
+    }))
+      .filter((issue) => linearIssueStateCategory(issue) !== 2)
+      .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
 
     return c.json({ issues });
   });
@@ -1943,7 +1955,9 @@ export function createRoutes(
       teamKey: issue.team?.key || "",
       assigneeName: issue.assignee?.name || "",
       updatedAt: issue.updatedAt || "",
-    }));
+    }))
+      .filter((issue) => linearIssueStateCategory(issue) !== 2)
+      .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
 
     return c.json({ issues });
   });

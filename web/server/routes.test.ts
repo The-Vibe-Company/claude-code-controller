@@ -1483,6 +1483,84 @@ describe("GET /api/linear/issues", () => {
     vi.unstubAllGlobals();
   });
 
+  it("returns only active issues and orders backlog-like before in-progress", async () => {
+    // The home page issue picker should hide done/cancelled work and show backlog-like
+    // items before currently started ones.
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_123",
+      linearAutoTransition: false,
+      linearAutoTransitionStateId: "",
+      linearAutoTransitionStateName: "",
+      updatedAt: 0,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: "OK",
+      json: async () => ({
+        data: {
+          searchIssues: {
+            nodes: [
+              {
+                id: "done-1",
+                identifier: "ENG-10",
+                title: "Already done",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-10",
+                branchName: null,
+                priorityLabel: null,
+                state: { name: "Done", type: "completed" },
+                team: { id: "team-1", key: "ENG", name: "Engineering" },
+              },
+              {
+                id: "started-1",
+                identifier: "ENG-11",
+                title: "Implement feature",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-11",
+                branchName: null,
+                priorityLabel: null,
+                state: { name: "In Progress", type: "started" },
+                team: { id: "team-1", key: "ENG", name: "Engineering" },
+              },
+              {
+                id: "backlog-1",
+                identifier: "ENG-12",
+                title: "Investigate bug",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-12",
+                branchName: null,
+                priorityLabel: null,
+                state: { name: "Backlog", type: "unstarted" },
+                team: { id: "team-1", key: "ENG", name: "Engineering" },
+              },
+              {
+                id: "cancelled-1",
+                identifier: "ENG-13",
+                title: "Won't do",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-13",
+                branchName: null,
+                priorityLabel: null,
+                state: { name: "Cancelled", type: "cancelled" },
+                team: { id: "team-1", key: "ENG", name: "Engineering" },
+              },
+            ],
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request("/api/linear/issues?query=eng", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.issues.map((i: { identifier: string }) => i.identifier)).toEqual(["ENG-12", "ENG-11"]);
+    vi.unstubAllGlobals();
+  });
+
   it("returns empty branchName when Linear does not provide one", async () => {
     // Verifies fallback: when branchName is null/missing from Linear API,
     // the response maps it to an empty string so the frontend can generate a slug
@@ -1883,6 +1961,63 @@ describe("GET /api/linear/project-issues", () => {
     const [, requestInit] = vi.mocked(fetchMock).mock.calls[0];
     const requestBody = JSON.parse(String(requestInit?.body ?? "{}"));
     expect(requestBody.variables).toEqual({ projectId: "p1", first: 5 });
+    vi.unstubAllGlobals();
+  });
+
+  it("orders project issues backlog-like first, then in-progress", async () => {
+    // UI issue lists should present queued/backlog work first, followed by started work.
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_123",
+      linearAutoTransition: false,
+      linearAutoTransitionStateId: "",
+      linearAutoTransitionStateName: "",
+      updatedAt: 0,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: "OK",
+      json: async () => ({
+        data: {
+          issues: {
+            nodes: [
+              {
+                id: "started-1",
+                identifier: "ENG-100",
+                title: "Ship API",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-100",
+                priorityLabel: null,
+                state: { name: "In Progress", type: "started" },
+                team: { key: "ENG", name: "Engineering" },
+                assignee: null,
+                updatedAt: "2026-02-19T10:00:00Z",
+              },
+              {
+                id: "backlog-1",
+                identifier: "ENG-101",
+                title: "Scope feature",
+                description: "",
+                url: "https://linear.app/acme/issue/ENG-101",
+                priorityLabel: null,
+                state: { name: "Backlog", type: "unstarted" },
+                team: { key: "ENG", name: "Engineering" },
+                assignee: null,
+                updatedAt: "2026-02-19T09:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request("/api/linear/project-issues?projectId=p1", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.issues.map((i: { identifier: string }) => i.identifier)).toEqual(["ENG-101", "ENG-100"]);
     vi.unstubAllGlobals();
   });
 });
