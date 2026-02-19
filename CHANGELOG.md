@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.56.0...the-companion-v0.56.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* **topbar:** improve diff badge contrast in dark mode ([#359](https://github.com/The-Vibe-Company/companion/issues/359)) ([a995aa1](https://github.com/The-Vibe-Company/companion/commit/a995aa1568576905c6b6e9702b5b5f5cc3ca4527))
+
 ## [0.56.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.4...the-companion-v0.56.0) (2026-02-19)
 
 
