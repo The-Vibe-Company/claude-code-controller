@@ -319,6 +319,7 @@ export interface LinearIssue {
   title: string;
   description: string;
   url: string;
+  branchName: string;
   priorityLabel: string;
   stateName: string;
   stateType: string;

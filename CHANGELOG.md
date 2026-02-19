@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.52.0...the-companion-v0.53.0) (2026-02-19)
+
+
+### Features
+
+* **linear:** auto-create recommended branch when starting session with Linear issue ([#329](https://github.com/The-Vibe-Company/companion/issues/329)) ([51972b7](https://github.com/The-Vibe-Company/companion/commit/51972b78b32f6a7b2701016b55bf0675a4e13bc3))
+
 ## [0.52.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.51.0...the-companion-v0.52.0) (2026-02-19)
 
 

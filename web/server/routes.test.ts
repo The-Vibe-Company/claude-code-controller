@@ -44,6 +44,7 @@ vi.mock("./git-utils.js", () => ({
   gitFetch: vi.fn(() => ({ success: true, output: "" })),
   gitPull: vi.fn(() => ({ success: true, output: "" })),
   checkoutBranch: vi.fn(),
+  createAndCheckoutBranch: vi.fn(),
   removeWorktree: vi.fn(),
   isWorktreeDirty: vi.fn(() => false),
 }));
@@ -1363,7 +1364,7 @@ describe("GET /api/linear/issues", () => {
     expect(json).toEqual({ error: "Linear API key is not configured" });
   });
 
-  it("proxies Linear issue search results", async () => {
+  it("proxies Linear issue search results with branchName", async () => {
     vi.mocked(settingsManager.getSettings).mockReturnValue({
       openrouterApiKey: "",
       openrouterModel: "openrouter/free",
@@ -1383,6 +1384,7 @@ describe("GET /api/linear/issues", () => {
               title: "Fix auth flow",
               description: "401 on refresh token",
               url: "https://linear.app/acme/issue/ENG-123/fix-auth-flow",
+              branchName: "eng-123-fix-auth-flow",
               priorityLabel: "High",
               state: { name: "In Progress", type: "started" },
               team: { key: "ENG", name: "Engineering" },
@@ -1403,6 +1405,7 @@ describe("GET /api/linear/issues", () => {
         title: "Fix auth flow",
         description: "401 on refresh token",
         url: "https://linear.app/acme/issue/ENG-123/fix-auth-flow",
+        branchName: "eng-123-fix-auth-flow",
         priorityLabel: "High",
         stateName: "In Progress",
         stateType: "started",
@@ -1419,8 +1422,50 @@ describe("GET /api/linear/issues", () => {
     );
     const [, requestInit] = vi.mocked(fetchMock).mock.calls[0];
     const requestBody = JSON.parse(String(requestInit?.body ?? "{}"));
+    // Verify branchName is requested in the GraphQL query
+    expect(requestBody.query).toContain("branchName");
     expect(requestBody.query).toContain("searchIssues(term: $term, first: $first)");
     expect(requestBody.variables).toEqual({ term: "auth", first: 5 });
+    vi.unstubAllGlobals();
+  });
+
+  it("returns empty branchName when Linear does not provide one", async () => {
+    // Verifies fallback: when branchName is null/missing from Linear API,
+    // the response maps it to an empty string so the frontend can generate a slug
+    vi.mocked(settingsManager.getSettings).mockReturnValue({
+      openrouterApiKey: "",
+      openrouterModel: "openrouter/free",
+      linearApiKey: "lin_api_123",
+      updatedAt: 0,
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      statusText: "OK",
+      json: async () => ({
+        data: {
+          searchIssues: {
+            nodes: [{
+              id: "issue-id-2",
+              identifier: "ENG-456",
+              title: "Add dark mode",
+              description: null,
+              url: "https://linear.app/acme/issue/ENG-456/add-dark-mode",
+              branchName: null,
+              priorityLabel: null,
+              state: null,
+              team: null,
+            }],
+          },
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.request("/api/linear/issues?query=dark", { method: "GET" });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.issues[0].branchName).toBe("");
     vi.unstubAllGlobals();
   });
 });
@@ -2176,6 +2221,65 @@ describe("POST /api/sessions/create-stream", () => {
     expect(steps).toContain("checkout_branch");
     expect(steps).toContain("pulling_git");
     expect(steps).toContain("launching_cli");
+  });
+
+  it("creates branch via createAndCheckoutBranch when checkout fails and createBranch is true", async () => {
+    // Simulates the Linear auto-branch flow: branch doesn't exist yet,
+    // checkoutBranch fails, and createAndCheckoutBranch is called as fallback
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValueOnce({
+      repoRoot: "/test",
+      currentBranch: "main",
+      defaultBranch: "main",
+    } as any);
+    vi.mocked(gitUtils.checkoutBranch).mockImplementationOnce(() => {
+      throw new Error("error: pathspec 'the-138-fix-auth' did not match any file(s) known to git");
+    });
+
+    const res = await app.request("/api/sessions/create-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/test", branch: "the-138-fix-auth", createBranch: true }),
+    });
+
+    expect(res.status).toBe(200);
+    const events = await parseSSE(res);
+    const steps = events
+      .filter((e) => e.event === "progress")
+      .map((e) => JSON.parse(e.data).step);
+
+    // Should succeed with checkout_branch step (createAndCheckoutBranch fallback)
+    expect(steps).toContain("checkout_branch");
+    expect(steps).toContain("launching_cli");
+    expect(gitUtils.createAndCheckoutBranch).toHaveBeenCalledWith("/test", "the-138-fix-auth", "main");
+
+    // No error event
+    const errorEvent = events.find((e) => e.event === "error");
+    expect(errorEvent).toBeUndefined();
+  });
+
+  it("emits error when checkout fails and createBranch is not set", async () => {
+    // When checkout fails and createBranch is falsy, should error out
+    vi.mocked(gitUtils.getRepoInfo).mockReturnValueOnce({
+      repoRoot: "/test",
+      currentBranch: "main",
+      defaultBranch: "main",
+    } as any);
+    vi.mocked(gitUtils.checkoutBranch).mockImplementationOnce(() => {
+      throw new Error("error: pathspec 'nonexistent' did not match");
+    });
+
+    const res = await app.request("/api/sessions/create-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/test", branch: "nonexistent" }),
+    });
+
+    expect(res.status).toBe(200);
+    const events = await parseSSE(res);
+    const errorEvent = events.find((e) => e.event === "error");
+    expect(errorEvent).toBeDefined();
+    expect(JSON.parse(errorEvent!.data).error).toContain("does not exist");
+    expect(gitUtils.createAndCheckoutBranch).not.toHaveBeenCalled();
   });
 
   it("emits worktree progress events when useWorktree is set", async () => {

@@ -370,6 +370,10 @@ export function checkoutBranch(cwd: string, branchName: string): void {
   git(`checkout ${branchName}`, cwd);
 }
 
+export function createAndCheckoutBranch(cwd: string, branchName: string, baseBranch: string): void {
+  git(`checkout -b ${branchName} ${baseBranch}`, cwd);
+}
+
 export function getBranchStatus(
   repoRoot: string,
   branchName: string,

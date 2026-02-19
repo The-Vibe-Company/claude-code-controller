@@ -831,3 +831,31 @@ describe("getBranchStatus", () => {
     expect(status.behind).toBe(0);
   });
 });
+
+// ─── createAndCheckoutBranch ──────────────────────────────────────────────────
+
+describe("createAndCheckoutBranch", () => {
+  it("runs git checkout -b with the given branch and base", () => {
+    // Verify createAndCheckoutBranch creates a new branch from a base branch
+    mockGitCommand("checkout -b", "Switched to a new branch 'the-123-fix-auth'");
+
+    gitUtils.createAndCheckoutBranch("/repo", "the-123-fix-auth", "main");
+
+    const call = mockExecSync.mock.calls.find((c: unknown[]) =>
+      (c[0] as string).includes("checkout -b"),
+    );
+    expect(call).toBeDefined();
+    expect((call![0] as string)).toContain("the-123-fix-auth");
+    expect((call![0] as string)).toContain("main");
+  });
+
+  it("throws when base branch does not exist", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("fatal: 'nonexistent' is not a commit");
+    });
+
+    expect(() =>
+      gitUtils.createAndCheckoutBranch("/repo", "new-branch", "nonexistent"),
+    ).toThrow();
+  });
+});

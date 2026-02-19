@@ -8,6 +8,7 @@ import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
 import { navigateToSession } from "../utils/routing.js";
 import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
 import type { BackendType } from "../types.js";
+import { resolveLinearBranch } from "../utils/linear-branch.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
 import { LinearLogo } from "./LinearLogo.js";
@@ -599,6 +600,11 @@ export function HomePage() {
                         setLinearQuery("");
                         setLinearIssues([]);
                         setLinearSearchError("");
+                        // Revert branch to current when clearing Linear issue
+                        if (gitRepoInfo) {
+                          setSelectedBranch(gitRepoInfo.currentBranch);
+                          setIsNewBranch(false);
+                        }
                       }}
                       className="shrink-0 rounded px-1 text-cc-muted hover:text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
                       title="Remove Linear issue"
@@ -1114,6 +1120,11 @@ export function HomePage() {
                             setSelectedLinearIssue(issue);
                             setLinearQuery(`${issue.identifier} - ${issue.title}`);
                             setShowLinearDropdown(false);
+                            // Auto-set branch from Linear issue
+                            const branch = resolveLinearBranch(issue);
+                            setSelectedBranch(branch);
+                            // Mark as new branch — session creation will create it if it doesn't exist
+                            setIsNewBranch(true);
                           }}
                           className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
                         >
