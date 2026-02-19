@@ -13,6 +13,7 @@ import { DiffPanel } from "./components/DiffPanel.js";
 import { Playground } from "./components/Playground.js";
 import { UpdateBanner } from "./components/UpdateBanner.js";
 import { SettingsPage } from "./components/SettingsPage.js";
+import { IntegrationsPage } from "./components/IntegrationsPage.js";
 import { PromptsPage } from "./components/PromptsPage.js";
 import { EnvManager } from "./components/EnvManager.js";
 import { CronManager } from "./components/CronManager.js";
@@ -42,6 +43,7 @@ export default function App() {
   const route = useMemo(() => parseHash(hash), [hash]);
   const isSettingsPage = route.page === "settings";
   const isPromptsPage = route.page === "prompts";
+  const isIntegrationsPage = route.page === "integrations";
   const isTerminalPage = route.page === "terminal";
   const isEnvironmentsPage = route.page === "environments";
   const isScheduledPage = route.page === "scheduled";
@@ -136,6 +138,12 @@ export default function App() {
           {isPromptsPage && (
             <div className="absolute inset-0">
               <PromptsPage embedded />
+            </div>
+          )}
+
+          {isIntegrationsPage && (
+            <div className="absolute inset-0">
+              <IntegrationsPage embedded />
             </div>
           )}
 

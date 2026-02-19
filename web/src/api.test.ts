@@ -255,7 +255,7 @@ describe("updateEnv", () => {
 // ===========================================================================
 describe("settings", () => {
   it("sends GET to /api/settings", async () => {
-    const settings = { openrouterApiKeyConfigured: true, openrouterModel: "openrouter/free" };
+    const settings = { openrouterApiKeyConfigured: true, openrouterModel: "openrouter/free", linearApiKeyConfigured: false };
     mockFetch.mockResolvedValueOnce(mockResponse(settings));
 
     const result = await api.getSettings();
@@ -266,15 +266,41 @@ describe("settings", () => {
   });
 
   it("sends PUT to /api/settings", async () => {
-    const settings = { openrouterApiKeyConfigured: true, openrouterModel: "openrouter/free" };
+    const settings = { openrouterApiKeyConfigured: true, openrouterModel: "openrouter/free", linearApiKeyConfigured: true };
     mockFetch.mockResolvedValueOnce(mockResponse(settings));
 
-    await api.updateSettings({ openrouterApiKey: "or-key" });
+    await api.updateSettings({ openrouterApiKey: "or-key", linearApiKey: "lin_api_123" });
 
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/settings");
     expect(opts.method).toBe("PUT");
-    expect(JSON.parse(opts.body)).toEqual({ openrouterApiKey: "or-key" });
+    expect(JSON.parse(opts.body)).toEqual({ openrouterApiKey: "or-key", linearApiKey: "lin_api_123" });
+  });
+
+  it("searches Linear issues with query + limit", async () => {
+    const data = { issues: [{ id: "1", identifier: "ENG-1", title: "Fix", description: "", url: "", priorityLabel: "", stateName: "", stateType: "", teamName: "", teamKey: "" }] };
+    mockFetch.mockResolvedValueOnce(mockResponse(data));
+
+    const result = await api.searchLinearIssues("auth bug", 5);
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/linear/issues?query=auth%20bug&limit=5");
+    expect(result).toEqual(data);
+  });
+
+  it("gets Linear connection status", async () => {
+    const data = {
+      connected: true,
+      viewerName: "Ada",
+      viewerEmail: "ada@example.com",
+      teamName: "Engineering",
+      teamKey: "ENG",
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(data));
+
+    const result = await api.getLinearConnection();
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/linear/connection");
+    expect(result).toEqual(data);
   });
 });
 

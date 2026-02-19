@@ -12,6 +12,7 @@ export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 export interface CompanionSettings {
   openrouterApiKey: string;
   openrouterModel: string;
+  linearApiKey: string;
   updatedAt: number;
 }
 
@@ -22,6 +23,7 @@ let filePath = DEFAULT_PATH;
 let settings: CompanionSettings = {
   openrouterApiKey: "",
   openrouterModel: DEFAULT_OPENROUTER_MODEL,
+  linearApiKey: "",
   updatedAt: 0,
 };
 
@@ -32,6 +34,7 @@ function normalize(raw: Partial<CompanionSettings> | null | undefined): Companio
       typeof raw?.openrouterModel === "string" && raw.openrouterModel.trim()
         ? raw.openrouterModel
         : DEFAULT_OPENROUTER_MODEL,
+    linearApiKey: typeof raw?.linearApiKey === "string" ? raw.linearApiKey : "",
     updatedAt: typeof raw?.updatedAt === "number" ? raw.updatedAt : 0,
   };
 }
@@ -60,7 +63,7 @@ export function getSettings(): CompanionSettings {
 }
 
 export function updateSettings(
-  patch: Partial<Pick<CompanionSettings, "openrouterApiKey" | "openrouterModel">>,
+  patch: Partial<Pick<CompanionSettings, "openrouterApiKey" | "openrouterModel" | "linearApiKey">>,
 ): CompanionSettings {
   ensureLoaded();
   settings = {
