@@ -67,6 +67,10 @@ export function HomePage() {
   const [showAttachProjectDropdown, setShowAttachProjectDropdown] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<LinearProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [searchAllProjects, setSearchAllProjects] = useState(false);
+  const [globalSearchResults, setGlobalSearchResults] = useState<LinearIssue[]>([]);
+  const [globalSearching, setGlobalSearching] = useState(false);
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -323,6 +327,40 @@ export function HomePage() {
     };
   }, [linearConfigured, linearQuery]);
 
+  // Global search effect — triggers when "Search all projects" is enabled and projectSearchQuery has 2+ chars
+  useEffect(() => {
+    if (!linearConfigured || !searchAllProjects) {
+      setGlobalSearchResults([]);
+      setGlobalSearching(false);
+      return;
+    }
+    const query = projectSearchQuery.trim();
+    if (query.length < 2) {
+      setGlobalSearchResults([]);
+      setGlobalSearching(false);
+      return;
+    }
+
+    let active = true;
+    setGlobalSearching(true);
+    const timer = setTimeout(() => {
+      api.searchLinearIssues(query, 10).then((res) => {
+        if (!active) return;
+        setGlobalSearchResults(res.issues);
+      }).catch(() => {
+        if (!active) return;
+        setGlobalSearchResults([]);
+      }).finally(() => {
+        if (!active) return;
+        setGlobalSearching(false);
+      });
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [linearConfigured, searchAllProjects, projectSearchQuery]);
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
@@ -1177,68 +1215,107 @@ export function HomePage() {
                 )}
               </div>
 
-              {/* Recent issues list (when project is attached and no issue selected yet) */}
-              {linearMapping && !selectedLinearIssue && (
-                <div className="mt-2">
-                  {recentIssuesLoading ? (
-                    <div className="px-1 py-1.5 text-xs text-cc-muted">Loading recent issues...</div>
-                  ) : recentIssuesError ? (
-                    <div className="px-1 py-1.5 text-xs text-cc-error">{recentIssuesError}</div>
-                  ) : recentIssues.length === 0 ? (
-                    <div className="px-1 py-1.5 text-xs text-cc-muted">No active issues found</div>
-                  ) : (
-                    <div className="max-h-56 overflow-y-auto -mx-0.5">
-                      {recentIssues.map((issue) => (
+              {/* Issue browser with inline search (when project is attached) */}
+              {linearMapping && (() => {
+                const query = projectSearchQuery.trim().toLowerCase();
+                const filteredIssues = !searchAllProjects && query
+                  ? recentIssues.filter((i) =>
+                      i.identifier.toLowerCase().includes(query) ||
+                      i.title.toLowerCase().includes(query))
+                  : searchAllProjects ? [] : recentIssues;
+                const displayIssues = searchAllProjects ? globalSearchResults : filteredIssues;
+
+                return (
+                  <div className="mt-2">
+                    {/* Selected issue badge */}
+                    {selectedLinearIssue && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex-1 min-w-0 text-xs text-cc-primary truncate">
+                          <span className="font-mono-code">{selectedLinearIssue.identifier}</span> - {selectedLinearIssue.title}
+                        </div>
                         <button
-                          key={issue.id}
                           type="button"
                           onClick={() => {
-                            setSelectedLinearIssue(issue);
-                            setLinearQuery(`${issue.identifier} - ${issue.title}`);
+                            setSelectedLinearIssue(null);
+                            setLinearQuery("");
                           }}
-                          className="w-full px-2 py-1.5 text-left hover:bg-cc-hover rounded-md transition-colors cursor-pointer"
+                          className="text-cc-muted hover:text-cc-fg transition-colors cursor-pointer shrink-0"
+                          title="Remove issue"
                         >
-                          <div className="text-xs text-cc-fg truncate">
-                            <span className="font-mono-code">{issue.identifier}</span> {issue.title}
-                          </div>
-                          <div className="text-[10px] text-cc-muted truncate">
-                            {[issue.stateName, issue.priorityLabel].filter(Boolean).join(" - ")}
-                          </div>
+                          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
+                          </svg>
                         </button>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowLinearDropdown(true)}
-                    className="mt-1 text-[11px] text-cc-muted hover:text-cc-fg underline underline-offset-2 cursor-pointer"
-                  >
-                    Search for a different issue...
-                  </button>
-                </div>
-              )}
+                      </div>
+                    )}
 
-              {/* Selected issue badge (when a project is attached and an issue is selected) */}
-              {linearMapping && selectedLinearIssue && (
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="flex-1 min-w-0 text-xs text-cc-primary truncate">
-                    <span className="font-mono-code">{selectedLinearIssue.identifier}</span> - {selectedLinearIssue.title}
+                    {/* Inline search input */}
+                    <input
+                      type="text"
+                      value={projectSearchQuery}
+                      onChange={(e) => setProjectSearchQuery(e.target.value)}
+                      placeholder={searchAllProjects ? "Search all projects..." : "Filter issues..."}
+                      className="w-full px-2 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/60"
+                    />
+
+                    {/* Issue list */}
+                    {recentIssuesLoading ? (
+                      <div className="px-1 py-1.5 text-xs text-cc-muted">Loading recent issues...</div>
+                    ) : recentIssuesError ? (
+                      <div className="px-1 py-1.5 text-xs text-cc-error">{recentIssuesError}</div>
+                    ) : globalSearching ? (
+                      <div className="px-1 py-1.5 text-xs text-cc-muted">Searching...</div>
+                    ) : searchAllProjects && query.length < 2 ? (
+                      <div className="px-1 py-1.5 text-xs text-cc-muted">Type at least 2 characters to search all projects...</div>
+                    ) : displayIssues.length === 0 ? (
+                      <div className="px-1 py-1.5 text-xs text-cc-muted">
+                        {query ? "No matching issues" : "No active issues found"}
+                      </div>
+                    ) : (
+                      <div className="max-h-56 overflow-y-auto -mx-0.5 mt-1">
+                        {displayIssues.map((issue) => (
+                          <button
+                            key={issue.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedLinearIssue(issue);
+                              setLinearQuery(`${issue.identifier} - ${issue.title}`);
+                            }}
+                            className={`w-full px-2 py-1.5 text-left rounded-md transition-colors cursor-pointer ${
+                              selectedLinearIssue?.id === issue.id
+                                ? "bg-cc-primary/10 border border-cc-primary/30"
+                                : "hover:bg-cc-hover"
+                            }`}
+                          >
+                            <div className="text-xs text-cc-fg truncate">
+                              <span className="font-mono-code">{issue.identifier}</span> {issue.title}
+                            </div>
+                            <div className="text-[10px] text-cc-muted truncate">
+                              {[issue.stateName, issue.priorityLabel].filter(Boolean).join(" - ")}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Search all projects toggle */}
+                    <label className="mt-1.5 flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={searchAllProjects}
+                        onChange={(e) => {
+                          setSearchAllProjects(e.target.checked);
+                          if (!e.target.checked) {
+                            setGlobalSearchResults([]);
+                          }
+                        }}
+                        className="rounded border-cc-border text-cc-primary focus:ring-cc-primary/30 cursor-pointer"
+                      />
+                      <span className="text-[11px] text-cc-muted">Search all projects</span>
+                    </label>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedLinearIssue(null);
-                      setLinearQuery("");
-                    }}
-                    className="text-cc-muted hover:text-cc-fg transition-colors cursor-pointer shrink-0"
-                    title="Remove issue"
-                  >
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                      <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
-                    </svg>
-                  </button>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Attach project dropdown */}
               {showAttachProjectDropdown && (
