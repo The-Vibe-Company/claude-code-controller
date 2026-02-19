@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState } from "../api.js";
+import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState, type LinearIssue } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -10,6 +10,7 @@ import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMod
 import type { BackendType } from "../types.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
+import { LinearLogo } from "./LinearLogo.js";
 
 interface ImageAttachment {
   name: string;
@@ -49,6 +50,14 @@ export function HomePage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
+  const [linearConfigured, setLinearConfigured] = useState(false);
+  const [linearQuery, setLinearQuery] = useState("");
+  const [linearIssues, setLinearIssues] = useState<LinearIssue[]>([]);
+  const [selectedLinearIssue, setSelectedLinearIssue] = useState<LinearIssue | null>(null);
+  const [showLinearDropdown, setShowLinearDropdown] = useState(false);
+  const [linearSearching, setLinearSearching] = useState(false);
+  const [linearSearchError, setLinearSearchError] = useState("");
+  const [showLinearStartWarning, setShowLinearStartWarning] = useState(false);
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -89,6 +98,7 @@ export function HomePage() {
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const envDropdownRef = useRef<HTMLDivElement>(null);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
+  const linearDropdownRef = useRef<HTMLDivElement>(null);
 
   const setCurrentSession = useStore((s) => s.setCurrentSession);
   const currentSessionId = useStore((s) => s.currentSessionId);
@@ -110,6 +120,9 @@ export function HomePage() {
     }).catch(() => {});
     api.listEnvs().then(setEnvs).catch(() => {});
     api.getBackends().then(setBackends).catch(() => {});
+    api.getSettings().then((s) => {
+      setLinearConfigured(s.linearApiKeyConfigured);
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When backend changes, reset model and mode to defaults
@@ -201,6 +214,9 @@ export function HomePage() {
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
         setShowBranchDropdown(false);
       }
+      if (linearDropdownRef.current && !linearDropdownRef.current.contains(e.target as Node)) {
+        setShowLinearDropdown(false);
+      }
     }
     document.addEventListener("pointerdown", handleClick);
     return () => document.removeEventListener("pointerdown", handleClick);
@@ -228,6 +244,39 @@ export function HomePage() {
       api.listBranches(gitRepoInfo.repoRoot).then(setBranches).catch(() => setBranches([]));
     }
   }, [gitRepoInfo]);
+
+  useEffect(() => {
+    if (!linearConfigured) return;
+    const query = linearQuery.trim();
+    if (query.length < 2) {
+      setLinearIssues([]);
+      setLinearSearchError("");
+      setLinearSearching(false);
+      return;
+    }
+
+    let active = true;
+    setLinearSearching(true);
+    setLinearSearchError("");
+    const timer = setTimeout(() => {
+      api.searchLinearIssues(query, 8).then((res) => {
+        if (!active) return;
+        setLinearIssues(res.issues);
+      }).catch((e: unknown) => {
+        if (!active) return;
+        setLinearIssues([]);
+        setLinearSearchError(e instanceof Error ? e.message : String(e));
+      }).finally(() => {
+        if (!active) return;
+        setLinearSearching(false);
+      });
+    }, 220);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [linearConfigured, linearQuery]);
 
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
@@ -291,9 +340,32 @@ export function HomePage() {
     }
   }
 
+  function buildInitialMessage(msg: string): string {
+    if (!selectedLinearIssue) return msg;
+    const description = selectedLinearIssue.description?.trim();
+    const safeDescription = description
+      ? (description.length > 1600 ? `${description.slice(0, 1600)}...` : description)
+      : "";
+    const context = [
+      "Linear issue context:",
+      `- Identifier: ${selectedLinearIssue.identifier}`,
+      `- Title: ${selectedLinearIssue.title}`,
+      selectedLinearIssue.stateName ? `- State: ${selectedLinearIssue.stateName}` : "",
+      selectedLinearIssue.priorityLabel ? `- Priority: ${selectedLinearIssue.priorityLabel}` : "",
+      selectedLinearIssue.teamName ? `- Team: ${selectedLinearIssue.teamName}` : "",
+      `- URL: ${selectedLinearIssue.url}`,
+      safeDescription ? `- Description: ${safeDescription}` : "",
+    ].filter(Boolean).join("\n");
+    return `${context}\n\nUser request:\n${msg}`;
+  }
+
   async function handleSend() {
     const msg = text.trim();
     if (!msg || sending) return;
+
+    if (!linearConfigured) {
+      setShowLinearStartWarning(true);
+    }
 
     setSending(true);
     setError("");
@@ -313,6 +385,16 @@ export function HomePage() {
       }
     }
 
+    await doCreateSession(msg);
+  }
+
+  async function handleContinueWithoutLinear() {
+    const msg = text.trim();
+    if (!msg || sending) return;
+    setShowLinearStartWarning(false);
+    setSending(true);
+    setError("");
+    setPullError("");
     await doCreateSession(msg);
   }
 
@@ -372,10 +454,12 @@ export function HomePage() {
       // Wait for WebSocket connection
       await waitForConnection(sessionId);
 
+      const initialMessage = buildInitialMessage(msg);
+
       // Send message
       sendToSession(sessionId, {
         type: "user_message",
-        content: msg,
+        content: initialMessage,
         session_id: sessionId,
         images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
       });
@@ -384,7 +468,7 @@ export function HomePage() {
       useStore.getState().appendMessage(sessionId, {
         id: `user-${Date.now()}-${++idCounter}`,
         role: "user",
-        content: msg,
+        content: initialMessage,
         images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
         timestamp: Date.now(),
       });
@@ -905,6 +989,114 @@ export function HomePage() {
             )}
           </div>
         </div>
+
+        {!linearConfigured && (
+          <div className="mt-3 p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300">
+            Warning: Linear is not configured. Are you sure you want to continue? Problem drift is common without clear issue context.
+          </div>
+        )}
+
+        {showLinearStartWarning && (
+          <div className="mt-3 p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
+            <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
+              Warning: Linear is not configured. Are you sure you want to continue? Problem drift is common without clear issue context.
+            </p>
+            <div className="flex gap-2 mt-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLinearStartWarning(false);
+                  window.location.hash = "#/integrations";
+                }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-cc-hover text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
+              >
+                Configurer Linear
+              </button>
+              <button
+                type="button"
+                onClick={handleContinueWithoutLinear}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer"
+              >
+                Continuer sans Linear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {linearConfigured && (
+          <div className="mt-3 relative" ref={linearDropdownRef}>
+            <label className="block text-[11px] text-cc-muted mb-1.5">
+              <span className="inline-flex items-center gap-1.5">
+                <LinearLogo className="w-3.5 h-3.5 text-cc-fg" />
+                <span>Linear issue context (optional)</span>
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={linearQuery}
+                onChange={(e) => {
+                  setLinearQuery(e.target.value);
+                  setShowLinearDropdown(true);
+                }}
+                onFocus={() => setShowLinearDropdown(true)}
+                placeholder="Search by issue title or key (e.g. ENG-123)"
+                className="w-full px-3 py-2 text-sm bg-cc-input-bg border border-cc-border rounded-lg text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/60"
+              />
+              {selectedLinearIssue && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLinearIssue(null);
+                    setLinearQuery("");
+                    setLinearIssues([]);
+                    setLinearSearchError("");
+                  }}
+                  className="px-2.5 py-2 rounded-lg text-xs bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer shrink-0"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {selectedLinearIssue && (
+              <div className="mt-1.5 text-[11px] text-cc-muted">
+                Selected: <span className="font-mono-code">{selectedLinearIssue.identifier}</span> - {selectedLinearIssue.title}
+              </div>
+            )}
+            {showLinearDropdown && linearQuery.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 mt-1 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 overflow-hidden">
+                {linearSearching && (
+                  <div className="px-3 py-2 text-xs text-cc-muted">Searching Linear...</div>
+                )}
+                {!linearSearching && linearSearchError && (
+                  <div className="px-3 py-2 text-xs text-cc-error">{linearSearchError}</div>
+                )}
+                {!linearSearching && !linearSearchError && linearIssues.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-cc-muted">No matching issues</div>
+                )}
+                {!linearSearching && !linearSearchError && linearIssues.map((issue) => (
+                  <button
+                    key={issue.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLinearIssue(issue);
+                      setLinearQuery(`${issue.identifier} - ${issue.title}`);
+                      setShowLinearDropdown(false);
+                    }}
+                    className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
+                  >
+                    <div className="text-xs text-cc-fg truncate">
+                      <span className="font-mono-code">{issue.identifier}</span> - {issue.title}
+                    </div>
+                    <div className="text-[10px] text-cc-muted truncate">
+                      {[issue.stateName, issue.teamName].filter(Boolean).join(" • ")}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Branch behind remote warning */}
         {pullPrompt && (

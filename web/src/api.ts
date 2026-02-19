@@ -309,6 +309,28 @@ export interface UsageLimits {
 export interface AppSettings {
   openrouterApiKeyConfigured: boolean;
   openrouterModel: string;
+  linearApiKeyConfigured: boolean;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description: string;
+  url: string;
+  priorityLabel: string;
+  stateName: string;
+  stateType: string;
+  teamName: string;
+  teamKey: string;
+}
+
+export interface LinearConnectionInfo {
+  connected: boolean;
+  viewerName: string;
+  viewerEmail: string;
+  teamName: string;
+  teamKey: string;
 }
 
 export interface GitHubPRInfo {
@@ -526,8 +548,13 @@ export const api = {
 
   // Settings
   getSettings: () => get<AppSettings>("/settings"),
-  updateSettings: (data: { openrouterApiKey?: string; openrouterModel?: string }) =>
+  updateSettings: (data: { openrouterApiKey?: string; openrouterModel?: string; linearApiKey?: string }) =>
     put<AppSettings>("/settings", data),
+  searchLinearIssues: (query: string, limit = 8) =>
+    get<{ issues: LinearIssue[] }>(
+      `/linear/issues?query=${encodeURIComponent(query)}&limit=${encodeURIComponent(String(limit))}`,
+    ),
+  getLinearConnection: () => get<LinearConnectionInfo>("/linear/connection"),
 
   // Git operations
   getRepoInfo: (path: string) =>

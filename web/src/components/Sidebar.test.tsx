@@ -427,6 +427,12 @@ describe("Sidebar", () => {
     expect(window.location.hash).toBe("#/settings");
   });
 
+  it("navigates to integrations page when Integrations is clicked", () => {
+    render(<Sidebar />);
+    fireEvent.click(screen.getByText("Integrations").closest("button")!);
+    expect(window.location.hash).toBe("#/integrations");
+  });
+
   it("navigates to prompts page when Prompts is clicked", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByText("Prompts").closest("button")!);
