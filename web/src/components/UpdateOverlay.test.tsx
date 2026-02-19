@@ -6,22 +6,29 @@ import { render, screen, act } from "@testing-library/react";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-// Mock window.location.reload
+// Mock window.location.reload — capture original for restoration
+const originalLocation = window.location;
 const mockReload = vi.fn();
-Object.defineProperty(window, "location", {
-  value: { ...window.location, reload: mockReload },
-  writable: true,
-});
 
 import { UpdateOverlay, PlaygroundUpdateOverlay } from "./UpdateOverlay.js";
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  // Apply location mock before each test so reload is intercepted
+  Object.defineProperty(window, "location", {
+    value: { ...originalLocation, reload: mockReload },
+    writable: true,
+  });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  // Restore original location to avoid leaking state to other test files
+  Object.defineProperty(window, "location", {
+    value: originalLocation,
+    writable: true,
+  });
 });
 
 // ─── UpdateOverlay ──────────────────────────────────────────────────────────
