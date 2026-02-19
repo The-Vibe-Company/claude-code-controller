@@ -1499,6 +1499,7 @@ export function createRoutes(
       title: String(body.title),
       description: String(body.description || ""),
       url: String(body.url),
+      branchName: String(body.branchName || ""),
       priorityLabel: String(body.priorityLabel || ""),
       stateName: String(body.stateName || ""),
       stateType: String(body.stateType || ""),
@@ -1532,7 +1533,7 @@ export function createRoutes(
           query: `
             query CompanionIssueFetch($id: String!) {
               issue(id: $id) {
-                id identifier title description url priorityLabel
+                id identifier title description url branchName priorityLabel
                 state { name type }
                 team { key name }
                 comments(last: 5) {
@@ -1558,6 +1559,7 @@ export function createRoutes(
             title: string;
             description?: string | null;
             url: string;
+            branchName?: string | null;
             priorityLabel?: string | null;
             state?: { name?: string | null; type?: string | null } | null;
             team?: { key?: string | null; name?: string | null } | null;
@@ -1582,6 +1584,7 @@ export function createRoutes(
           title: issue.title,
           description: issue.description || "",
           url: issue.url,
+          branchName: issue.branchName || "",
           priorityLabel: issue.priorityLabel || "",
           stateName: issue.state?.name || "",
           stateType: issue.state?.type || "",

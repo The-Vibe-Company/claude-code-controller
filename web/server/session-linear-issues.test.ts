@@ -24,6 +24,7 @@ const mockIssue: StoredLinearIssue = {
   title: "Fix auth bug",
   description: "Authentication is broken when using SSO",
   url: "https://linear.app/team/issue/ENG-123",
+  branchName: "eng-123-fix-auth-bug",
   priorityLabel: "High",
   stateName: "In Progress",
   stateType: "started",
