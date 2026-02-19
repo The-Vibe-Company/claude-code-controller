@@ -117,4 +117,17 @@ describe("settings-manager", () => {
     expect(updated.openrouterModel).toBe("openrouter/free");
     expect(updated.linearApiKey).toBe("lin_api_123");
   });
+
+  it("ignores undefined patch values and preserves existing keys", () => {
+    updateSettings({ openrouterApiKey: "or-key", linearApiKey: "lin_api_123" });
+    const updated = updateSettings({
+      openrouterApiKey: undefined,
+      openrouterModel: "openai/gpt-4o-mini",
+      linearApiKey: undefined,
+    });
+
+    expect(updated.openrouterApiKey).toBe("or-key");
+    expect(updated.openrouterModel).toBe("openai/gpt-4o-mini");
+    expect(updated.linearApiKey).toBe("lin_api_123");
+  });
 });
