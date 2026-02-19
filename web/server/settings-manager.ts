@@ -66,12 +66,12 @@ export function updateSettings(
   patch: Partial<Pick<CompanionSettings, "openrouterApiKey" | "openrouterModel" | "linearApiKey">>,
 ): CompanionSettings {
   ensureLoaded();
-  settings = {
-    ...settings,
-    ...patch,
-    openrouterModel: (patch.openrouterModel && patch.openrouterModel.trim()) || settings.openrouterModel || DEFAULT_OPENROUTER_MODEL,
+  settings = normalize({
+    openrouterApiKey: patch.openrouterApiKey ?? settings.openrouterApiKey,
+    openrouterModel: patch.openrouterModel ?? settings.openrouterModel,
+    linearApiKey: patch.linearApiKey ?? settings.linearApiKey,
     updatedAt: Date.now(),
-  };
+  });
   persist();
   return { ...settings };
 }
