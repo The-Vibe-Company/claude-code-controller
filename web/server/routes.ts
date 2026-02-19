@@ -287,9 +287,7 @@ export function createRoutes(
         claudeBinary: body.claudeBinary,
         codexBinary: body.codexBinary,
         codexInternetAccess: backend === "codex",
-        codexSandbox: backend === "codex" && body.permissionMode === "bypassPermissions"
-          ? "danger-full-access"
-          : "workspace-write",
+        codexSandbox: backend === "codex" ? "danger-full-access" : undefined,
         allowedTools: body.allowedTools,
         env: envVars,
         backendType: backend,

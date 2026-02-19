@@ -557,6 +557,9 @@ export class CodexAdapter {
       this.initialized = true;
 
       // Step 3: Start or resume a thread
+      // Note: thread/start and thread/resume use `sandbox` (SandboxMode string),
+      // while turn/start uses `sandboxPolicy` (SandboxPolicy object) — these are
+      // different Codex API fields by design.
       if (this.options.threadId) {
         // Resume an existing thread
         const resumeResult = await this.transport.call("thread/resume", {
@@ -669,6 +672,9 @@ export class CodexAdapter {
       // in "default" mode overrides approvalPolicy and re-enables permission prompts.
       // The server persists collaborationMode across turns, so we only need to send
       // it when switching (e.g. auto→plan or plan→auto).
+      // approvalPolicy and sandboxPolicy are static ("never" / dangerFullAccess) so
+      // resending them each turn is idempotent and ensures consistency if the server
+      // resets state. collaborationMode is only sent on transitions (see below).
       const turnParams: Record<string, unknown> = {
         threadId: this.threadId,
         input,
@@ -1448,7 +1454,6 @@ export class CodexAdapter {
       directPlan !== undefined ? directPlan : nestedPlan,
     );
     if (fromPlanObject.length > 0) {
-      this.planDeltaByTurnId.delete(turnId);
       return fromPlanObject;
     }
 
@@ -1513,12 +1518,13 @@ export class CodexAdapter {
       const line = rawLine.trim();
       if (!line) continue;
 
-      let match = line.match(/^[-*]\s+\[(x|X| )\]\s+(.+)$/);
+      let match = line.match(/^[-*]\s+\[(x|X|~|>| )\]\s+(.+)$/);
       if (match) {
-        todos.push({
-          content: match[2].trim(),
-          status: match[1].toLowerCase() === "x" ? "completed" : "pending",
-        });
+        const marker = match[1].toLowerCase();
+        const status = marker === "x" ? "completed"
+          : (marker === "~" || marker === ">") ? "in_progress"
+          : "pending";
+        todos.push({ content: match[2].trim(), status });
         continue;
       }
 
@@ -1783,6 +1789,12 @@ export class CodexAdapter {
     };
 
     this.emit({ type: "result", data: result });
+
+    // Clean up per-turn plan tracking now that the turn is complete.
+    if (turn?.id) {
+      this.planDeltaByTurnId.delete(turn.id);
+      this.planUpdateCountByTurnId.delete(turn.id);
+    }
     this.currentTurnId = null;
   }
 
