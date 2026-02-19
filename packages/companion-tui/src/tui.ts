@@ -119,6 +119,7 @@ class PermissionBanner implements Component {
 
 class StatusBar implements Component {
   connectionStatus: ConnectionStatus = "disconnected";
+  cliConnected: boolean | null = null;
   session: SessionState | null = null;
   isRunning = false;
   gitBranch: string | null = null;
@@ -137,6 +138,9 @@ class StatusBar implements Component {
           ? "◐"
           : "○";
     parts.push(connIcon);
+    if (this.cliConnected !== null) {
+      parts.push(this.cliConnected ? chalk.green("cli:up") : chalk.red("cli:down"));
+    }
 
     if (this.session) {
       if (this.session.model) {
@@ -908,6 +912,7 @@ async function main() {
     switch (msg.type) {
       case "session_init": {
         statusBar.session = msg.session;
+        statusBar.cliConnected = true;
         void refreshModelOptionsForBackend(getBackendType(statusBar.session));
         tui.requestRender();
         break;
@@ -1124,15 +1129,13 @@ async function main() {
       }
 
       case "cli_disconnected": {
-        const notice = new Text(chalk.red("CLI disconnected"), 1, 0);
-        insertBeforeEditor(notice);
+        statusBar.cliConnected = false;
         tui.requestRender();
         break;
       }
 
       case "cli_connected": {
-        const notice = new Text(chalk.green("CLI connected"), 1, 0);
-        insertBeforeEditor(notice);
+        statusBar.cliConnected = true;
         tui.requestRender();
         break;
       }
@@ -1192,6 +1195,9 @@ async function main() {
     onMessage: handleMessage,
     onStatusChange: (status) => {
       statusBar.connectionStatus = status;
+      if (status !== "connected") {
+        statusBar.cliConnected = null;
+      }
       if (
         status === "connected" &&
         requestModelAfterConnect &&
