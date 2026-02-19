@@ -157,6 +157,7 @@ export interface SessionInfo {
   state: string;
   cwd: string;
   createdAt: number;
+  numTurns?: number;
   name?: string;
   backendType?: string;
   cliSessionId?: string;

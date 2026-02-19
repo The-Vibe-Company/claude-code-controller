@@ -518,6 +518,11 @@ function isAlive(s: SessionInfo): boolean {
   return s.state === "connected" || s.state === "running" || s.state === "idle";
 }
 
+function isResumableSession(s: SessionInfo): boolean {
+  // Older servers may not expose numTurns; treat those sessions as resumable.
+  return typeof s.numTurns !== "number" || s.numTurns > 0;
+}
+
 async function ensureAlive(
   host: string,
   session: SessionInfo,
@@ -652,6 +657,8 @@ async function main() {
     const allSessions = await listSessions(host);
     // Filter to current directory for browsing/auto-selection
     const localSessions = allSessions.filter((s) => s.cwd === cwd);
+    const resumableAllSessions = allSessions.filter(isResumableSession);
+    const resumableLocalSessions = localSessions.filter(isResumableSession);
 
     if (args.resume) {
       if (args.resumeId) {
@@ -684,13 +691,13 @@ async function main() {
         );
       } else {
         // --resume (no id): interactive picker scoped to cwd
-        if (localSessions.length === 0) {
+        if (resumableLocalSessions.length === 0) {
           console.error(
-            chalk.red(`No sessions in ${cwd}`),
+            chalk.red(`No resumable sessions in ${cwd}`),
           );
           process.exit(1);
         }
-        const picked = await pickSession(localSessions, allSessions);
+        const picked = await pickSession(resumableLocalSessions, resumableAllSessions);
         if (!picked) {
           process.exit(0);
         }
@@ -700,11 +707,11 @@ async function main() {
       }
     } else if (args.continue) {
       // --continue: most recent session in this directory
-      if (localSessions.length === 0) {
-        console.error(chalk.red(`No sessions to continue in ${cwd}`));
+      if (resumableLocalSessions.length === 0) {
+        console.error(chalk.red(`No resumable sessions to continue in ${cwd}`));
         process.exit(1);
       }
-      const sorted = [...localSessions].sort(
+      const sorted = [...resumableLocalSessions].sort(
         (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
       );
       const session = sorted[0]!;
@@ -726,6 +733,7 @@ async function main() {
         );
         const result = await createSession(host, { cwd, model: requestedModel });
         sessionId = result.sessionId;
+        sessionName = result.name ?? null;
         console.log(
           chalk.dim(`Created session ${sessionId} (${requestedModel})`),
         );
@@ -733,6 +741,7 @@ async function main() {
         console.log(chalk.dim("Creating new session..."));
         const result = await createSession(host, { cwd });
         sessionId = result.sessionId;
+        sessionName = result.name ?? null;
         console.log(
           chalk.dim(`Created session ${sessionId}`),
         );

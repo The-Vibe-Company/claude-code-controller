@@ -711,10 +711,12 @@ describe("GET /api/sessions", () => {
     expect(json).toEqual([
       {
         sessionId: "s1", state: "running", cwd: "/a", name: "Fix auth bug",
+        numTurns: 0,
         gitBranch: "", gitAhead: 0, gitBehind: 0, totalLinesAdded: 0, totalLinesRemoved: 0,
       },
       {
         sessionId: "s2", state: "stopped", cwd: "/b", name: "Generated Session",
+        numTurns: 0,
         gitBranch: "", gitAhead: 0, gitBehind: 0, totalLinesAdded: 0, totalLinesRemoved: 0,
       },
     ]);
@@ -748,6 +750,7 @@ describe("GET /api/sessions", () => {
     expect(json[0]).toMatchObject({
       sessionId: "s1",
       name: "Session One",
+      numTurns: 0,
       gitBranch: "feature/auth",
       gitAhead: 3,
       gitBehind: 1,
@@ -758,6 +761,7 @@ describe("GET /api/sessions", () => {
     expect(json[1]).toMatchObject({
       sessionId: "s2",
       name: "Session Two",
+      numTurns: 0,
       gitBranch: "",
       gitAhead: 0,
       gitBehind: 0,

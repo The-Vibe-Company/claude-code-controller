@@ -677,6 +677,7 @@ export function createRoutes(
       return {
         ...s,
         name,
+        numTurns: bridge?.num_turns ?? 0,
         gitBranch: bridge?.git_branch || "",
         gitAhead: bridge?.git_ahead || 0,
         gitBehind: bridge?.git_behind || 0,
