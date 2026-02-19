@@ -1,7 +1,25 @@
 import { create } from "zustand";
-import type { SessionState, PermissionRequest, ChatMessage, SdkSessionInfo, TaskItem, McpServerDetail } from "./types.js";
-import type { UpdateInfo, PRStatusResponse, CreationProgressEvent, LinearIssue } from "./api.js";
-import { type TaskPanelConfig, getInitialTaskPanelConfig, getDefaultConfig, persistTaskPanelConfig, SECTION_DEFINITIONS } from "./components/task-panel-sections.js";
+import type {
+  SessionState,
+  PermissionRequest,
+  ChatMessage,
+  SdkSessionInfo,
+  TaskItem,
+  McpServerDetail,
+} from "./types.js";
+import type {
+  UpdateInfo,
+  PRStatusResponse,
+  CreationProgressEvent,
+  LinearIssue,
+} from "./api.js";
+import {
+  type TaskPanelConfig,
+  getInitialTaskPanelConfig,
+  getDefaultConfig,
+  persistTaskPanelConfig,
+  SECTION_DEFINITIONS,
+} from "./components/task-panel-sections.js";
 
 export interface QuickTerminalTab {
   id: string;
@@ -64,7 +82,10 @@ interface AppState {
   mcpServers: Map<string, McpServerDetail[]>;
 
   // Tool progress (session → tool_use_id → progress info)
-  toolProgress: Map<string, Map<string, { toolName: string; elapsedSeconds: number }>>;
+  toolProgress: Map<
+    string,
+    Map<string, { toolName: string; elapsedSeconds: number }>
+  >;
 
   // Sidebar project grouping
   collapsedProjects: Set<string>;
@@ -124,9 +145,15 @@ interface AppState {
   // Message actions
   appendMessage: (sessionId: string, msg: ChatMessage) => void;
   setMessages: (sessionId: string, msgs: ChatMessage[]) => void;
-  updateLastAssistantMessage: (sessionId: string, updater: (msg: ChatMessage) => ChatMessage) => void;
+  updateLastAssistantMessage: (
+    sessionId: string,
+    updater: (msg: ChatMessage) => ChatMessage,
+  ) => void;
   setStreaming: (sessionId: string, text: string | null) => void;
-  setStreamingStats: (sessionId: string, stats: { startedAt?: number; outputTokens?: number } | null) => void;
+  setStreamingStats: (
+    sessionId: string,
+    stats: { startedAt?: number; outputTokens?: number } | null,
+  ) => void;
 
   // Permission actions
   addPermission: (sessionId: string, perm: PermissionRequest) => void;
@@ -135,7 +162,11 @@ interface AppState {
   // Task actions
   addTask: (sessionId: string, task: TaskItem) => void;
   setTasks: (sessionId: string, tasks: TaskItem[]) => void;
-  updateTask: (sessionId: string, taskId: string, updates: Partial<TaskItem>) => void;
+  updateTask: (
+    sessionId: string,
+    taskId: string,
+    updates: Partial<TaskItem>,
+  ) => void;
 
   // Changed files actions
   addChangedFile: (sessionId: string, filePath: string) => void;
@@ -156,7 +187,11 @@ interface AppState {
   setMcpServers: (sessionId: string, servers: McpServerDetail[]) => void;
 
   // Tool progress actions
-  setToolProgress: (sessionId: string, toolUseId: string, data: { toolName: string; elapsedSeconds: number }) => void;
+  setToolProgress: (
+    sessionId: string,
+    toolUseId: string,
+    data: { toolName: string; elapsedSeconds: number },
+  ) => void;
   clearToolProgress: (sessionId: string, toolUseId?: string) => void;
 
   // Sidebar project grouping actions
@@ -166,9 +201,15 @@ interface AppState {
   setPreviousPermissionMode: (sessionId: string, mode: string) => void;
 
   // Connection actions
-  setConnectionStatus: (sessionId: string, status: "connecting" | "connected" | "disconnected") => void;
+  setConnectionStatus: (
+    sessionId: string,
+    status: "connecting" | "connected" | "disconnected",
+  ) => void;
   setCliConnected: (sessionId: string, connected: boolean) => void;
-  setSessionStatus: (sessionId: string, status: "idle" | "running" | "compacting" | null) => void;
+  setSessionStatus: (
+    sessionId: string,
+    status: "idle" | "running" | "compacting" | null,
+  ) => void;
 
   // Update actions
   setUpdateInfo: (info: UpdateInfo | null) => void;
@@ -179,7 +220,10 @@ interface AppState {
   setActiveTab: (tab: "chat" | "diff" | "terminal" | "editor") => void;
   setEditorUrl: (sessionId: string, url: string) => void;
   markChatTabReentry: (sessionId: string) => void;
-  setDiffPanelSelectedFile: (sessionId: string, filePath: string | null) => void;
+  setDiffPanelSelectedFile: (
+    sessionId: string,
+    filePath: string | null,
+  ) => void;
 
   // Session quick terminal (docked in session workspace)
   quickTerminalOpen: boolean;
@@ -194,7 +238,12 @@ interface AppState {
 
   // Session quick terminal actions
   setQuickTerminalOpen: (open: boolean) => void;
-  openQuickTerminal: (opts: { target: "host" | "docker"; cwd: string; containerId?: string; reuseIfExists?: boolean }) => void;
+  openQuickTerminal: (opts: {
+    target: "host" | "docker";
+    cwd: string;
+    containerId?: string;
+    reuseIfExists?: boolean;
+  }) => void;
   closeQuickTerminalTab: (tabId: string) => void;
   setActiveQuickTerminalTabId: (tabId: string | null) => void;
   setQuickTerminalPlacement: (placement: QuickTerminalPlacement) => void;
@@ -221,7 +270,9 @@ interface AppState {
 function getInitialSessionNames(): Map<string, string> {
   if (typeof window === "undefined") return new Map();
   try {
-    return new Map(JSON.parse(localStorage.getItem("cc-session-names") || "[]"));
+    return new Map(
+      JSON.parse(localStorage.getItem("cc-session-names") || "[]"),
+    );
   } catch {
     return new Map();
   }
@@ -261,7 +312,9 @@ function getInitialDismissedVersion(): string | null {
 function getInitialCollapsedProjects(): Set<string> {
   if (typeof window === "undefined") return new Set();
   try {
-    return new Set(JSON.parse(localStorage.getItem("cc-collapsed-projects") || "[]"));
+    return new Set(
+      JSON.parse(localStorage.getItem("cc-collapsed-projects") || "[]"),
+    );
   } catch {
     return new Set();
   }
@@ -270,7 +323,13 @@ function getInitialCollapsedProjects(): Set<string> {
 function getInitialQuickTerminalPlacement(): QuickTerminalPlacement {
   if (typeof window === "undefined") return "bottom";
   const stored = window.localStorage.getItem("cc-terminal-placement");
-  if (stored === "top" || stored === "right" || stored === "bottom" || stored === "left") return stored;
+  if (
+    stored === "top" ||
+    stored === "right" ||
+    stored === "bottom" ||
+    stored === "left"
+  )
+    return stored;
   return "bottom";
 }
 
@@ -314,7 +373,8 @@ export const useStore = create<AppState>((set) => ({
   notificationSound: getInitialNotificationSound(),
   notificationDesktop: getInitialNotificationDesktop(),
   sidebarOpen: typeof window !== "undefined" ? window.innerWidth >= 768 : true,
-  taskPanelOpen: typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
+  taskPanelOpen:
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   taskPanelConfig: getInitialTaskPanelConfig(),
   taskPanelConfigMode: false,
   homeResetKey: 0,
@@ -333,18 +393,26 @@ export const useStore = create<AppState>((set) => ({
   terminalCwd: null,
   terminalId: null,
 
-  addCreationProgress: (step) => set((state) => {
-    const existing = state.creationProgress || [];
-    const idx = existing.findIndex((s) => s.step === step.step);
-    if (idx >= 0) {
-      const updated = [...existing];
-      updated[idx] = step;
-      return { creationProgress: updated };
-    }
-    return { creationProgress: [...existing, step] };
-  }),
-  clearCreation: () => set({ creationProgress: null, creationError: null, sessionCreating: false, sessionCreatingBackend: null }),
-  setSessionCreating: (creating, backend) => set({ sessionCreating: creating, sessionCreatingBackend: backend ?? null }),
+  addCreationProgress: (step) =>
+    set((state) => {
+      const existing = state.creationProgress || [];
+      const idx = existing.findIndex((s) => s.step === step.step);
+      if (idx >= 0) {
+        const updated = [...existing];
+        updated[idx] = step;
+        return { creationProgress: updated };
+      }
+      return { creationProgress: [...existing, step] };
+    }),
+  clearCreation: () =>
+    set({
+      creationProgress: null,
+      creationError: null,
+      sessionCreating: false,
+      sessionCreatingBackend: null,
+    }),
+  setSessionCreating: (creating, backend) =>
+    set({ sessionCreating: creating, sessionCreatingBackend: backend ?? null }),
   setCreationError: (error) => set({ creationError: error }),
 
   setDarkMode: (v) => {
@@ -384,7 +452,10 @@ export const useStore = create<AppState>((set) => ({
     set((s) => {
       const config: TaskPanelConfig = {
         order: [...s.taskPanelConfig.order],
-        enabled: { ...s.taskPanelConfig.enabled, [sectionId]: !s.taskPanelConfig.enabled[sectionId] },
+        enabled: {
+          ...s.taskPanelConfig.enabled,
+          [sectionId]: !s.taskPanelConfig.enabled[sectionId],
+        },
       };
       persistTaskPanelConfig(config);
       return { taskPanelConfig: config };
@@ -433,7 +504,8 @@ export const useStore = create<AppState>((set) => ({
       const sessions = new Map(s.sessions);
       sessions.set(session.session_id, session);
       const messages = new Map(s.messages);
-      if (!messages.has(session.session_id)) messages.set(session.session_id, []);
+      if (!messages.has(session.session_id))
+        messages.set(session.session_id, []);
       return { sessions, messages };
     }),
 
@@ -485,7 +557,10 @@ export const useStore = create<AppState>((set) => ({
       prStatus.delete(sessionId);
       const linkedLinearIssues = new Map(s.linkedLinearIssues);
       linkedLinearIssues.delete(sessionId);
-      localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
+      localStorage.setItem(
+        "cc-session-names",
+        JSON.stringify(Array.from(sessionNames.entries())),
+      );
       if (s.currentSessionId === sessionId) {
         localStorage.removeItem("cc-current-session");
       }
@@ -510,7 +585,8 @@ export const useStore = create<AppState>((set) => ({
         prStatus,
         linkedLinearIssues,
         sdkSessions: s.sdkSessions.filter((sdk) => sdk.sessionId !== sessionId),
-        currentSessionId: s.currentSessionId === sessionId ? null : s.currentSessionId,
+        currentSessionId:
+          s.currentSessionId === sessionId ? null : s.currentSessionId,
       };
     }),
 
@@ -519,10 +595,33 @@ export const useStore = create<AppState>((set) => ({
   appendMessage: (sessionId, msg) =>
     set((s) => {
       const existing = s.messages.get(sessionId) || [];
-      // Deduplicate: skip if a message with same ID already exists
-      if (msg.id && existing.some((m) => m.id === msg.id)) {
+
+      // The Claude CLI sends one assistant message per content block type
+      // (thinking, text, tool_use…), all sharing the same message ID.
+      // Merge content blocks into the existing entry instead of deduplicating.
+      if (msg.id && msg.contentBlocks?.length) {
+        const existingIdx = existing.findIndex((m) => m.id === msg.id);
+        if (existingIdx >= 0) {
+          const prev = existing[existingIdx];
+          const mergedBlocks = [
+            ...(prev.contentBlocks || []),
+            ...msg.contentBlocks,
+          ];
+          const updated = existing.slice();
+          updated[existingIdx] = {
+            ...prev,
+            contentBlocks: mergedBlocks,
+            stopReason: msg.stopReason ?? prev.stopReason,
+          };
+          const messages = new Map(s.messages);
+          messages.set(sessionId, updated);
+          return { messages };
+        }
+      } else if (msg.id && existing.some((m) => m.id === msg.id)) {
+        // For messages without contentBlocks (user / system), keep dedup.
         return s;
       }
+
       const messages = new Map(s.messages);
       messages.set(sessionId, [...existing, msg]);
       return { messages };
@@ -568,8 +667,10 @@ export const useStore = create<AppState>((set) => ({
         streamingStartedAt.delete(sessionId);
         streamingOutputTokens.delete(sessionId);
       } else {
-        if (stats.startedAt !== undefined) streamingStartedAt.set(sessionId, stats.startedAt);
-        if (stats.outputTokens !== undefined) streamingOutputTokens.set(sessionId, stats.outputTokens);
+        if (stats.startedAt !== undefined)
+          streamingStartedAt.set(sessionId, stats.startedAt);
+        if (stats.outputTokens !== undefined)
+          streamingOutputTokens.set(sessionId, stats.outputTokens);
       }
       return { streamingStartedAt, streamingOutputTokens };
     }),
@@ -643,7 +744,10 @@ export const useStore = create<AppState>((set) => ({
     set((s) => {
       const sessionNames = new Map(s.sessionNames);
       sessionNames.set(sessionId, name);
-      localStorage.setItem("cc-session-names", JSON.stringify(Array.from(sessionNames.entries())));
+      localStorage.setItem(
+        "cc-session-names",
+        JSON.stringify(Array.from(sessionNames.entries())),
+      );
       return { sessionNames };
     }),
 
@@ -719,7 +823,10 @@ export const useStore = create<AppState>((set) => ({
       } else {
         collapsedProjects.add(projectKey);
       }
-      localStorage.setItem("cc-collapsed-projects", JSON.stringify(Array.from(collapsedProjects)));
+      localStorage.setItem(
+        "cc-collapsed-projects",
+        JSON.stringify(Array.from(collapsedProjects)),
+      );
       return { collapsedProjects };
     }),
 
@@ -767,7 +874,9 @@ export const useStore = create<AppState>((set) => ({
     }),
   markChatTabReentry: (sessionId) =>
     set((s) => {
-      const chatTabReentryTickBySession = new Map(s.chatTabReentryTickBySession);
+      const chatTabReentryTickBySession = new Map(
+        s.chatTabReentryTickBySession,
+      );
       const nextTick = (chatTabReentryTickBySession.get(sessionId) ?? 0) + 1;
       chatTabReentryTickBySession.set(sessionId, nextTick);
       return { chatTabReentryTickBySession };
@@ -788,9 +897,8 @@ export const useStore = create<AppState>((set) => ({
   openQuickTerminal: (opts) =>
     set((s) => {
       if (opts.reuseIfExists) {
-        const existing = s.quickTerminalTabs.find((t) =>
-          t.cwd === opts.cwd
-          && t.containerId === opts.containerId,
+        const existing = s.quickTerminalTabs.find(
+          (t) => t.cwd === opts.cwd && t.containerId === opts.containerId,
         );
         if (existing) {
           return {
@@ -809,7 +917,9 @@ export const useStore = create<AppState>((set) => ({
         id: `${opts.target}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         label: isDocker
           ? `Docker ${dockerIndex}`
-          : (hostIndex === 1 ? "Terminal" : `Terminal ${hostIndex}`),
+          : hostIndex === 1
+            ? "Terminal"
+            : `Terminal ${hostIndex}`,
         cwd: opts.cwd,
         containerId: opts.containerId,
       };
@@ -824,14 +934,18 @@ export const useStore = create<AppState>((set) => ({
   closeQuickTerminalTab: (tabId) =>
     set((s) => {
       const nextTabs = s.quickTerminalTabs.filter((t) => t.id !== tabId);
-      const nextActive = s.activeQuickTerminalTabId === tabId ? (nextTabs[0]?.id || null) : s.activeQuickTerminalTabId;
+      const nextActive =
+        s.activeQuickTerminalTabId === tabId
+          ? nextTabs[0]?.id || null
+          : s.activeQuickTerminalTabId;
       return {
         quickTerminalTabs: nextTabs,
         activeQuickTerminalTabId: nextActive,
         quickTerminalOpen: nextTabs.length > 0 ? s.quickTerminalOpen : false,
       };
     }),
-  setActiveQuickTerminalTabId: (tabId) => set({ activeQuickTerminalTabId: tabId }),
+  setActiveQuickTerminalTabId: (tabId) =>
+    set({ activeQuickTerminalTabId: tabId }),
   setQuickTerminalPlacement: (placement) => {
     if (typeof window !== "undefined") {
       localStorage.setItem("cc-terminal-placement", placement);
@@ -857,7 +971,8 @@ export const useStore = create<AppState>((set) => ({
   setTerminalCwd: (cwd) => set({ terminalCwd: cwd }),
   setTerminalId: (id) => set({ terminalId: id }),
   openTerminal: (cwd) => set({ terminalOpen: true, terminalCwd: cwd }),
-  closeTerminal: () => set({ terminalOpen: false, terminalCwd: null, terminalId: null }),
+  closeTerminal: () =>
+    set({ terminalOpen: false, terminalCwd: null, terminalId: null }),
 
   reset: () =>
     set({
