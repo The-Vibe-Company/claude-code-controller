@@ -386,6 +386,7 @@ export interface CreateSessionStreamResult {
   sessionId: string;
   state: string;
   cwd: string;
+  name?: string;
 }
 
 /**
@@ -451,7 +452,7 @@ export async function createSessionStream(
 
 export const api = {
   createSession: (opts?: CreateSessionOpts) =>
-    post<{ sessionId: string; state: string; cwd: string }>(
+    post<{ sessionId: string; state: string; cwd: string; name?: string }>(
       "/sessions/create",
       opts,
     ),

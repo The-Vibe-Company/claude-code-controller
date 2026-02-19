@@ -44,17 +44,15 @@ export function Sidebar() {
           useStore.getState().setSdkSessions(list);
           // Connect all active sessions so we receive notifications for all of them
           connectAllSessions(list);
-          // Hydrate session names from server (server is source of truth for auto-generated names)
+          // Hydrate session names from server (server is source of truth)
           const store = useStore.getState();
           for (const s of list) {
-            if (s.name && (!store.sessionNames.has(s.sessionId) || /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(store.sessionNames.get(s.sessionId)!))) {
-              const currentStoreName = store.sessionNames.get(s.sessionId);
-              const hadRandomName = !!currentStoreName && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(currentStoreName);
-              if (currentStoreName !== s.name) {
-                store.setSessionName(s.sessionId, s.name);
-                if (hadRandomName) {
-                  store.markRecentlyRenamed(s.sessionId);
-                }
+            if (!s.name) continue;
+            const currentStoreName = store.sessionNames.get(s.sessionId);
+            if (currentStoreName !== s.name) {
+              store.setSessionName(s.sessionId, s.name);
+              if (currentStoreName) {
+                store.markRecentlyRenamed(s.sessionId);
               }
             }
           }

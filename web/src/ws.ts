@@ -1,6 +1,5 @@
 import { useStore } from "./store.js";
 import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
-import { generateSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
 const sockets = new Map<string, WebSocket>();
@@ -239,9 +238,6 @@ function handleParsedMessage(
       store.setCliConnected(sessionId, true);
       if (!existingSession) {
         store.setSessionStatus(sessionId, "idle");
-      }
-      if (!store.sessionNames.has(sessionId)) {
-        store.setSessionName(sessionId, generateSessionName(sessionId));
       }
       break;
     }
@@ -490,10 +486,8 @@ function handleParsedMessage(
     }
 
     case "session_name_update": {
-      // Only apply auto-name if user hasn't manually renamed (still has random Adj+Noun name)
       const currentName = store.sessionNames.get(sessionId);
-      const isRandomName = currentName && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(currentName);
-      if (!currentName || isRandomName) {
+      if (currentName !== data.name) {
         store.setSessionName(sessionId, data.name);
         store.markRecentlyRenamed(sessionId);
       }

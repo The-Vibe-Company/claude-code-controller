@@ -51,9 +51,14 @@ vi.mock("./git-utils.js", () => ({
 vi.mock("./session-names.js", () => ({
   getName: vi.fn(() => undefined),
   setName: vi.fn(),
+  setNameIfMissing: vi.fn((_sessionId: string, name: string) => name),
   getAllNames: vi.fn(() => ({})),
   removeName: vi.fn(),
   _resetForTest: vi.fn(),
+}));
+
+vi.mock("./session-name-generator.js", () => ({
+  generateSessionName: vi.fn(() => "Generated Session"),
 }));
 
 vi.mock("./settings-manager.js", () => ({
@@ -164,6 +169,7 @@ function createMockBridge() {
     getAllSessions: vi.fn(() => []),
     getCodexRateLimits: vi.fn(() => null),
     markContainerized: vi.fn(),
+    broadcastNameUpdate: vi.fn(),
   } as any;
 }
 
@@ -257,7 +263,16 @@ describe("POST /api/sessions/create", () => {
 
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json).toMatchObject({ sessionId: "session-1", state: "starting", cwd: "/test" });
+    expect(json).toMatchObject({
+      sessionId: "session-1",
+      state: "starting",
+      cwd: "/test",
+      name: "Generated Session",
+    });
+    expect(sessionNames.setNameIfMissing).toHaveBeenCalledWith(
+      "session-1",
+      "Generated Session",
+    );
     expect(launcher.launch).toHaveBeenCalledWith(
       expect.objectContaining({ model: "claude-sonnet-4-5-20250929", cwd: "/test" }),
     );
@@ -685,7 +700,9 @@ describe("GET /api/sessions", () => {
       { sessionId: "s2", state: "stopped", cwd: "/b" },
     ];
     launcher.listSessions.mockReturnValue(sessions);
-    vi.mocked(sessionNames.getAllNames).mockReturnValue({ s1: "Fix auth bug" });
+    vi.mocked(sessionNames.setNameIfMissing)
+      .mockImplementationOnce(() => "Fix auth bug")
+      .mockImplementationOnce(() => "Generated Session");
 
     const res = await app.request("/api/sessions", { method: "GET" });
 
@@ -697,7 +714,7 @@ describe("GET /api/sessions", () => {
         gitBranch: "", gitAhead: 0, gitBehind: 0, totalLinesAdded: 0, totalLinesRemoved: 0,
       },
       {
-        sessionId: "s2", state: "stopped", cwd: "/b",
+        sessionId: "s2", state: "stopped", cwd: "/b", name: "Generated Session",
         gitBranch: "", gitAhead: 0, gitBehind: 0, totalLinesAdded: 0, totalLinesRemoved: 0,
       },
     ]);
@@ -709,7 +726,9 @@ describe("GET /api/sessions", () => {
       { sessionId: "s2", state: "running", cwd: "/b" },
     ];
     launcher.listSessions.mockReturnValue(sessions);
-    vi.mocked(sessionNames.getAllNames).mockReturnValue({});
+    vi.mocked(sessionNames.setNameIfMissing)
+      .mockImplementationOnce(() => "Session One")
+      .mockImplementationOnce(() => "Session Two");
     bridge.getAllSessions.mockReturnValue([
       {
         session_id: "s1",
@@ -728,6 +747,7 @@ describe("GET /api/sessions", () => {
     // s1 should have bridge git data
     expect(json[0]).toMatchObject({
       sessionId: "s1",
+      name: "Session One",
       gitBranch: "feature/auth",
       gitAhead: 3,
       gitBehind: 1,
@@ -737,6 +757,7 @@ describe("GET /api/sessions", () => {
     // s2 has no bridge data — defaults to empty/zero
     expect(json[1]).toMatchObject({
       sessionId: "s2",
+      name: "Session Two",
       gitBranch: "",
       gitAhead: 0,
       gitBehind: 0,
@@ -1418,6 +1439,7 @@ describe("PATCH /api/sessions/:id/name", () => {
     const json = await res.json();
     expect(json).toEqual({ ok: true, name: "Fix auth bug" });
     expect(sessionNames.setName).toHaveBeenCalledWith("s1", "Fix auth bug");
+    expect(bridge.broadcastNameUpdate).toHaveBeenCalledWith("s1", "Fix auth bug");
   });
 
   it("trims whitespace from name", async () => {
@@ -1433,6 +1455,7 @@ describe("PATCH /api/sessions/:id/name", () => {
     const json = await res.json();
     expect(json).toEqual({ ok: true, name: "My Session" });
     expect(sessionNames.setName).toHaveBeenCalledWith("s1", "My Session");
+    expect(bridge.broadcastNameUpdate).toHaveBeenCalledWith("s1", "My Session");
   });
 
   it("returns 404 when session not found", async () => {
@@ -1991,6 +2014,7 @@ describe("POST /api/sessions/create-stream", () => {
     const doneData = JSON.parse(doneEvent!.data);
     expect(doneData.sessionId).toBe("session-1");
     expect(doneData.cwd).toBe("/test");
+    expect(doneData.name).toBe("Generated Session");
   });
 
   it("emits git progress events when branch is specified", async () => {

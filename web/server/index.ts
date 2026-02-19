@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { TerminalManager } from "./terminal-manager.js";
 import { generateSessionTitle } from "./auto-namer.js";
 import * as sessionNames from "./session-names.js";
+import { generateSessionName } from "./session-name-generator.js";
 import { getSettings } from "./settings-manager.js";
 import { PRPoller } from "./pr-poller.js";
 import { RecorderManager } from "./recorder.js";
@@ -96,15 +97,18 @@ wsBridge.onCLIRelaunchNeededCallback(async (sessionId) => {
 
 // Auto-generate session title after first turn completes
 wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
-  // Don't overwrite a name that was already set (manual rename or prior auto-name)
-  if (sessionNames.getName(sessionId)) return;
+  const fallbackName = generateSessionName(sessionId);
+  const existing = sessionNames.getName(sessionId);
+  // Only replace fallback auto-generated names; never overwrite custom/manual names.
+  if (existing && existing !== fallbackName) return;
   if (!getSettings().openrouterApiKey.trim()) return;
   const info = launcher.getSession(sessionId);
   const model = info?.model || "claude-sonnet-4-5-20250929";
   console.log(`[server] Auto-naming session ${sessionId} via OpenRouter with model ${model}...`);
   const title = await generateSessionTitle(firstUserMessage, model);
-  // Re-check: a manual rename may have occurred while we were generating
-  if (title && !sessionNames.getName(sessionId)) {
+  // Re-check: a manual rename may have occurred while we were generating.
+  const latest = sessionNames.getName(sessionId);
+  if (title && (!latest || latest === fallbackName)) {
     console.log(`[server] Auto-named session ${sessionId}: "${title}"`);
     sessionNames.setName(sessionId, title);
     wsBridge.broadcastNameUpdate(sessionId, title);

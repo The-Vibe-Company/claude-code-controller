@@ -2,11 +2,6 @@
 
 import type { SessionState, PermissionRequest, ContentBlock } from "./types.js";
 
-// Mock the names utility before any imports
-vi.mock("./utils/names.js", () => ({
-  generateSessionName: vi.fn(() => "Test Session"),
-}));
-
 let wsModule: typeof import("./ws.js");
 let useStore: typeof import("./store.js").useStore;
 
@@ -194,7 +189,7 @@ describe("disconnectSession", () => {
 // handleMessage: session_init
 // ===========================================================================
 describe("handleMessage: session_init", () => {
-  it("adds session to store, sets CLI connected, generates name", () => {
+  it("adds session to store and sets CLI connected", () => {
     wsModule.connectSession("s1");
     const session = makeSession("s1");
 
@@ -205,7 +200,7 @@ describe("handleMessage: session_init", () => {
     expect(state.sessions.get("s1")!.model).toBe("claude-opus-4-20250514");
     expect(state.cliConnected.get("s1")).toBe(true);
     expect(state.sessionStatus.get("s1")).toBe("idle");
-    expect(state.sessionNames.get("s1")).toBe("Test Session");
+    expect(state.sessionNames.get("s1")).toBeUndefined();
   });
 
   it("does not overwrite an existing session name", () => {
@@ -1059,12 +1054,9 @@ describe("task extraction: TaskUpdate", () => {
 // handleMessage: session_name_update
 // ===========================================================================
 describe("handleMessage: session_name_update", () => {
-  it("updates session name when current name is a random Adj+Noun name", () => {
+  it("updates session name from server", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
-
-    // Current name is "Test Session" from the mock — set a random-style name
-    useStore.getState().setSessionName("s1", "Swift Falcon");
 
     fireMessage({ type: "session_name_update", name: "Fix Authentication Bug" });
 
@@ -1075,7 +1067,7 @@ describe("handleMessage: session_name_update", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
-    // Set a random-style name
+    // Seed an existing local value to ensure update path is exercised.
     useStore.getState().setSessionName("s1", "Calm River");
 
     fireMessage({ type: "session_name_update", name: "Deploy Dashboard" });
@@ -1083,26 +1075,25 @@ describe("handleMessage: session_name_update", () => {
     expect(useStore.getState().recentlyRenamed.has("s1")).toBe(true);
   });
 
-  it("does not overwrite a manually-set custom name", () => {
+  it("overwrites local name with server name", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
-    // Manually renamed — not matching Adj+Noun pattern
+    // Simulate stale local value from storage
     useStore.getState().setSessionName("s1", "My Custom Project");
 
     fireMessage({ type: "session_name_update", name: "Auto Generated Title" });
 
-    expect(useStore.getState().sessionNames.get("s1")).toBe("My Custom Project");
+    expect(useStore.getState().sessionNames.get("s1")).toBe("Auto Generated Title");
   });
 
-  it("does not mark as recently renamed when name is not updated", () => {
+  it("does not mark as recently renamed when name is unchanged", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
-    // Custom name — won't be overwritten
-    useStore.getState().setSessionName("s1", "My Custom Name");
+    useStore.getState().setSessionName("s1", "Same Name");
 
-    fireMessage({ type: "session_name_update", name: "Auto Title" });
+    fireMessage({ type: "session_name_update", name: "Same Name" });
 
     expect(useStore.getState().recentlyRenamed.has("s1")).toBe(false);
   });
@@ -1122,21 +1113,18 @@ describe("handleMessage: session_name_update", () => {
     expect(useStore.getState().recentlyRenamed.has("s1")).toBe(true);
   });
 
-  it("does not overwrite multi-word custom names that happen to start capitalized", () => {
+  it("applies successive server updates", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
-    // This matches the Adj+Noun pattern (two capitalized words)
-    useStore.getState().setSessionName("s1", "Bright Falcon");
+    useStore.getState().setSessionName("s1", "Initial Name");
     fireMessage({ type: "session_name_update", name: "Auto Title" });
-    // Should overwrite random names
     expect(useStore.getState().sessionNames.get("s1")).toBe("Auto Title");
 
-    // But a three-word name should NOT be overwritten
-    useStore.getState().setSessionName("s1", "My Cool Project");
     useStore.getState().clearRecentlyRenamed("s1");
     fireMessage({ type: "session_name_update", name: "Another Auto Title" });
-    expect(useStore.getState().sessionNames.get("s1")).toBe("My Cool Project");
+    expect(useStore.getState().sessionNames.get("s1")).toBe("Another Auto Title");
+    expect(useStore.getState().recentlyRenamed.has("s1")).toBe(true);
   });
 });
 

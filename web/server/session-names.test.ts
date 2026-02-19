@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   getName,
   setName,
+  setNameIfMissing,
   getAllNames,
   removeName,
   _resetForTest,
@@ -66,6 +67,19 @@ describe("session-names", () => {
     setName("s1", "Old Name");
     setName("s1", "New Name");
     expect(getName("s1")).toBe("New Name");
+  });
+
+  it("setNameIfMissing keeps existing name", () => {
+    setName("s1", "Existing");
+    const resolved = setNameIfMissing("s1", "Generated");
+    expect(resolved).toBe("Existing");
+    expect(getName("s1")).toBe("Existing");
+  });
+
+  it("setNameIfMissing persists new name when missing", () => {
+    const resolved = setNameIfMissing("s1", "Generated");
+    expect(resolved).toBe("Generated");
+    expect(getName("s1")).toBe("Generated");
   });
 
   it("creates parent directories if needed", () => {
