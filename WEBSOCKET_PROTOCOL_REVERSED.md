@@ -273,7 +273,7 @@ interface SDKSystemMessage {
   session_id: string;
   tools: string[];                     // ["Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write", ...]
   mcp_servers: { name: string; status: string }[];
-  model: string;                       // "claude-sonnet-4-5-20250929"
+  model: string;                       // "claude-sonnet-4-6"
   permissionMode: PermissionMode;
   apiKeySource: string;
   claude_code_version: string;         // "2.1.37"

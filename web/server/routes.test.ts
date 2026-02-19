@@ -269,14 +269,14 @@ describe("POST /api/sessions/create", () => {
     const res = await app.request("/api/sessions/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-sonnet-4-5-20250929", cwd: "/test" }),
+      body: JSON.stringify({ model: "claude-sonnet-4-6", cwd: "/test" }),
     });
 
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toMatchObject({ sessionId: "session-1", state: "starting", cwd: "/test" });
     expect(launcher.launch).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "claude-sonnet-4-5-20250929", cwd: "/test" }),
+      expect.objectContaining({ model: "claude-sonnet-4-6", cwd: "/test" }),
     );
   });
 

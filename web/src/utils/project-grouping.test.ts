@@ -9,7 +9,7 @@ import {
 function makeItem(overrides: Partial<SessionItem> = {}): SessionItem {
   return {
     id: "s1",
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/home/user/projects/myapp",
     gitBranch: "",
     isContainerized: false,

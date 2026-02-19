@@ -45,7 +45,7 @@ function makeJobInput(overrides: Record<string, unknown> = {}) {
     schedule: "0 8 * * *",
     recurring: true,
     backendType: "claude" as const,
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/tmp/test-repo",
     enabled: true,
     permissionMode: "bypassPermissions",

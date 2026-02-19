@@ -678,7 +678,7 @@ export declare type Options = {
     mcpServers?: Record<string, McpServerConfig>;
     /**
      * Claude model to use. Defaults to the CLI default model.
-     * Examples: 'claude-sonnet-4-5-20250929', 'claude-opus-4-20250514'
+     * Examples: 'claude-sonnet-4-6', 'claude-opus-4-20250514'
      */
     model?: string;
     /**
@@ -1917,7 +1917,7 @@ export declare function unstable_v2_createSession(_options: SDKSessionOptions): 
  * @example
  * ```typescript
  * const result = await unstable_v2_prompt("What files are here?", {
- *   model: 'claude-sonnet-4-5-20250929'
+ *   model: 'claude-sonnet-4-6'
  * })
  * ```
  */

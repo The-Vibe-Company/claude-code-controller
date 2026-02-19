@@ -50,7 +50,7 @@ function makeInitMsg(overrides: Record<string, unknown> = {}) {
     type: "system",
     subtype: "init",
     session_id: "cli-123",
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/test",
     tools: ["Bash", "Read"],
     permissionMode: "default",
@@ -277,14 +277,14 @@ describe("CLI handlers", () => {
     bridge.handleCLIMessage(cli, makeInitMsg());
 
     const session = bridge.getSession("s1")!;
-    expect(session.state.model).toBe("claude-sonnet-4-5-20250929");
+    expect(session.state.model).toBe("claude-sonnet-4-6");
     expect(session.state.cwd).toBe("/test");
 
     // Should broadcast session_init to browser
     const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
     const initCall = calls.find((c: any) => c.type === "session_init");
     expect(initCall).toBeDefined();
-    expect(initCall.session.model).toBe("claude-sonnet-4-5-20250929");
+    expect(initCall.session.model).toBe("claude-sonnet-4-6");
   });
 
   it("handleCLIMessage: system.init fires onCLISessionIdReceived callback", () => {
@@ -528,7 +528,7 @@ describe("Browser handlers", () => {
         id: "msg-1",
         type: "message",
         role: "assistant",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         content: [{ type: "text", text: "Hello!" }],
         stop_reason: null,
         usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
@@ -669,7 +669,7 @@ describe("Browser handlers", () => {
         id: "hist-1",
         type: "message",
         role: "assistant",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         content: [{ type: "text", text: "from history" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
@@ -751,7 +751,7 @@ describe("CLI message routing", () => {
         id: "msg-1",
         type: "message",
         role: "assistant",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         content: [{ type: "text", text: "Hello world!" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
@@ -860,7 +860,7 @@ describe("CLI message routing", () => {
       stop_reason: "end_turn",
       usage: { input_tokens: 500, output_tokens: 200, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
       modelUsage: {
-        "claude-sonnet-4-5-20250929": {
+        "claude-sonnet-4-6": {
           inputTokens: 8000,
           outputTokens: 2000,
           cacheReadInputTokens: 0,
@@ -1349,7 +1349,7 @@ describe("Persistence", () => {
       id: "persisted-1",
       state: {
         session_id: "persisted-1",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/saved",
         tools: ["Bash"],
         permissionMode: "default",
@@ -1384,7 +1384,7 @@ describe("Persistence", () => {
 
     const session = bridge.getSession("persisted-1");
     expect(session).toBeDefined();
-    expect(session!.state.model).toBe("claude-sonnet-4-5-20250929");
+    expect(session!.state.model).toBe("claude-sonnet-4-6");
     expect(session!.state.cwd).toBe("/saved");
     expect(session!.state.total_cost_usd).toBe(0.1);
     expect(session!.messageHistory).toHaveLength(1);
@@ -1454,7 +1454,7 @@ describe("Persistence", () => {
 
     const lastCall = saveSpy.mock.calls[saveSpy.mock.calls.length - 1][0];
     expect(lastCall.id).toBe("s1");
-    expect(lastCall.state.model).toBe("claude-sonnet-4-5-20250929");
+    expect(lastCall.state.model).toBe("claude-sonnet-4-6");
 
     saveSpy.mockClear();
 
@@ -1465,7 +1465,7 @@ describe("Persistence", () => {
         id: "msg-1",
         type: "message",
         role: "assistant",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         content: [{ type: "text", text: "Test" }],
         stop_reason: "end_turn",
         usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
@@ -2078,7 +2078,7 @@ describe("Restore from disk with pendingPermissions", () => {
       id: "perm-session",
       state: {
         session_id: "perm-session",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: ["Bash", "Edit"],
         permissionMode: "default",
@@ -2129,7 +2129,7 @@ describe("Restore from disk with pendingPermissions", () => {
       id: "perm-replay",
       state: {
         session_id: "perm-replay",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: ["Bash"],
         permissionMode: "default",
@@ -2187,7 +2187,7 @@ describe("Restore from disk with pendingPermissions", () => {
       id: "empty-perms",
       state: {
         session_id: "empty-perms",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: [],
         permissionMode: "default",
@@ -2228,7 +2228,7 @@ describe("Restore from disk with pendingPermissions", () => {
       id: "no-perms-field",
       state: {
         session_id: "no-perms-field",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: [],
         permissionMode: "default",
@@ -2659,7 +2659,7 @@ describe("onFirstTurnCompletedCallback", () => {
       id: "restored-1",
       state: {
         session_id: "restored-1",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: [],
         permissionMode: "default",
@@ -2722,7 +2722,7 @@ describe("onFirstTurnCompletedCallback", () => {
       id: "fresh-restored",
       state: {
         session_id: "fresh-restored",
-        model: "claude-sonnet-4-5-20250929",
+        model: "claude-sonnet-4-6",
         cwd: "/test",
         tools: [],
         permissionMode: "default",

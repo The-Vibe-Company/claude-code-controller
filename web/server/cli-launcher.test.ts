@@ -621,7 +621,7 @@ describe("relaunch", () => {
     };
     mockSpawn.mockReturnValueOnce(firstProc);
 
-    launcher.launch({ cwd: "/tmp/project", model: "claude-sonnet-4-5-20250929" });
+    launcher.launch({ cwd: "/tmp/project", model: "claude-sonnet-4-6" });
     launcher.setCLISessionId("test-session-id", "cli-resume-id");
 
     // Second proc for the relaunch — never exits during test

@@ -100,7 +100,7 @@ wsBridge.onFirstTurnCompletedCallback(async (sessionId, firstUserMessage) => {
   if (sessionNames.getName(sessionId)) return;
   if (!getSettings().openrouterApiKey.trim()) return;
   const info = launcher.getSession(sessionId);
-  const model = info?.model || "claude-sonnet-4-5-20250929";
+  const model = info?.model || "claude-sonnet-4-6";
   console.log(`[server] Auto-naming session ${sessionId} via OpenRouter with model ${model}...`);
   const title = await generateSessionTitle(firstUserMessage, model);
   // Re-check: a manual rename may have occurred while we were generating

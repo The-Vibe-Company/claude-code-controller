@@ -46,7 +46,7 @@ import type { SessionState, PermissionRequest, ChatMessage, TaskItem, SdkSession
 function makeSession(id: string): SessionState {
   return {
     session_id: id,
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/test",
     tools: [],
     permissionMode: "default",

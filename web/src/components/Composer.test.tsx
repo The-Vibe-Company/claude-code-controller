@@ -46,7 +46,7 @@ import { Composer } from "./Composer.js";
 function makeSession(overrides: Partial<SessionState> = {}): SessionState {
   return {
     session_id: "s1",
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/test",
     tools: [],
     permissionMode: "acceptEdits",

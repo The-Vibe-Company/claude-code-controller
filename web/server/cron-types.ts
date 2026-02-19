@@ -13,7 +13,7 @@ export interface CronJob {
   recurring: boolean;
   /** Backend to use */
   backendType: "claude" | "codex";
-  /** Model to use (e.g. "claude-sonnet-4-5-20250929") */
+  /** Model to use (e.g. "claude-sonnet-4-6") */
   model: string;
   /** Working directory for the session */
   cwd: string;

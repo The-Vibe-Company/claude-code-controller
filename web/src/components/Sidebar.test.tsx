@@ -61,7 +61,7 @@ interface MockStoreState {
 function makeSession(id: string, overrides: Partial<SessionState> = {}): SessionState {
   return {
     session_id: id,
-    model: "claude-sonnet-4-5-20250929",
+    model: "claude-sonnet-4-6",
     cwd: "/home/user/projects/myapp",
     tools: [],
     permissionMode: "default",
@@ -161,7 +161,7 @@ describe("Sidebar", () => {
 
   it("renders session items for active sessions", () => {
     const session = makeSession("s1");
-    const sdk = makeSdkSession("s1", { model: "claude-sonnet-4-5-20250929" });
+    const sdk = makeSdkSession("s1", { model: "claude-sonnet-4-6" });
     mockState = createMockState({
       sessions: new Map([["s1", session]]),
       sdkSessions: [sdk],
@@ -169,7 +169,7 @@ describe("Sidebar", () => {
 
     render(<Sidebar />);
     // The session label defaults to model name
-    expect(screen.getByText("claude-sonnet-4-5-20250929")).toBeInTheDocument();
+    expect(screen.getByText("claude-sonnet-4-6")).toBeInTheDocument();
   });
 
   it("session items show model name or session ID", () => {
@@ -279,7 +279,7 @@ describe("Sidebar", () => {
 
     render(<Sidebar />);
     // Find the session button element
-    const sessionButton = screen.getByText("claude-sonnet-4-5-20250929").closest("button");
+    const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button");
     expect(sessionButton).toHaveClass("bg-cc-active");
   });
 
@@ -295,7 +295,7 @@ describe("Sidebar", () => {
     });
 
     render(<Sidebar />);
-    const sessionButton = screen.getByText("claude-sonnet-4-5-20250929").closest("button")!;
+    const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button")!;
     fireEvent.click(sessionButton);
 
     expect(window.location.hash).toBe("#/session/s1");
@@ -317,11 +317,11 @@ describe("Sidebar", () => {
     });
 
     render(<Sidebar />);
-    const sessionButton = screen.getByText("claude-sonnet-4-5-20250929").closest("button")!;
+    const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button")!;
     fireEvent.doubleClick(sessionButton);
 
     // After double-click, an input should appear for renaming
-    const input = screen.getByDisplayValue("claude-sonnet-4-5-20250929");
+    const input = screen.getByDisplayValue("claude-sonnet-4-6");
     expect(input).toBeInTheDocument();
     expect(input.tagName).toBe("INPUT");
   });
