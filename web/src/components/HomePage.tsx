@@ -447,9 +447,6 @@ export function HomePage() {
     const msg = text.trim();
     if (!msg || sending) return;
 
-    if (!linearConfigured) {
-      setShowLinearStartWarning(true);
-    }
 
     setSending(true);
     setError("");
@@ -1160,7 +1157,7 @@ export function HomePage() {
             </div>
           </div>
 
-          <aside className="space-y-2 mt-0.5" ref={linearDropdownRef}>
+          {linearConfigured && <aside className="space-y-2 mt-0.5" ref={linearDropdownRef}>
             <div className="relative rounded-[12px] border border-cc-border bg-cc-card/90 px-2.5 py-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] uppercase tracking-wide text-cc-muted">Context</span>
@@ -1489,7 +1486,7 @@ export function HomePage() {
                 </div>
               </div>
             )}
-          </aside>
+          </aside>}
         </div>
 
         {/* Branch behind remote warning */}
