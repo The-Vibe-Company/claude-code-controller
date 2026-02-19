@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.56.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.4...the-companion-v0.56.0) (2026-02-19)
+
+
+### Features
+
+* **editor:** move VS Code editor to dedicated tab with host fallback ([#358](https://github.com/The-Vibe-Company/companion/issues/358)) ([c169027](https://github.com/The-Vibe-Company/companion/commit/c169027ae77f28b9d491c4172b1e01e2af95c3a7))
+* **session:** add VS Code editor pane beside shell ([#354](https://github.com/The-Vibe-Company/companion/issues/354)) ([ab10a8d](https://github.com/The-Vibe-Company/companion/commit/ab10a8d09f200ba38a3ee3138505a868b94ace25))
+
+
+### Bug Fixes
+
+* **settings:** open update overlay on update restart ([#356](https://github.com/The-Vibe-Company/companion/issues/356)) ([2c7989e](https://github.com/The-Vibe-Company/companion/commit/2c7989ee8242c95eebced7cc712a0191271f79e9))
+
 ## [0.55.4](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.3...the-companion-v0.55.4) (2026-02-19)
 
 
