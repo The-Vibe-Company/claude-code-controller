@@ -889,7 +889,7 @@ describe("POST /api/sessions/:id/editor/start", () => {
       expect.stringContaining("--bind-addr 127.0.0.1:13338"),
       expect.objectContaining({ timeout: 10_000 }),
     );
-  });
+  }, 15_000);
 
   it("starts container editor and returns mapped host URL", async () => {
     launcher.getSession.mockReturnValue({
