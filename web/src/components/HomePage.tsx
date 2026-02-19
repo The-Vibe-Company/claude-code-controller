@@ -443,6 +443,19 @@ export function HomePage() {
     return `${context}\n\nUser request:\n${msg}`;
   }
 
+  function handleSelectLinearIssue(issue: LinearIssue, closeDropdown = false) {
+    setSelectedLinearIssue(issue);
+    setLinearQuery(`${issue.identifier} - ${issue.title}`);
+    // Keep branch in sync with selected Linear issue for session creation.
+    const branch = resolveLinearBranch(issue);
+    setSelectedBranch(branch);
+    // Session creation can create the branch when it does not exist yet.
+    setIsNewBranch(true);
+    if (closeDropdown) {
+      setShowLinearDropdown(false);
+    }
+  }
+
   async function handleSend() {
     const msg = text.trim();
     if (!msg || sending) return;
@@ -1291,10 +1304,7 @@ export function HomePage() {
                           <button
                             key={issue.id}
                             type="button"
-                            onClick={() => {
-                              setSelectedLinearIssue(issue);
-                              setLinearQuery(`${issue.identifier} - ${issue.title}`);
-                            }}
+                            onClick={() => handleSelectLinearIssue(issue)}
                             className={`w-full px-2 py-1.5 text-left rounded-md transition-colors cursor-pointer ${
                               selectedLinearIssue?.id === issue.id
                                 ? "bg-cc-primary/10 border border-cc-primary/30"
@@ -1425,16 +1435,7 @@ export function HomePage() {
                         <button
                           key={issue.id}
                           type="button"
-                          onClick={() => {
-                            setSelectedLinearIssue(issue);
-                            setLinearQuery(`${issue.identifier} - ${issue.title}`);
-                            setShowLinearDropdown(false);
-                            // Auto-set branch from Linear issue
-                            const branch = resolveLinearBranch(issue);
-                            setSelectedBranch(branch);
-                            // Mark as new branch — session creation will create it if it doesn't exist
-                            setIsNewBranch(true);
-                          }}
+                          onClick={() => handleSelectLinearIssue(issue, true)}
                           className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
                         >
                           <div className="text-xs text-cc-fg truncate">
