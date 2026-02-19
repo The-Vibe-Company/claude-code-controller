@@ -100,7 +100,10 @@ describe("HomePage", () => {
     // update the branch picker to Linear's recommended branch.
     render(<HomePage />);
 
-    const issueButton = await screen.findByRole("button", { name: /THE-147/i });
+    const issueTitle = await screen.findByText(/THE-147/i);
+    const issueButton = issueTitle.closest("button");
+    expect(issueButton).toBeInTheDocument();
+    if (!issueButton) throw new Error("Issue button not found");
     fireEvent.click(issueButton);
 
     await waitFor(() => {
