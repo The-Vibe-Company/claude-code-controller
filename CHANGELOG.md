@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.53.0...the-companion-v0.53.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* **server:** base new branches on origin/{defaultBranch} instead of stale local ref ([#334](https://github.com/The-Vibe-Company/companion/issues/334)) ([0a736f4](https://github.com/The-Vibe-Company/companion/commit/0a736f4f224db0a79aaca329a70f24f7b7e1b5e7))
+
 ## [0.53.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.52.0...the-companion-v0.53.0) (2026-02-19)
 
 
