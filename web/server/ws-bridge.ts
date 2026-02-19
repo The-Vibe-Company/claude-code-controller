@@ -182,6 +182,7 @@ export class WsBridge {
     "interrupt",
     "set_model",
     "set_permission_mode",
+    "set_max_thinking_tokens",
     "mcp_get_status",
     "mcp_toggle",
     "mcp_reconnect",
@@ -847,8 +848,11 @@ export class WsBridge {
     if (msg.modelUsage) {
       for (const usage of Object.values(msg.modelUsage)) {
         if (usage.contextWindow > 0) {
+          const totalInput = usage.inputTokens
+            + (usage.cacheReadInputTokens || 0)
+            + (usage.cacheCreationInputTokens || 0);
           const pct = Math.round(
-            ((usage.inputTokens + usage.outputTokens) / usage.contextWindow) * 100
+            ((totalInput + usage.outputTokens) / usage.contextWindow) * 100
           );
           session.state.context_used_percent = Math.max(0, Math.min(pct, 100));
         }
@@ -1014,6 +1018,10 @@ export class WsBridge {
 
       case "set_model":
         this.handleSetModel(session, msg.model);
+        break;
+
+      case "set_max_thinking_tokens":
+        this.handleSetMaxThinkingTokens(session, msg.max_thinking_tokens);
         break;
 
       case "set_permission_mode":
@@ -1206,6 +1214,15 @@ export class WsBridge {
       type: "control_request",
       request_id: randomUUID(),
       request: { subtype: "set_model", model },
+    });
+    this.sendToCLI(session, ndjson);
+  }
+
+  private handleSetMaxThinkingTokens(session: Session, maxThinkingTokens: number | null) {
+    const ndjson = JSON.stringify({
+      type: "control_request",
+      request_id: randomUUID(),
+      request: { subtype: "set_max_thinking_tokens", max_thinking_tokens: maxThinkingTokens },
     });
     this.sendToCLI(session, ndjson);
   }

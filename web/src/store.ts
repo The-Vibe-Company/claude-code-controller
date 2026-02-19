@@ -42,6 +42,9 @@ interface AppState {
   // Plan mode: stores previous permission mode per session so we can restore it
   previousPermissionMode: Map<string, string>;
 
+  // Thinking effort level per session ("low" | "medium" | "high")
+  sessionEffort: Map<string, string>;
+
   // Tasks per session
   sessionTasks: Map<string, TaskItem[]>;
 
@@ -148,6 +151,9 @@ interface AppState {
 
   // Plan mode actions
   setPreviousPermissionMode: (sessionId: string, mode: string) => void;
+
+  // Effort actions
+  setSessionEffort: (sessionId: string, level: string) => void;
 
   // Connection actions
   setConnectionStatus: (sessionId: string, status: "connecting" | "connected" | "disconnected") => void;
@@ -276,6 +282,7 @@ export const useStore = create<AppState>((set) => ({
   cliConnected: new Map(),
   sessionStatus: new Map(),
   previousPermissionMode: new Map(),
+  sessionEffort: new Map(),
   sessionTasks: new Map(),
   changedFiles: new Map(),
   sessionNames: getInitialSessionNames(),
@@ -407,6 +414,8 @@ export const useStore = create<AppState>((set) => ({
       sessionStatus.delete(sessionId);
       const previousPermissionMode = new Map(s.previousPermissionMode);
       previousPermissionMode.delete(sessionId);
+      const sessionEffort = new Map(s.sessionEffort);
+      sessionEffort.delete(sessionId);
       const pendingPermissions = new Map(s.pendingPermissions);
       pendingPermissions.delete(sessionId);
       const sessionTasks = new Map(s.sessionTasks);
@@ -439,6 +448,7 @@ export const useStore = create<AppState>((set) => ({
         cliConnected,
         sessionStatus,
         previousPermissionMode,
+        sessionEffort,
         pendingPermissions,
         sessionTasks,
         changedFiles,
@@ -658,6 +668,13 @@ export const useStore = create<AppState>((set) => ({
       return { previousPermissionMode };
     }),
 
+  setSessionEffort: (sessionId, level) =>
+    set((s) => {
+      const sessionEffort = new Map(s.sessionEffort);
+      sessionEffort.set(sessionId, level);
+      return { sessionEffort };
+    }),
+
   setConnectionStatus: (sessionId, status) =>
     set((s) => {
       const connectionStatus = new Map(s.connectionStatus);
@@ -794,6 +811,7 @@ export const useStore = create<AppState>((set) => ({
       cliConnected: new Map(),
       sessionStatus: new Map(),
       previousPermissionMode: new Map(),
+      sessionEffort: new Map(),
       sessionTasks: new Map(),
       changedFiles: new Map(),
       sessionNames: new Map(),

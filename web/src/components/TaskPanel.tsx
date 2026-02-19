@@ -125,6 +125,29 @@ function UsageLimitsSection({ sessionId }: { sessionId: string }) {
               }}
             />
           </div>
+          {limits.seven_day.resets_at && (() => {
+            const resetMs = new Date(limits.seven_day!.resets_at!).getTime();
+            const nowMs = Date.now();
+            const windowMs = 7 * 86_400_000;
+            const elapsed = windowMs - (resetMs - nowMs);
+            const rate = elapsed > 0 ? limits.seven_day!.utilization / elapsed : 0;
+            const projectedAtReset = Math.round(rate * windowMs);
+            const lastsToReset = projectedAtReset <= 100;
+            const pace = limits.seven_day!.utilization - (elapsed > 0 ? (elapsed / windowMs) * 100 : 0);
+            const paceSign = pace <= 0 ? "-" : "+";
+            const absPace = Math.abs(Math.round(pace));
+            return (
+              <p className="text-[10px] text-cc-muted tabular-nums">
+                <span className={lastsToReset ? "text-cc-success" : "text-cc-warning"}>
+                  {lastsToReset ? "On pace" : "Burning fast"} ({paceSign}{absPace}%)
+                </span>
+                {" · "}
+                <span className={lastsToReset ? "text-cc-muted" : "text-cc-warning"}>
+                  {lastsToReset ? "Lasts to reset" : "Won't last"}
+                </span>
+              </p>
+            );
+          })()}
         </div>
       )}
 
@@ -294,6 +317,35 @@ function CodexTokenDetailsSection({ sessionId }: { sessionId: string }) {
               style={{ width: `${Math.min(contextPct, 100)}%` }}
             />
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Context Usage (Claude Code) ─────────────────────────────────────────────
+
+function ContextUsageSection({ sessionId }: { sessionId: string }) {
+  const session = useStore((s) => s.sessions.get(sessionId));
+  const pct = session?.context_used_percent ?? 0;
+
+  // Only show after at least one turn has completed (num_turns > 0)
+  if (!session || (session.num_turns ?? 0) === 0) return null;
+
+  return (
+    <div className="shrink-0 px-4 py-3 border-b border-cc-border space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-cc-muted uppercase tracking-wider">Context</span>
+        <span className={`text-[11px] tabular-nums ${pct > 80 ? "text-cc-error" : pct > 50 ? "text-cc-warning" : "text-cc-muted"}`}>
+          {pct > 0 ? `${pct}%` : "\u2014"}
+        </span>
+      </div>
+      {pct > 0 && (
+        <div className="w-full h-1.5 rounded-full bg-cc-hover overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor(pct)}`}
+            style={{ width: `${Math.min(pct, 100)}%` }}
+          />
         </div>
       )}
     </div>
@@ -547,6 +599,9 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
             )}
           </div>
         )}
+
+        {/* Context usage */}
+        <ContextUsageSection sessionId={sessionId} />
 
         {/* GitHub PR status */}
         <GitHubPRSection sessionId={sessionId} />

@@ -21,6 +21,7 @@ vi.mock("../ws.js", () => ({
 vi.mock("../api.js", () => ({
   api: {
     gitPull: vi.fn().mockResolvedValue({ success: true, output: "", git_ahead: 0, git_behind: 0 }),
+    getBackendModels: vi.fn().mockResolvedValue([]),
     listPrompts: (...args: unknown[]) => mockListPrompts(...args),
     createPrompt: (...args: unknown[]) => mockCreatePrompt(...args),
   },
@@ -99,9 +100,11 @@ function setupMockStore(overrides: {
     cliConnected: cliConnectedMap,
     sessionStatus: sessionStatusMap,
     previousPermissionMode: previousPermissionModeMap,
+    sessionEffort: new Map<string, string>(),
     appendMessage: mockAppendMessage,
     updateSession: mockUpdateSession,
     setPreviousPermissionMode: mockSetPreviousPermissionMode,
+    setSessionEffort: vi.fn(),
   };
 }
 
@@ -213,13 +216,15 @@ describe("Composer sending messages", () => {
 // ─── Plan mode toggle ────────────────────────────────────────────────────────
 
 describe("Composer plan mode toggle", () => {
-  it("pressing Shift+Tab toggles plan mode", () => {
+  it("pressing Shift+Tab cycles to the next mode", () => {
+    // Start with "bypassPermissions" so cycling goes to "plan" (next in CLAUDE_MODES)
+    setupMockStore({ session: { permissionMode: "bypassPermissions" } });
     const { container } = render(<Composer sessionId="s1" />);
     const textarea = container.querySelector("textarea")!;
 
     fireEvent.keyDown(textarea, { key: "Tab", shiftKey: true });
 
-    // Should call sendToSession to set plan mode
+    // Should call sendToSession to cycle to plan mode
     expect(mockSendToSession).toHaveBeenCalledWith("s1", {
       type: "set_permission_mode",
       mode: "plan",
@@ -359,6 +364,8 @@ describe("Composer disabled state", () => {
   });
 });
 
+// ─── @ prompts menu ──────────────────────────────────────────────────────────
+
 describe("Composer @ prompts menu", () => {
   it("opens @ menu and inserts selected prompt with Enter", async () => {
     // Validates keyboard insertion from @ suggestions without sending the message.
@@ -442,6 +449,8 @@ describe("Composer @ prompts menu", () => {
     expect(mockListPrompts).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── Save prompt ─────────────────────────────────────────────────────────────
 
 describe("Composer save prompt", () => {
   it("shows save error when create prompt fails", async () => {

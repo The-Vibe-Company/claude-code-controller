@@ -147,6 +147,7 @@ const IDEMPOTENT_OUTGOING_TYPES = new Set<BrowserOutgoingMessage["type"]>([
   "interrupt",
   "set_model",
   "set_permission_mode",
+  "set_max_thinking_tokens",
   "mcp_get_status",
   "mcp_toggle",
   "mcp_reconnect",
@@ -355,8 +356,11 @@ function handleParsedMessage(
       if (r.modelUsage) {
         for (const usage of Object.values(r.modelUsage)) {
           if (usage.contextWindow > 0) {
+            const totalInput = usage.inputTokens
+              + (usage.cacheReadInputTokens || 0)
+              + (usage.cacheCreationInputTokens || 0);
             const pct = Math.round(
-              ((usage.inputTokens + usage.outputTokens) / usage.contextWindow) * 100
+              ((totalInput + usage.outputTokens) / usage.contextWindow) * 100
             );
             sessionUpdates.context_used_percent = Math.max(0, Math.min(pct, 100));
           }
@@ -685,6 +689,7 @@ export function sendToSession(sessionId: string, msg: BrowserOutgoingMessage) {
       case "interrupt":
       case "set_model":
       case "set_permission_mode":
+      case "set_max_thinking_tokens":
       case "mcp_get_status":
       case "mcp_toggle":
       case "mcp_reconnect":

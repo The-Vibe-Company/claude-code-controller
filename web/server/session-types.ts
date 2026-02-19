@@ -181,7 +181,8 @@ export type BrowserOutgoingMessage =
   | { type: "mcp_get_status"; client_msg_id?: string }
   | { type: "mcp_toggle"; serverName: string; enabled: boolean; client_msg_id?: string }
   | { type: "mcp_reconnect"; serverName: string; client_msg_id?: string }
-  | { type: "mcp_set_servers"; servers: Record<string, McpServerConfig>; client_msg_id?: string };
+  | { type: "mcp_set_servers"; servers: Record<string, McpServerConfig>; client_msg_id?: string }
+  | { type: "set_max_thinking_tokens"; max_thinking_tokens: number | null; client_msg_id?: string };
 
 /** Messages the bridge sends to the browser */
 export type BrowserIncomingMessageBase =
