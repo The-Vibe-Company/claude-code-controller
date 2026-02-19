@@ -1,7 +1,12 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useStore } from "../store.js";
 import { MessageBubble } from "./MessageBubble.js";
-import { getToolIcon, getToolLabel, getPreview, ToolIcon } from "./ToolBlock.js";
+import {
+  getToolIcon,
+  getToolLabel,
+  getPreview,
+  ToolIcon,
+} from "./ToolBlock.js";
 import type { ChatMessage, ContentBlock } from "../types.js";
 
 const FEED_PAGE_SIZE = 100;
@@ -23,7 +28,11 @@ const EMPTY_MESSAGES: ChatMessage[] = [];
 
 // ─── Message-level grouping ─────────────────────────────────────────────────
 
-interface ToolItem { id: string; name: string; input: Record<string, unknown> }
+interface ToolItem {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
 
 interface ToolMsgGroup {
   kind: "tool_msg_group";
@@ -70,7 +79,16 @@ function getToolOnlyName(msg: ChatMessage): string | null {
 function extractToolItems(msg: ChatMessage): ToolItem[] {
   const blocks = msg.contentBlocks || [];
   return blocks
-    .filter((b): b is ContentBlock & { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } => b.type === "tool_use")
+    .filter(
+      (
+        b,
+      ): b is ContentBlock & {
+        type: "tool_use";
+        id: string;
+        name: string;
+        input: Record<string, unknown>;
+      } => b.type === "tool_use",
+    )
     .map((b) => ({ id: b.id, name: b.name, input: b.input }));
 }
 
@@ -79,12 +97,15 @@ function getTaskIdsFromEntry(entry: FeedEntry): string[] {
   if (entry.kind === "message") {
     const blocks = entry.msg.contentBlocks || [];
     return blocks
-      .filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use")
-      .filter(b => b.name === "Task")
-      .map(b => b.id);
+      .filter(
+        (b): b is Extract<ContentBlock, { type: "tool_use" }> =>
+          b.type === "tool_use",
+      )
+      .filter((b) => b.name === "Task")
+      .map((b) => b.id);
   }
   if (entry.kind === "tool_msg_group" && entry.toolName === "Task") {
-    return entry.items.map(item => item.id);
+    return entry.items.map((item) => item.id);
   }
   return [];
 }
@@ -133,7 +154,10 @@ function buildEntries(
     for (const taskId of taskIds) {
       const children = childrenByParent.get(taskId);
       if (children && children.length > 0) {
-        const info = taskInfo.get(taskId) || { description: "Subagent", agentType: "" };
+        const info = taskInfo.get(taskId) || {
+          description: "Subagent",
+          agentType: "",
+        };
         const childEntries = buildEntries(children, taskInfo, childrenByParent);
         result.push({
           kind: "subagent",
@@ -151,7 +175,10 @@ function buildEntries(
 
 function groupMessages(messages: ChatMessage[]): FeedEntry[] {
   // Phase 1: Find all Task tool_use IDs across all messages
-  const taskInfo = new Map<string, { description: string; agentType: string }>();
+  const taskInfo = new Map<
+    string,
+    { description: string; agentType: string }
+  >();
   for (const msg of messages) {
     if (!msg.contentBlocks) continue;
     for (const b of msg.contentBlocks) {
@@ -177,7 +204,10 @@ function groupMessages(messages: ChatMessage[]): FeedEntry[] {
   for (const msg of messages) {
     if (msg.parentToolUseId && taskInfo.has(msg.parentToolUseId)) {
       let arr = childrenByParent.get(msg.parentToolUseId);
-      if (!arr) { arr = []; childrenByParent.set(msg.parentToolUseId, arr); }
+      if (!arr) {
+        arr = [];
+        childrenByParent.set(msg.parentToolUseId, arr);
+      }
       arr.push(msg);
     } else {
       topLevel.push(msg);
@@ -209,7 +239,11 @@ function ToolMessageGroup({ group }: { group: ToolMsgGroup }) {
                 onClick={() => setOpen(!open)}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
               >
-                <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+                >
                   <path d="M6 4l4 4-4 4" />
                 </svg>
                 <ToolIcon type={iconType} />
@@ -243,7 +277,11 @@ function ToolMessageGroup({ group }: { group: ToolMsgGroup }) {
               onClick={() => setOpen(!open)}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
             >
-              <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+              <svg
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+              >
                 <path d="M6 4l4 4-4 4" />
               </svg>
               <ToolIcon type={iconType} />
@@ -258,9 +296,14 @@ function ToolMessageGroup({ group }: { group: ToolMsgGroup }) {
                 {group.items.map((item, i) => {
                   const preview = getPreview(item.name, item.input);
                   return (
-                    <div key={item.id || i} className="flex items-center gap-2 py-1 text-xs text-cc-muted font-mono-code truncate">
+                    <div
+                      key={item.id || i}
+                      className="flex items-center gap-2 py-1 text-xs text-cc-muted font-mono-code truncate"
+                    >
                       <span className="w-1 h-1 rounded-full bg-cc-muted/40 shrink-0" />
-                      <span className="truncate">{preview || JSON.stringify(item.input).slice(0, 80)}</span>
+                      <span className="truncate">
+                        {preview || JSON.stringify(item.input).slice(0, 80)}
+                      </span>
                     </div>
                   );
                 })}
@@ -307,7 +350,8 @@ function SubagentContainer({ group }: { group: SubagentGroup }) {
       const text = lastEntry.msg.content?.trim();
       if (text) return text.length > 60 ? text.slice(0, 60) + "..." : text;
       const toolBlock = lastEntry.msg.contentBlocks?.find(
-        (b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use"
+        (b): b is Extract<ContentBlock, { type: "tool_use" }> =>
+          b.type === "tool_use",
       );
       if (toolBlock) return getToolLabel(toolBlock.name);
     }
@@ -321,14 +365,26 @@ function SubagentContainer({ group }: { group: SubagentGroup }) {
           onClick={() => setOpen(!open)}
           className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer mb-1"
         >
-          <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+          <svg
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+          >
             <path d="M6 4l4 4-4 4" />
           </svg>
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 text-cc-primary shrink-0">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className="w-3.5 h-3.5 text-cc-primary shrink-0"
+          >
             <circle cx="8" cy="8" r="5" />
             <path d="M8 5v3l2 1" strokeLinecap="round" />
           </svg>
-          <span className="text-xs font-medium text-cc-fg truncate">{label}</span>
+          <span className="text-xs font-medium text-cc-fg truncate">
+            {label}
+          </span>
           {agentType && (
             <span className="text-[10px] text-cc-muted bg-cc-hover rounded-full px-1.5 py-0.5 shrink-0">
               {agentType}
@@ -357,7 +413,11 @@ function SubagentContainer({ group }: { group: SubagentGroup }) {
 function AssistantAvatar() {
   return (
     <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary">
+      <svg
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        className="w-3 h-3 text-cc-primary"
+      >
         <circle cx="8" cy="8" r="3" />
       </svg>
     </div>
@@ -369,8 +429,12 @@ function AssistantAvatar() {
 export function MessageFeed({ sessionId }: { sessionId: string }) {
   const messages = useStore((s) => s.messages.get(sessionId) ?? EMPTY_MESSAGES);
   const streamingText = useStore((s) => s.streaming.get(sessionId));
-  const streamingStartedAt = useStore((s) => s.streamingStartedAt.get(sessionId));
-  const streamingOutputTokens = useStore((s) => s.streamingOutputTokens.get(sessionId));
+  const streamingStartedAt = useStore((s) =>
+    s.streamingStartedAt.get(sessionId),
+  );
+  const streamingOutputTokens = useStore((s) =>
+    s.streamingOutputTokens.get(sessionId),
+  );
   const sessionStatus = useStore((s) => s.sessionStatus.get(sessionId));
   const toolProgress = useStore((s) => s.toolProgress.get(sessionId));
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -378,7 +442,9 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
   const isNearBottom = useRef(true);
   const [elapsed, setElapsed] = useState(0);
   const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
-  const chatTabReentryTick = useStore((s) => s.chatTabReentryTickBySession.get(sessionId) ?? 0);
+  const chatTabReentryTick = useStore(
+    (s) => s.chatTabReentryTickBySession.get(sessionId) ?? 0,
+  );
 
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
@@ -389,7 +455,9 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
 
   const totalEntries = grouped.length;
   const hasMore = totalEntries > visibleCount;
-  const visibleEntries = hasMore ? grouped.slice(totalEntries - visibleCount) : grouped;
+  const visibleEntries = hasMore
+    ? grouped.slice(totalEntries - visibleCount)
+    : grouped;
   const hiddenCount = totalEntries - visibleEntries.length;
 
   const handleLoadMore = useCallback(() => {
@@ -422,7 +490,10 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     if (!el) return;
     isNearBottom.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    const distanceFromBottom = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+    const distanceFromBottom = Math.max(
+      0,
+      el.scrollHeight - el.clientHeight - el.scrollTop,
+    );
     savedDistanceFromBottomBySession.set(sessionId, distanceFromBottom);
   }
 
@@ -442,7 +513,10 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     el.style.scrollBehavior = "auto";
     const savedDistance = savedDistanceFromBottomBySession.get(sessionId);
     if (typeof savedDistance === "number") {
-      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - savedDistance);
+      el.scrollTop = Math.max(
+        0,
+        el.scrollHeight - el.clientHeight - savedDistance,
+      );
     } else {
       el.scrollTop = el.scrollHeight;
     }
@@ -459,7 +533,10 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     return () => {
       const el = containerRef.current;
       if (!el) return;
-      const distanceFromBottom = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+      const distanceFromBottom = Math.max(
+        0,
+        el.scrollHeight - el.clientHeight - el.scrollTop,
+      );
       savedDistanceFromBottomBySession.set(sessionId, distanceFromBottom);
     };
   }, [sessionId]);
@@ -480,13 +557,21 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 select-none px-6">
         <div className="w-14 h-14 rounded-2xl bg-cc-card border border-cc-border flex items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7 text-cc-muted">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className="w-7 h-7 text-cc-muted"
+          >
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
           </svg>
         </div>
         <div className="text-center">
-          <p className="text-sm text-cc-fg font-medium mb-1">Start a conversation</p>
+          <p className="text-sm text-cc-fg font-medium mb-1">
+            Start a conversation
+          </p>
           <p className="text-xs text-cc-muted leading-relaxed">
             Send a message to begin working with The Companion.
           </p>
@@ -509,10 +594,15 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
                 onClick={handleLoadMore}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cc-muted hover:text-cc-fg bg-cc-card border border-cc-border rounded-lg hover:bg-cc-hover transition-colors cursor-pointer"
               >
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  className="w-3 h-3"
+                >
                   <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
                 </svg>
-                Load {Math.min(FEED_PAGE_SIZE, hiddenCount)} more ({hiddenCount} hidden)
+                Load {Math.min(FEED_PAGE_SIZE, hiddenCount)} more ({hiddenCount}{" "}
+                hidden)
               </button>
             </div>
           )}
@@ -537,8 +627,17 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
             <div className="animate-[fadeSlideIn_0.2s_ease-out]">
               <div className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 text-cc-primary">
-                    <path d="M8 1v14M1 8h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    className="w-3.5 h-3.5 text-cc-primary"
+                  >
+                    <path
+                      d="M8 1v14M1 8h14"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
@@ -565,6 +664,36 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
                 </>
               )}
               <span className="text-cc-muted/60">)</span>
+            </div>
+          )}
+
+          {/* Compacting indicator */}
+          {sessionStatus === "compacting" && (
+            <div className="flex items-center gap-1.5 text-[11px] text-cc-warning font-mono-code pl-9">
+              <svg
+                className="w-3 h-3 animate-spin shrink-0"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeDasharray="28"
+                  strokeDashoffset="8"
+                  strokeLinecap="round"
+                  opacity="0.4"
+                />
+                <path
+                  d="M8 2a6 6 0 016 6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Compacting context...</span>
             </div>
           )}
 

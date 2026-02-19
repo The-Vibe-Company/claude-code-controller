@@ -53,7 +53,12 @@ export interface CLIAssistantMessage {
 
 export interface CLIResultMessage {
   type: "result";
-  subtype: "success" | "error_during_execution" | "error_max_turns" | "error_max_budget_usd" | "error_max_structured_output_retries";
+  subtype:
+    | "success"
+    | "error_during_execution"
+    | "error_max_turns"
+    | "error_max_budget_usd"
+    | "error_max_structured_output_retries";
   is_error: boolean;
   result?: string;
   errors?: string[];
@@ -68,15 +73,18 @@ export interface CLIResultMessage {
     cache_creation_input_tokens: number;
     cache_read_input_tokens: number;
   };
-  modelUsage?: Record<string, {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadInputTokens: number;
-    cacheCreationInputTokens: number;
-    contextWindow: number;
-    maxOutputTokens: number;
-    costUSD: number;
-  }>;
+  modelUsage?: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      contextWindow: number;
+      maxOutputTokens: number;
+      costUSD: number;
+    }
+  >;
   total_lines_added?: number;
   total_lines_removed?: number;
   uuid: string;
@@ -163,39 +171,87 @@ export type CLIMessage =
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
-  | { type: "tool_result"; tool_use_id: string; content: string | ContentBlock[]; is_error?: boolean }
+  | {
+      type: "tool_use";
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+    }
+  | {
+      type: "tool_result";
+      tool_use_id: string;
+      content: string | ContentBlock[];
+      is_error?: boolean;
+    }
   | { type: "thinking"; thinking: string; budget_tokens?: number };
 
 // ─── Browser Message Types (browser <-> bridge) ──────────────────────────────
 
 /** Messages the browser sends to the bridge */
 export type BrowserOutgoingMessage =
-  | { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[]; client_msg_id?: string }
-  | { type: "permission_response"; request_id: string; behavior: "allow" | "deny"; updated_input?: Record<string, unknown>; updated_permissions?: PermissionUpdate[]; message?: string; client_msg_id?: string }
+  | {
+      type: "user_message";
+      content: string;
+      session_id?: string;
+      images?: { media_type: string; data: string }[];
+      client_msg_id?: string;
+    }
+  | {
+      type: "permission_response";
+      request_id: string;
+      behavior: "allow" | "deny";
+      updated_input?: Record<string, unknown>;
+      updated_permissions?: PermissionUpdate[];
+      message?: string;
+      client_msg_id?: string;
+    }
   | { type: "session_subscribe"; last_seq: number }
   | { type: "session_ack"; last_seq: number }
   | { type: "interrupt"; client_msg_id?: string }
   | { type: "set_model"; model: string; client_msg_id?: string }
   | { type: "set_permission_mode"; mode: string; client_msg_id?: string }
   | { type: "mcp_get_status"; client_msg_id?: string }
-  | { type: "mcp_toggle"; serverName: string; enabled: boolean; client_msg_id?: string }
+  | {
+      type: "mcp_toggle";
+      serverName: string;
+      enabled: boolean;
+      client_msg_id?: string;
+    }
   | { type: "mcp_reconnect"; serverName: string; client_msg_id?: string }
-  | { type: "mcp_set_servers"; servers: Record<string, McpServerConfig>; client_msg_id?: string };
+  | {
+      type: "mcp_set_servers";
+      servers: Record<string, McpServerConfig>;
+      client_msg_id?: string;
+    };
 
 /** Messages the bridge sends to the browser */
 export type BrowserIncomingMessageBase =
   | { type: "session_init"; session: SessionState }
   | { type: "session_update"; session: Partial<SessionState> }
-  | { type: "assistant"; message: CLIAssistantMessage["message"]; parent_tool_use_id: string | null; timestamp?: number }
+  | {
+      type: "assistant";
+      message: CLIAssistantMessage["message"];
+      parent_tool_use_id: string | null;
+      timestamp?: number;
+    }
   | { type: "stream_event"; event: unknown; parent_tool_use_id: string | null }
   | { type: "result"; data: CLIResultMessage }
   | { type: "permission_request"; request: PermissionRequest }
   | { type: "permission_cancelled"; request_id: string }
-  | { type: "tool_progress"; tool_use_id: string; tool_name: string; elapsed_time_seconds: number }
+  | {
+      type: "tool_progress";
+      tool_use_id: string;
+      tool_name: string;
+      elapsed_time_seconds: number;
+    }
   | { type: "tool_use_summary"; summary: string; tool_use_ids: string[] }
   | { type: "status_change"; status: "compacting" | "idle" | "running" | null }
-  | { type: "auth_status"; isAuthenticating: boolean; output: string[]; error?: string }
+  | {
+      type: "auth_status";
+      isAuthenticating: boolean;
+      output: string[];
+      error?: string;
+    }
   | { type: "error"; message: string }
   | { type: "cli_disconnected" }
   | { type: "cli_connected" }
@@ -203,12 +259,21 @@ export type BrowserIncomingMessageBase =
   | { type: "message_history"; messages: BrowserIncomingMessage[] }
   | { type: "event_replay"; events: BufferedBrowserEvent[] }
   | { type: "session_name_update"; name: string }
-  | { type: "pr_status_update"; pr: import("./github-pr.js").GitHubPRInfo | null; available: boolean }
+  | {
+      type: "pr_status_update";
+      pr: import("./github-pr.js").GitHubPRInfo | null;
+      available: boolean;
+    }
   | { type: "mcp_status"; servers: McpServerDetail[] };
 
-export type BrowserIncomingMessage = BrowserIncomingMessageBase & { seq?: number };
+export type BrowserIncomingMessage = BrowserIncomingMessageBase & {
+  seq?: number;
+};
 
-export type ReplayableBrowserIncomingMessage = Exclude<BrowserIncomingMessageBase, { type: "event_replay" }>;
+export type ReplayableBrowserIncomingMessage = Exclude<
+  BrowserIncomingMessageBase,
+  { type: "event_replay" }
+>;
 
 export interface BufferedBrowserEvent {
   seq: number;
@@ -243,6 +308,15 @@ export interface SessionState {
   git_behind: number;
   total_lines_added: number;
   total_lines_removed: number;
+  // Claude Code token details (extracted from result.modelUsage)
+  claude_token_details?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    contextWindow: number;
+    maxOutputTokens: number;
+  };
   // Codex-specific token details (forwarded from thread/tokenUsage/updated)
   codex_token_details?: {
     inputTokens: number;
@@ -253,8 +327,16 @@ export interface SessionState {
   };
   // Codex-specific rate limits (forwarded from account/rateLimits/updated)
   codex_rate_limits?: {
-    primary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
-    secondary: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null;
+    primary: {
+      usedPercent: number;
+      windowDurationMins: number;
+      resetsAt: number;
+    } | null;
+    secondary: {
+      usedPercent: number;
+      windowDurationMins: number;
+      resetsAt: number;
+    } | null;
   };
   /** If this session was spawned by a cron job */
   cronJobId?: string;
@@ -279,22 +361,57 @@ export interface McpServerDetail {
   error?: string;
   config: { type: string; url?: string; command?: string; args?: string[] };
   scope: string;
-  tools?: { name: string; annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean } }[];
+  tools?: {
+    name: string;
+    annotations?: {
+      readOnly?: boolean;
+      destructive?: boolean;
+      openWorld?: boolean;
+    };
+  }[];
 }
 
 // ─── Permission Request ──────────────────────────────────────────────────────
 
 // ─── Permission Rule Types ───────────────────────────────────────────────────
 
-export type PermissionDestination = "userSettings" | "projectSettings" | "localSettings" | "session" | "cliArg";
+export type PermissionDestination =
+  | "userSettings"
+  | "projectSettings"
+  | "localSettings"
+  | "session"
+  | "cliArg";
 
 export type PermissionUpdate =
-  | { type: "addRules"; rules: { toolName: string; ruleContent?: string }[]; behavior: "allow" | "deny" | "ask"; destination: PermissionDestination }
-  | { type: "replaceRules"; rules: { toolName: string; ruleContent?: string }[]; behavior: "allow" | "deny" | "ask"; destination: PermissionDestination }
-  | { type: "removeRules"; rules: { toolName: string; ruleContent?: string }[]; behavior: "allow" | "deny" | "ask"; destination: PermissionDestination }
+  | {
+      type: "addRules";
+      rules: { toolName: string; ruleContent?: string }[];
+      behavior: "allow" | "deny" | "ask";
+      destination: PermissionDestination;
+    }
+  | {
+      type: "replaceRules";
+      rules: { toolName: string; ruleContent?: string }[];
+      behavior: "allow" | "deny" | "ask";
+      destination: PermissionDestination;
+    }
+  | {
+      type: "removeRules";
+      rules: { toolName: string; ruleContent?: string }[];
+      behavior: "allow" | "deny" | "ask";
+      destination: PermissionDestination;
+    }
   | { type: "setMode"; mode: string; destination: PermissionDestination }
-  | { type: "addDirectories"; directories: string[]; destination: PermissionDestination }
-  | { type: "removeDirectories"; directories: string[]; destination: PermissionDestination };
+  | {
+      type: "addDirectories";
+      directories: string[];
+      destination: PermissionDestination;
+    }
+  | {
+      type: "removeDirectories";
+      directories: string[];
+      destination: PermissionDestination;
+    };
 
 export interface PermissionRequest {
   request_id: string;

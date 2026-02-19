@@ -6,10 +6,16 @@ function readFile(relativePath: string): string {
   return readFileSync(resolve(process.cwd(), relativePath), "utf-8");
 }
 
-function extractCaseMethods(source: string, start: string, end: string): Set<string> {
-  const afterStart = source.split(start)[1];
-  if (!afterStart) return new Set();
-  const block = afterStart.split(end)[0] || "";
+function extractCaseMethods(
+  source: string,
+  start: string,
+  end: string,
+): Set<string> {
+  const startIdx = source.indexOf(start);
+  if (startIdx < 0) return new Set();
+  const afterStart = source.slice(startIdx + start.length);
+  const endIdx = afterStart.indexOf(end);
+  const block = endIdx >= 0 ? afterStart.slice(0, endIdx) : afterStart;
   return new Set([...block.matchAll(/case "([^"]+)":/g)].map((m) => m[1]));
 }
 
@@ -24,8 +30,8 @@ describe("Claude ws-bridge method drift vs upstream Agent SDK snapshot", () => {
 
     const handledFromCLI = extractCaseMethods(
       bridge,
-      "private routeCLIMessage(session: Session, msg: CLIMessage) {",
-      "private handleSystemMessage(session: Session, msg: CLISystemInitMessage | CLISystemStatusMessage) {",
+      "private routeCLIMessage(",
+      "private handleSystemMessage(",
     );
     expect(handledFromCLI.size).toBeGreaterThan(0);
 
@@ -46,10 +52,12 @@ describe("Claude ws-bridge method drift vs upstream Agent SDK snapshot", () => {
     const bridge = readFile("server/ws-bridge.ts");
     const sdk = readFile("server/protocol/claude-upstream/sdk.d.ts.txt");
 
-    const upstreamInit = sdk.includes("export declare type SDKSystemMessage = {")
-      && sdk.includes("subtype: 'init';");
-    const upstreamStatus = sdk.includes("export declare type SDKStatusMessage = {")
-      && sdk.includes("subtype: 'status';");
+    const upstreamInit =
+      sdk.includes("export declare type SDKSystemMessage = {") &&
+      sdk.includes("subtype: 'init';");
+    const upstreamStatus =
+      sdk.includes("export declare type SDKStatusMessage = {") &&
+      sdk.includes("subtype: 'status';");
 
     expect(upstreamInit).toBe(true);
     expect(upstreamStatus).toBe(true);
