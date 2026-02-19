@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useStore, type QuickTerminalPlacement } from "../store.js";
 import { TerminalView } from "./TerminalView.js";
+import { SessionEditorPane } from "./SessionEditorPane.js";
 
 interface SessionTerminalDockProps {
   sessionId: string;
@@ -199,8 +200,21 @@ export function SessionTerminalDock({
       ? "absolute inset-0 opacity-0 pointer-events-none"
       : `min-h-0 shrink-0 bg-cc-card ${layout.terminalWrapClass}`;
 
+  if (terminalOnly) {
+    return (
+      <div className="h-full min-h-0 bg-cc-card flex flex-col lg:flex-row">
+        <div className="flex-1 min-h-[220px] lg:min-h-0 border-b lg:border-b-0 lg:border-r border-cc-border">
+          <SessionEditorPane sessionId={sessionId} />
+        </div>
+        <div className="flex-1 min-h-[220px] lg:min-h-0">
+          {terminalPanel}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`h-full min-h-0 ${terminalOnly ? "bg-cc-card" : suppressPanel ? "relative" : `flex ${layout.shellClass}`}`}>
+    <div className={`h-full min-h-0 ${suppressPanel ? "relative" : `flex ${layout.shellClass}`}`}>
       {contentArea}
       <div className={terminalAreaClass} aria-hidden={suppressPanel ? "true" : undefined}>
         {terminalPanel}

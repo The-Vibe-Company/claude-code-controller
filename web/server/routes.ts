@@ -38,6 +38,8 @@ import { imagePullManager } from "./image-pull-manager.js";
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = dirname(ROUTES_DIR);
+const VSCODE_EDITOR_CONTAINER_PORT = 13337;
+const VSCODE_EDITOR_HOST_PORT = Number(process.env.COMPANION_EDITOR_PORT || "13338");
 
 function linearIssueStateCategory(issue: { stateType?: string; stateName?: string }): 0 | 1 | 2 {
   const stateType = (issue.stateType || "").trim().toLowerCase();
@@ -63,6 +65,10 @@ function execCaptureStdout(
     }
     throw err;
   }
+}
+
+function shellEscapeArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function resolveBranchDiffBases(
@@ -228,12 +234,16 @@ export function createRoutes(
         }
 
         const tempId = crypto.randomUUID().slice(0, 8);
+        const requestedPorts = companionEnv?.ports
+          ?? (Array.isArray(body.container?.ports)
+            ? body.container.ports.map(Number).filter((n: number) => n > 0)
+            : []);
+        const containerPorts = Array.from(
+          new Set([...requestedPorts, VSCODE_EDITOR_CONTAINER_PORT]),
+        );
         const cConfig: ContainerConfig = {
           image: effectiveImage,
-          ports: companionEnv?.ports
-            ?? (Array.isArray(body.container?.ports)
-              ? body.container.ports.map(Number).filter((n: number) => n > 0)
-              : []),
+          ports: containerPorts,
           volumes: companionEnv?.volumes ?? body.container?.volumes,
           env: envVars,
         };
@@ -514,12 +524,16 @@ export function createRoutes(
           // --- Step: Create container ---
           await emitProgress(stream, "creating_container", "Starting container...", "in_progress");
           const tempId = crypto.randomUUID().slice(0, 8);
+          const requestedPorts = companionEnv?.ports
+            ?? (Array.isArray(body.container?.ports)
+              ? body.container.ports.map(Number).filter((n: number) => n > 0)
+              : []);
+          const containerPorts = Array.from(
+            new Set([...requestedPorts, VSCODE_EDITOR_CONTAINER_PORT]),
+          );
           const cConfig: ContainerConfig = {
             image: effectiveImage,
-            ports: companionEnv?.ports
-              ?? (Array.isArray(body.container?.ports)
-                ? body.container.ports.map(Number).filter((n: number) => n > 0)
-                : []),
+            ports: containerPorts,
             volumes: companionEnv?.volumes ?? body.container?.volumes,
             env: envVars,
           };
@@ -696,6 +710,121 @@ export function createRoutes(
     const session = launcher.getSession(id);
     if (!session) return c.json({ error: "Session not found" }, 404);
     return c.json(session);
+  });
+
+  api.post("/sessions/:id/editor/start", (c) => {
+    const id = c.req.param("id");
+    const session = launcher.getSession(id);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+
+    const editorFolder = session.containerId ? "/workspace" : session.cwd;
+    const editorPathSuffix = `?folder=${encodeURIComponent(editorFolder)}`;
+
+    if (session.containerId) {
+      const container = containerManager.getContainer(id);
+      if (!container) {
+        return c.json({
+          available: false,
+          installed: false,
+          mode: "container",
+          message: "Session container is unavailable. Relaunch the session and try again.",
+        });
+      }
+
+      if (!containerManager.hasBinaryInContainer(container.containerId, "code-server")) {
+        return c.json({
+          available: false,
+          installed: false,
+          mode: "container",
+          message: "VS Code editor is not installed in this container image.",
+        });
+      }
+
+      const portMapping = container.portMappings.find(
+        (p) => p.containerPort === VSCODE_EDITOR_CONTAINER_PORT,
+      );
+      if (!portMapping) {
+        return c.json({
+          available: false,
+          installed: true,
+          mode: "container",
+          message: "Container editor port is missing. Start a new session to enable the VS Code editor.",
+        });
+      }
+
+      try {
+        const alive = containerManager.isContainerAlive(container.containerId);
+        if (alive === "stopped") {
+          containerManager.startContainer(container.containerId);
+        } else if (alive === "missing") {
+          return c.json({
+            available: false,
+            installed: true,
+            mode: "container",
+            message: "Session container no longer exists. Start a new session to use the editor.",
+          });
+        }
+
+        const startCmd = [
+          `if ! pgrep -f ${shellEscapeArg(`code-server.*--bind-addr 0.0.0.0:${VSCODE_EDITOR_CONTAINER_PORT}`)} >/dev/null 2>&1; then`,
+          `nohup code-server --auth none --disable-telemetry --bind-addr 0.0.0.0:${VSCODE_EDITOR_CONTAINER_PORT} /workspace >/tmp/companion-code-server.log 2>&1 &`,
+          "fi",
+        ].join(" ");
+        containerManager.execInContainer(container.containerId, ["sh", "-lc", startCmd], 10_000);
+
+        return c.json({
+          available: true,
+          installed: true,
+          mode: "container",
+          url: `http://localhost:${portMapping.hostPort}${editorPathSuffix}`,
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return c.json({
+          available: false,
+          installed: true,
+          mode: "container",
+          message: `Failed to start VS Code editor in container: ${message}`,
+        });
+      }
+    }
+
+    const hostCodeServer = resolveBinary("code-server");
+    if (!hostCodeServer) {
+      return c.json({
+        available: false,
+        installed: false,
+        mode: "host",
+        message: "VS Code editor is not installed on this machine. Install code-server to enable it.",
+      });
+    }
+
+    try {
+      const companionDir = join(homedir(), ".companion");
+      const logFile = join(companionDir, "code-server-host.log");
+      const startHostCmd = [
+        `mkdir -p ${shellEscapeArg(companionDir)}`,
+        `if ! pgrep -f ${shellEscapeArg(`code-server.*--bind-addr 127.0.0.1:${VSCODE_EDITOR_HOST_PORT}`)} >/dev/null 2>&1; then`,
+        `nohup ${shellEscapeArg(hostCodeServer)} --auth none --disable-telemetry --bind-addr 127.0.0.1:${VSCODE_EDITOR_HOST_PORT} ${shellEscapeArg(session.cwd)} >> ${shellEscapeArg(logFile)} 2>&1 &`,
+        "fi",
+      ].join(" && ");
+      execSync(startHostCmd, { encoding: "utf-8", timeout: 10_000 });
+
+      return c.json({
+        available: true,
+        installed: true,
+        mode: "host",
+        url: `http://localhost:${VSCODE_EDITOR_HOST_PORT}${editorPathSuffix}`,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({
+        available: false,
+        installed: true,
+        mode: "host",
+        message: `Failed to start VS Code editor: ${message}`,
+      });
+    }
   });
 
   api.patch("/sessions/:id/name", async (c) => {
