@@ -56,6 +56,7 @@ function isLinux(): boolean {
 interface PlistOptions {
   binPath: string;
   port?: number;
+  hostname?: string;
   path?: string;
 }
 
@@ -100,7 +101,9 @@ export function generatePlist(opts: PlistOptions): string {
         <key>NODE_ENV</key>
         <string>production</string>
         <key>PORT</key>
-        <string>${port}</string>
+        <string>${port}</string>${opts.hostname ? `
+        <key>COMPANION_HOSTNAME</key>
+        <string>${opts.hostname}</string>` : ""}
         <key>HOME</key>
         <string>${home}</string>
         <key>PATH</key>
@@ -121,6 +124,7 @@ export function generatePlist(opts: PlistOptions): string {
 interface UnitOptions {
   binPath: string;
   port?: number;
+  hostname?: string;
   path?: string;
 }
 
@@ -142,7 +146,7 @@ SuccessExitStatus=42
 StandardOutput=append:${STDOUT_LOG}
 StandardError=append:${STDERR_LOG}
 Environment=NODE_ENV=production
-Environment=PORT=${port}
+Environment=PORT=${port}${opts.hostname ? `\nEnvironment=COMPANION_HOSTNAME=${opts.hostname}` : ""}
 Environment=HOME=${home}
 Environment=PATH=${opts.path || getServicePath()}
 
@@ -227,7 +231,7 @@ function systemctlUser(cmd: string): string {
 
 // ─── Install ────────────────────────────────────────────────────────────────────
 
-export async function install(opts?: { port?: number }): Promise<void> {
+export async function install(opts?: { port?: number; hostname?: string }): Promise<void> {
   ensureSupportedPlatform();
 
   if (isDarwin()) {
@@ -236,7 +240,7 @@ export async function install(opts?: { port?: number }): Promise<void> {
   return installLinux(opts);
 }
 
-async function installDarwin(opts?: { port?: number }): Promise<void> {
+async function installDarwin(opts?: { port?: number; hostname?: string }): Promise<void> {
   migrateLegacyInstallIfNeeded();
 
   if (existsSync(PLIST_PATH)) {
@@ -253,7 +257,7 @@ async function installDarwin(opts?: { port?: number }): Promise<void> {
 
   // Generate and write plist (capture user's shell PATH at install time)
   const path = getServicePath();
-  const plist = generatePlist({ binPath, port, path });
+  const plist = generatePlist({ binPath, port, hostname: opts?.hostname, path });
   mkdirSync(PLIST_DIR, { recursive: true });
   writeFileSync(PLIST_PATH, plist, "utf-8");
 
@@ -278,7 +282,7 @@ async function installDarwin(opts?: { port?: number }): Promise<void> {
   console.log("Use 'the-companion status' to check if it's running.");
 }
 
-async function installLinux(opts?: { port?: number }): Promise<void> {
+async function installLinux(opts?: { port?: number; hostname?: string }): Promise<void> {
   if (isSystemdUnitInstalled()) {
     console.error("The Companion is already installed as a service.");
     console.error("Run 'the-companion uninstall' first to reinstall.");
@@ -293,7 +297,7 @@ async function installLinux(opts?: { port?: number }): Promise<void> {
 
   // Generate and write systemd unit (capture user's shell PATH at install time)
   const path = getServicePath();
-  const unit = generateSystemdUnit({ binPath, port, path });
+  const unit = generateSystemdUnit({ binPath, port, hostname: opts?.hostname, path });
   mkdirSync(SYSTEMD_DIR, { recursive: true });
   writeFileSync(UNIT_PATH, unit, "utf-8");
 
@@ -610,29 +614,35 @@ export function refreshServiceDefinition(): void {
     if (!installedService) return;
 
     let port = DEFAULT_PORT_PROD;
+    let hostname: string | undefined;
     try {
       const content = readFileSync(installedService.plistPath, "utf-8");
       const portMatch = content.match(/<key>PORT<\/key>\s*<string>(\d+)<\/string>/);
       if (portMatch) port = Number(portMatch[1]);
+      const hostnameMatch = content.match(/<key>COMPANION_HOSTNAME<\/key>\s*<string>([^<]+)<\/string>/);
+      if (hostnameMatch) hostname = hostnameMatch[1];
     } catch { /* use default */ }
 
     const binPath = resolveBinPath();
     const path = getServicePath();
-    const plist = generatePlist({ binPath, port, path });
+    const plist = generatePlist({ binPath, port, hostname, path });
     writeFileSync(installedService.plistPath, plist, "utf-8");
   } else if (isLinux()) {
     if (!isSystemdUnitInstalled()) return;
 
     let port = DEFAULT_PORT_PROD;
+    let hostname: string | undefined;
     try {
       const content = readFileSync(UNIT_PATH, "utf-8");
       const portMatch = content.match(/Environment=PORT=(\d+)/);
       if (portMatch) port = Number(portMatch[1]);
+      const hostnameMatch = content.match(/Environment=COMPANION_HOSTNAME=(\S+)/);
+      if (hostnameMatch) hostname = hostnameMatch[1];
     } catch { /* use default */ }
 
     const binPath = resolveBinPath();
     const path = getServicePath();
-    const unit = generateSystemdUnit({ binPath, port, path });
+    const unit = generateSystemdUnit({ binPath, port, hostname, path });
     writeFileSync(UNIT_PATH, unit, "utf-8");
 
     try {

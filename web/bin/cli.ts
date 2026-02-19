@@ -8,6 +8,10 @@ process.env.__COMPANION_PACKAGE_ROOT = resolve(__dirname, "..");
 
 const command = process.argv[2];
 
+// Parse --hostname once for commands that set COMPANION_HOSTNAME env var
+const hostnameIdx = process.argv.indexOf("--hostname");
+const hostnameArg = hostnameIdx !== -1 ? process.argv[hostnameIdx + 1] : undefined;
+
 // Management subcommands that delegate to ctl.ts
 const CTL_COMMANDS = new Set([
   "sessions", "envs", "cron", "skills", "settings", "assistant", "ctl-help",
@@ -38,7 +42,8 @@ Management commands (requires running server):
   assistant   Manage the Companion Assistant (status, launch, stop, config)
 
 Options:
-  --port <n>  Override the default port (default: 3456)
+  --port <n>      Override the default port (default: 3456)
+  --hostname <h>  Bind to a specific hostname/IP (e.g. 127.0.0.1)
 `);
 }
 
@@ -50,12 +55,14 @@ switch (command) {
     break;
 
   case "serve": {
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     process.env.NODE_ENV = process.env.NODE_ENV || "production";
     await import("../server/index.ts");
     break;
   }
 
   case "start": {
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     // Internal service process should stay in foreground server mode.
     const forceForeground = process.argv.includes("--foreground");
     const launchedByInit = (() => {
@@ -85,7 +92,7 @@ switch (command) {
     const portIdx = process.argv.indexOf("--port");
     const rawPort = portIdx !== -1 ? Number(process.argv[portIdx + 1]) : undefined;
     const port = rawPort && !Number.isNaN(rawPort) ? rawPort : undefined;
-    await install({ port });
+    await install({ port, hostname: hostnameArg });
     break;
   }
 
@@ -150,6 +157,7 @@ switch (command) {
 
   case undefined: {
     // Default: start server in foreground
+    if (hostnameArg) process.env.COMPANION_HOSTNAME = hostnameArg;
     process.env.NODE_ENV = process.env.NODE_ENV || "production";
     await import("../server/index.ts");
     break;

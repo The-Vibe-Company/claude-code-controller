@@ -40,6 +40,7 @@ import { DEFAULT_PORT_DEV, DEFAULT_PORT_PROD } from "./constants.js";
 
 const defaultPort = process.env.NODE_ENV === "production" ? DEFAULT_PORT_PROD : DEFAULT_PORT_DEV;
 const port = Number(process.env.PORT) || defaultPort;
+const hostname = process.env.COMPANION_HOSTNAME || undefined;
 const sessionStore = new SessionStore(process.env.COMPANION_SESSION_DIR);
 const wsBridge = new WsBridge();
 const launcher = new CliLauncher(port);
@@ -130,6 +131,7 @@ if (process.env.NODE_ENV === "production") {
 
 const server = Bun.serve<SocketData>({
   port,
+  hostname,
   async fetch(req, server) {
     const url = new URL(req.url);
 
@@ -204,9 +206,10 @@ const server = Bun.serve<SocketData>({
   },
 });
 
-console.log(`Server running on http://localhost:${server.port}`);
-console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
-console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
+const displayHost = server.hostname === "0.0.0.0" || server.hostname === "::" ? "localhost" : server.hostname;
+console.log(`Server running on http://${displayHost}:${server.port}`);
+console.log(`  CLI WebSocket:     ws://${displayHost}:${server.port}/ws/cli/:sessionId`);
+console.log(`  Browser WebSocket: ws://${displayHost}:${server.port}/ws/browser/:sessionId`);
 
 if (process.env.NODE_ENV !== "production") {
   console.log("Dev mode: frontend at http://localhost:5174");
