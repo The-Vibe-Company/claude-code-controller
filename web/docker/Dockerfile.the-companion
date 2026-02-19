@@ -83,6 +83,9 @@ RUN . "$NVM_DIR/nvm.sh" && npm install -g @openai/codex
 # not a shared system. No risk of breaking OS-managed Python packages.
 RUN pip install --break-system-packages poetry uv
 
+# ── Layer 12: VS Code editor server (code-server) ───────────────────────────
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
 # ── Workspace ─────────────────────────────────────────────────────────────────
 WORKDIR /workspace
 

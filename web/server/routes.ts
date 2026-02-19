@@ -25,6 +25,7 @@ import { hasContainerCodexAuth } from "./codex-container-auth.js";
 import { DEFAULT_OPENROUTER_MODEL, getSettings, updateSettings } from "./settings-manager.js";
 import * as linearProjectManager from "./linear-project-manager.js";
 import { getUsageLimits } from "./usage-limits.js";
+import { linearCache } from "./linear-cache.js";
 import {
   getUpdateState,
   checkForUpdate,
@@ -37,6 +38,8 @@ import { imagePullManager } from "./image-pull-manager.js";
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = dirname(ROUTES_DIR);
+const VSCODE_EDITOR_CONTAINER_PORT = 13337;
+const VSCODE_EDITOR_HOST_PORT = Number(process.env.COMPANION_EDITOR_PORT || "13338");
 
 function linearIssueStateCategory(issue: { stateType?: string; stateName?: string }): 0 | 1 | 2 {
   const stateType = (issue.stateType || "").trim().toLowerCase();
@@ -62,6 +65,10 @@ function execCaptureStdout(
     }
     throw err;
   }
+}
+
+function shellEscapeArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function resolveBranchDiffBases(
@@ -227,12 +234,16 @@ export function createRoutes(
         }
 
         const tempId = crypto.randomUUID().slice(0, 8);
+        const requestedPorts = companionEnv?.ports
+          ?? (Array.isArray(body.container?.ports)
+            ? body.container.ports.map(Number).filter((n: number) => n > 0)
+            : []);
+        const containerPorts = Array.from(
+          new Set([...requestedPorts, VSCODE_EDITOR_CONTAINER_PORT]),
+        );
         const cConfig: ContainerConfig = {
           image: effectiveImage,
-          ports: companionEnv?.ports
-            ?? (Array.isArray(body.container?.ports)
-              ? body.container.ports.map(Number).filter((n: number) => n > 0)
-              : []),
+          ports: containerPorts,
           volumes: companionEnv?.volumes ?? body.container?.volumes,
           env: envVars,
         };
@@ -513,12 +524,16 @@ export function createRoutes(
           // --- Step: Create container ---
           await emitProgress(stream, "creating_container", "Starting container...", "in_progress");
           const tempId = crypto.randomUUID().slice(0, 8);
+          const requestedPorts = companionEnv?.ports
+            ?? (Array.isArray(body.container?.ports)
+              ? body.container.ports.map(Number).filter((n: number) => n > 0)
+              : []);
+          const containerPorts = Array.from(
+            new Set([...requestedPorts, VSCODE_EDITOR_CONTAINER_PORT]),
+          );
           const cConfig: ContainerConfig = {
             image: effectiveImage,
-            ports: companionEnv?.ports
-              ?? (Array.isArray(body.container?.ports)
-                ? body.container.ports.map(Number).filter((n: number) => n > 0)
-                : []),
+            ports: containerPorts,
             volumes: companionEnv?.volumes ?? body.container?.volumes,
             env: envVars,
           };
@@ -695,6 +710,121 @@ export function createRoutes(
     const session = launcher.getSession(id);
     if (!session) return c.json({ error: "Session not found" }, 404);
     return c.json(session);
+  });
+
+  api.post("/sessions/:id/editor/start", (c) => {
+    const id = c.req.param("id");
+    const session = launcher.getSession(id);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+
+    const editorFolder = session.containerId ? "/workspace" : session.cwd;
+    const editorPathSuffix = `?folder=${encodeURIComponent(editorFolder)}`;
+
+    if (session.containerId) {
+      const container = containerManager.getContainer(id);
+      if (!container) {
+        return c.json({
+          available: false,
+          installed: false,
+          mode: "container",
+          message: "Session container is unavailable. Relaunch the session and try again.",
+        });
+      }
+
+      if (!containerManager.hasBinaryInContainer(container.containerId, "code-server")) {
+        return c.json({
+          available: false,
+          installed: false,
+          mode: "container",
+          message: "VS Code editor is not installed in this container image.",
+        });
+      }
+
+      const portMapping = container.portMappings.find(
+        (p) => p.containerPort === VSCODE_EDITOR_CONTAINER_PORT,
+      );
+      if (!portMapping) {
+        return c.json({
+          available: false,
+          installed: true,
+          mode: "container",
+          message: "Container editor port is missing. Start a new session to enable the VS Code editor.",
+        });
+      }
+
+      try {
+        const alive = containerManager.isContainerAlive(container.containerId);
+        if (alive === "stopped") {
+          containerManager.startContainer(container.containerId);
+        } else if (alive === "missing") {
+          return c.json({
+            available: false,
+            installed: true,
+            mode: "container",
+            message: "Session container no longer exists. Start a new session to use the editor.",
+          });
+        }
+
+        const startCmd = [
+          `if ! pgrep -f ${shellEscapeArg(`code-server.*--bind-addr 0.0.0.0:${VSCODE_EDITOR_CONTAINER_PORT}`)} >/dev/null 2>&1; then`,
+          `nohup code-server --auth none --disable-telemetry --bind-addr 0.0.0.0:${VSCODE_EDITOR_CONTAINER_PORT} /workspace >/tmp/companion-code-server.log 2>&1 &`,
+          "fi",
+        ].join(" ");
+        containerManager.execInContainer(container.containerId, ["sh", "-lc", startCmd], 10_000);
+
+        return c.json({
+          available: true,
+          installed: true,
+          mode: "container",
+          url: `http://localhost:${portMapping.hostPort}/${editorPathSuffix}`,
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return c.json({
+          available: false,
+          installed: true,
+          mode: "container",
+          message: `Failed to start VS Code editor in container: ${message}`,
+        });
+      }
+    }
+
+    const hostCodeServer = resolveBinary("code-server");
+    if (!hostCodeServer) {
+      return c.json({
+        available: false,
+        installed: false,
+        mode: "host",
+        message: "VS Code editor is not installed on this machine. Install code-server to enable it.",
+      });
+    }
+
+    try {
+      const companionDir = join(homedir(), ".companion");
+      const logFile = join(companionDir, "code-server-host.log");
+      const startHostCmd = [
+        `mkdir -p ${shellEscapeArg(companionDir)}`,
+        `if ! pgrep -f ${shellEscapeArg(`code-server.*--bind-addr 127.0.0.1:${VSCODE_EDITOR_HOST_PORT}`)} >/dev/null 2>&1; then`,
+        `nohup ${shellEscapeArg(hostCodeServer)} --auth none --disable-telemetry --bind-addr 127.0.0.1:${VSCODE_EDITOR_HOST_PORT} ${shellEscapeArg(session.cwd)} >> ${shellEscapeArg(logFile)} 2>&1 &`,
+        "fi",
+      ].join(" && ");
+      execSync(startHostCmd, { encoding: "utf-8", timeout: 10_000 });
+
+      return c.json({
+        available: true,
+        installed: true,
+        mode: "host",
+        url: `http://localhost:${VSCODE_EDITOR_HOST_PORT}/${editorPathSuffix}`,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return c.json({
+        available: false,
+        installed: true,
+        mode: "host",
+        message: `Failed to start VS Code editor: ${message}`,
+      });
+    }
   });
 
   api.patch("/sessions/:id/name", async (c) => {
@@ -1354,6 +1484,11 @@ export function createRoutes(
       return c.json({ error: "At least one settings field is required" }, 400);
     }
 
+    // Clear Linear API cache when the API key changes
+    if (typeof body.linearApiKey === "string") {
+      linearCache.clear();
+    }
+
     const settings = updateSettings({
       openrouterApiKey:
         typeof body.openrouterApiKey === "string"
@@ -1404,78 +1539,85 @@ export function createRoutes(
       return c.json({ error: "Linear API key is not configured" }, 400);
     }
 
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          query CompanionIssueSearch($term: String!, $first: Int!) {
-            searchIssues(term: $term, first: $first) {
-              nodes {
-                id
-                identifier
-                title
-                description
-                url
-                branchName
-                priorityLabel
-                state { name type }
-                team { id key name }
+    try {
+      const cacheKey = `search:${query}:${limit}`;
+      const issues = await linearCache.getOrFetch(cacheKey, 30_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionIssueSearch($term: String!, $first: Int!) {
+                searchIssues(term: $term, first: $first) {
+                  nodes {
+                    id
+                    identifier
+                    title
+                    description
+                    url
+                    branchName
+                    priorityLabel
+                    state { name type }
+                    team { id key name }
+                  }
+                }
               }
-            }
-          }
-        `,
-        variables: { term: query, first: limit },
-      }),
-    }).catch((e: unknown) => {
-      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
-    });
+            `,
+            variables: { term: query, first: limit },
+          }),
+        }).catch((e: unknown) => {
+          throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+        });
 
-    const json = await response.json().catch(() => ({})) as {
-      data?: {
-        searchIssues?: {
-          nodes?: Array<{
-            id: string;
-            identifier: string;
-            title: string;
-            description?: string | null;
-            url: string;
-            branchName?: string | null;
-            priorityLabel?: string | null;
-            state?: { name?: string | null; type?: string | null } | null;
-            team?: { id?: string | null; key?: string | null; name?: string | null } | null;
-          }>;
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            searchIssues?: {
+              nodes?: Array<{
+                id: string;
+                identifier: string;
+                title: string;
+                description?: string | null;
+                url: string;
+                branchName?: string | null;
+                priorityLabel?: string | null;
+                state?: { name?: string | null; type?: string | null } | null;
+                team?: { id?: string | null; key?: string | null; name?: string | null } | null;
+              }>;
+            };
+          };
+          errors?: Array<{ message?: string }>;
         };
-      };
-      errors?: Array<{ message?: string }>;
-    };
 
-    if (!response.ok || (json.errors && json.errors.length > 0)) {
-      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
-      return c.json({ error: firstError }, 502);
+        if (!response.ok || (json.errors && json.errors.length > 0)) {
+          const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+          throw new Error(firstError);
+        }
+
+        return (json.data?.searchIssues?.nodes || []).map((issue) => ({
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          description: issue.description || "",
+          url: issue.url,
+          branchName: issue.branchName || "",
+          priorityLabel: issue.priorityLabel || "",
+          stateName: issue.state?.name || "",
+          stateType: issue.state?.type || "",
+          teamName: issue.team?.name || "",
+          teamKey: issue.team?.key || "",
+          teamId: issue.team?.id || "",
+        }))
+          .filter((issue) => linearIssueStateCategory(issue) !== 2)
+          .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
+      });
+
+      return c.json({ issues });
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Linear request failed" }, 502);
     }
-
-    const issues = (json.data?.searchIssues?.nodes || []).map((issue) => ({
-      id: issue.id,
-      identifier: issue.identifier,
-      title: issue.title,
-      description: issue.description || "",
-      url: issue.url,
-      branchName: issue.branchName || "",
-      priorityLabel: issue.priorityLabel || "",
-      stateName: issue.state?.name || "",
-      stateType: issue.state?.type || "",
-      teamName: issue.team?.name || "",
-      teamKey: issue.team?.key || "",
-      teamId: issue.team?.id || "",
-    }))
-      .filter((issue) => linearIssueStateCategory(issue) !== 2)
-      .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
-
-    return c.json({ issues });
   });
 
   api.get("/linear/connection", async (c) => {
@@ -1485,45 +1627,53 @@ export function createRoutes(
       return c.json({ error: "Linear API key is not configured" }, 400);
     }
 
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          query CompanionLinearConnection {
-            viewer { id name email }
-            teams(first: 1) { nodes { id key name } }
-          }
-        `,
-      }),
-    }).catch((e: unknown) => {
-      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
-    });
+    try {
+      const result = await linearCache.getOrFetch("connection", 300_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionLinearConnection {
+                viewer { id name email }
+                teams(first: 1) { nodes { id key name } }
+              }
+            `,
+          }),
+        }).catch((e: unknown) => {
+          throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+        });
 
-    const json = await response.json().catch(() => ({})) as {
-      data?: {
-        viewer?: { id?: string; name?: string | null; email?: string | null } | null;
-        teams?: { nodes?: Array<{ id?: string; key?: string | null; name?: string | null }> } | null;
-      };
-      errors?: Array<{ message?: string }>;
-    };
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            viewer?: { id?: string; name?: string | null; email?: string | null } | null;
+            teams?: { nodes?: Array<{ id?: string; key?: string | null; name?: string | null }> } | null;
+          };
+          errors?: Array<{ message?: string }>;
+        };
 
-    if (!response.ok || (json.errors && json.errors.length > 0)) {
-      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
-      return c.json({ error: firstError }, 502);
+        if (!response.ok || (json.errors && json.errors.length > 0)) {
+          const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+          throw new Error(firstError);
+        }
+
+        const firstTeam = json.data?.teams?.nodes?.[0];
+        return {
+          connected: true as const,
+          viewerName: json.data?.viewer?.name || "",
+          viewerEmail: json.data?.viewer?.email || "",
+          teamName: firstTeam?.name || "",
+          teamKey: firstTeam?.key || "",
+        };
+      });
+
+      return c.json(result);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Linear request failed" }, 502);
     }
-
-    const firstTeam = json.data?.teams?.nodes?.[0];
-    return c.json({
-      connected: true,
-      viewerName: json.data?.viewer?.name || "",
-      viewerEmail: json.data?.viewer?.email || "",
-      teamName: firstTeam?.name || "",
-      teamKey: firstTeam?.key || "",
-    });
   });
 
   // ─── Linear issue <-> session association ───────────────────────────
@@ -1567,92 +1717,96 @@ export function createRoutes(
     if (!linearApiKey) return c.json({ issue: stored });
 
     try {
-      const response = await fetch("https://api.linear.app/graphql", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: linearApiKey,
-        },
-        body: JSON.stringify({
-          query: `
-            query CompanionIssueFetch($id: String!) {
-              issue(id: $id) {
-                id identifier title description url branchName priorityLabel
-                state { name type }
-                team { id key name }
-                comments(last: 5) {
-                  nodes {
-                    id body createdAt
-                    user { id name displayName avatarUrl }
+      const cacheKey = `issue:${stored.id}`;
+      const result = await linearCache.getOrFetch(cacheKey, 30_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionIssueFetch($id: String!) {
+                issue(id: $id) {
+                  id identifier title description url branchName priorityLabel
+                  state { name type }
+                  team { id key name }
+                  comments(last: 5) {
+                    nodes {
+                      id body createdAt
+                      user { id name displayName avatarUrl }
+                    }
                   }
+                  assignee { id name displayName avatarUrl }
+                  labels { nodes { id name color } }
                 }
-                assignee { id name displayName avatarUrl }
-                labels { nodes { id name color } }
               }
-            }
-          `,
-          variables: { id: stored.id },
-        }),
+            `,
+            variables: { id: stored.id },
+          }),
+        });
+
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            issue?: {
+              id: string;
+              identifier: string;
+              title: string;
+              description?: string | null;
+              url: string;
+              branchName?: string | null;
+              priorityLabel?: string | null;
+              state?: { name?: string | null; type?: string | null } | null;
+              team?: { id?: string | null; key?: string | null; name?: string | null } | null;
+              comments?: { nodes?: Array<{
+                id: string;
+                body: string;
+                createdAt: string;
+                user?: { name?: string | null; displayName?: string | null; avatarUrl?: string | null } | null;
+              }> } | null;
+              assignee?: { name?: string | null; displayName?: string | null; avatarUrl?: string | null } | null;
+              labels?: { nodes?: Array<{ id: string; name: string; color: string }> } | null;
+            } | null;
+          };
+          errors?: Array<{ message?: string }>;
+        };
+
+        return json.data?.issue ?? null;
       });
 
-      const json = await response.json().catch(() => ({})) as {
-        data?: {
-          issue?: {
-            id: string;
-            identifier: string;
-            title: string;
-            description?: string | null;
-            url: string;
-            branchName?: string | null;
-            priorityLabel?: string | null;
-            state?: { name?: string | null; type?: string | null } | null;
-            team?: { id?: string | null; key?: string | null; name?: string | null } | null;
-            comments?: { nodes?: Array<{
-              id: string;
-              body: string;
-              createdAt: string;
-              user?: { name?: string | null; displayName?: string | null; avatarUrl?: string | null } | null;
-            }> } | null;
-            assignee?: { name?: string | null; displayName?: string | null; avatarUrl?: string | null } | null;
-            labels?: { nodes?: Array<{ id: string; name: string; color: string }> } | null;
-          } | null;
-        };
-        errors?: Array<{ message?: string }>;
-      };
-
-      const issue = json.data?.issue;
-      if (issue) {
+      if (result) {
         const updated = {
-          id: issue.id,
-          identifier: issue.identifier,
-          title: issue.title,
-          description: issue.description || "",
-          url: issue.url,
-          branchName: issue.branchName || "",
-          priorityLabel: issue.priorityLabel || "",
-          stateName: issue.state?.name || "",
-          stateType: issue.state?.type || "",
-          teamName: issue.team?.name || "",
-          teamKey: issue.team?.key || "",
-          teamId: issue.team?.id || "",
-          assigneeName: issue.assignee?.displayName || issue.assignee?.name || "",
+          id: result.id,
+          identifier: result.identifier,
+          title: result.title,
+          description: result.description || "",
+          url: result.url,
+          branchName: result.branchName || "",
+          priorityLabel: result.priorityLabel || "",
+          stateName: result.state?.name || "",
+          stateType: result.state?.type || "",
+          teamName: result.team?.name || "",
+          teamKey: result.team?.key || "",
+          teamId: result.team?.id || "",
+          assigneeName: result.assignee?.displayName || result.assignee?.name || "",
           updatedAt: new Date().toISOString(),
         };
         sessionLinearIssues.setLinearIssue(id, updated);
         return c.json({
           issue: updated,
-          comments: (issue.comments?.nodes || []).map((comment) => ({
+          comments: (result.comments?.nodes || []).map((comment) => ({
             id: comment.id,
             body: comment.body,
             createdAt: comment.createdAt,
             userName: comment.user?.displayName || comment.user?.name || "Unknown",
             userAvatarUrl: comment.user?.avatarUrl || null,
           })),
-          assignee: issue.assignee ? {
-            name: issue.assignee.displayName || issue.assignee.name || "",
-            avatarUrl: issue.assignee.avatarUrl || null,
+          assignee: result.assignee ? {
+            name: result.assignee.displayName || result.assignee.name || "",
+            avatarUrl: result.assignee.avatarUrl || null,
           } : null,
-          labels: (issue.labels?.nodes || []).map((l) => ({
+          labels: (result.labels?.nodes || []).map((l) => ({
             id: l.id,
             name: l.name,
             color: l.color,
@@ -1731,6 +1885,9 @@ export function createRoutes(
       return c.json({ error: "Comment creation failed" }, 502);
     }
 
+    // Invalidate cached issue data so the next poll picks up the new comment
+    linearCache.invalidate(`issue:${issueId}`);
+
     return c.json({
       ok: true,
       comment: {
@@ -1750,73 +1907,79 @@ export function createRoutes(
       return c.json({ error: "Linear API key is not configured" }, 400);
     }
 
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          query CompanionWorkflowStates {
-            teams {
-              nodes {
-                id
-                key
-                name
-                states {
+    try {
+      const teams = await linearCache.getOrFetch("states", 300_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionWorkflowStates {
+                teams {
                   nodes {
                     id
+                    key
                     name
-                    type
+                    states {
+                      nodes {
+                        id
+                        name
+                        type
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
-        `,
-      }),
-    }).catch((e: unknown) => {
-      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
-    });
+            `,
+          }),
+        }).catch((e: unknown) => {
+          throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+        });
 
-    const json = await response.json().catch(() => ({})) as {
-      data?: {
-        teams?: {
-          nodes?: Array<{
-            id?: string;
-            key?: string | null;
-            name?: string | null;
-            states?: {
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            teams?: {
               nodes?: Array<{
                 id?: string;
+                key?: string | null;
                 name?: string | null;
-                type?: string | null;
+                states?: {
+                  nodes?: Array<{
+                    id?: string;
+                    name?: string | null;
+                    type?: string | null;
+                  }>;
+                };
               }>;
             };
-          }>;
+          };
+          errors?: Array<{ message?: string }>;
         };
-      };
-      errors?: Array<{ message?: string }>;
-    };
 
-    if (!response.ok || (json.errors && json.errors.length > 0)) {
-      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
-      return c.json({ error: firstError }, 502);
+        if (!response.ok || (json.errors && json.errors.length > 0)) {
+          const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+          throw new Error(firstError);
+        }
+
+        return (json.data?.teams?.nodes || []).map((team) => ({
+          id: team.id || "",
+          key: team.key || "",
+          name: team.name || "",
+          states: (team.states?.nodes || []).map((state) => ({
+            id: state.id || "",
+            name: state.name || "",
+            type: state.type || "",
+          })),
+        }));
+      });
+
+      return c.json({ teams });
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Linear request failed" }, 502);
     }
-
-    const teams = (json.data?.teams?.nodes || []).map((team) => ({
-      id: team.id || "",
-      key: team.key || "",
-      name: team.name || "",
-      states: (team.states?.nodes || []).map((state) => ({
-        id: state.id || "",
-        name: state.name || "",
-        type: state.type || "",
-      })),
-    }));
-
-    return c.json({ teams });
   });
 
   // ─── Linear projects ────────────────────────────────────────────────
@@ -1828,44 +1991,50 @@ export function createRoutes(
       return c.json({ error: "Linear API key is not configured" }, 400);
     }
 
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          query CompanionListProjects {
-            projects(first: 50, orderBy: updatedAt) {
-              nodes { id name state }
-            }
-          }
-        `,
-      }),
-    }).catch((e: unknown) => {
-      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
-    });
+    try {
+      const projects = await linearCache.getOrFetch("projects", 300_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionListProjects {
+                projects(first: 50, orderBy: updatedAt) {
+                  nodes { id name state }
+                }
+              }
+            `,
+          }),
+        }).catch((e: unknown) => {
+          throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+        });
 
-    const json = await response.json().catch(() => ({})) as {
-      data?: {
-        projects?: { nodes?: Array<{ id?: string; name?: string | null; state?: string | null }> } | null;
-      };
-      errors?: Array<{ message?: string }>;
-    };
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            projects?: { nodes?: Array<{ id?: string; name?: string | null; state?: string | null }> } | null;
+          };
+          errors?: Array<{ message?: string }>;
+        };
 
-    if (!response.ok || (json.errors && json.errors.length > 0)) {
-      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
-      return c.json({ error: firstError }, 502);
+        if (!response.ok || (json.errors && json.errors.length > 0)) {
+          const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+          throw new Error(firstError);
+        }
+
+        return (json.data?.projects?.nodes || []).map((p) => ({
+          id: p.id || "",
+          name: p.name || "",
+          state: p.state || "",
+        }));
+      });
+
+      return c.json({ projects });
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Linear request failed" }, 502);
     }
-
-    const projects = (json.data?.projects?.nodes || []).map((p) => ({
-      id: p.id || "",
-      name: p.name || "",
-      state: p.state || "",
-    }));
-
-    return c.json({ projects });
   });
 
   // ─── Linear project issues (recent, non-done) ─────────────────────
@@ -1882,87 +2051,94 @@ export function createRoutes(
       return c.json({ error: "Linear API key is not configured" }, 400);
     }
 
-    const response = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: linearApiKey,
-      },
-      body: JSON.stringify({
-        query: `
-          query CompanionProjectIssues($projectId: ID!, $first: Int!) {
-            issues(
-              filter: {
-                project: { id: { eq: $projectId } }
-                state: { type: { nin: ["completed", "cancelled"] } }
+    try {
+      const cacheKey = `project-issues:${projectId}:${limit}`;
+      const issues = await linearCache.getOrFetch(cacheKey, 60_000, async () => {
+        const response = await fetch("https://api.linear.app/graphql", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: linearApiKey,
+          },
+          body: JSON.stringify({
+            query: `
+              query CompanionProjectIssues($projectId: ID!, $first: Int!) {
+                issues(
+                  filter: {
+                    project: { id: { eq: $projectId } }
+                    state: { type: { nin: ["completed", "cancelled"] } }
+                  }
+                  orderBy: updatedAt
+                  first: $first
+                ) {
+                  nodes {
+                    id
+                    identifier
+                    title
+                    description
+                    url
+                    priorityLabel
+                    state { name type }
+                    team { key name }
+                    assignee { name }
+                    updatedAt
+                  }
+                }
               }
-              orderBy: updatedAt
-              first: $first
-            ) {
-              nodes {
-                id
-                identifier
-                title
-                description
-                url
-                priorityLabel
-                state { name type }
-                team { key name }
-                assignee { name }
-                updatedAt
-              }
-            }
-          }
-        `,
-        variables: { projectId, first: limit },
-      }),
-    }).catch((e: unknown) => {
-      throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
-    });
+            `,
+            variables: { projectId, first: limit },
+          }),
+        }).catch((e: unknown) => {
+          throw new Error(`Failed to connect to Linear: ${e instanceof Error ? e.message : String(e)}`);
+        });
 
-    const json = await response.json().catch(() => ({})) as {
-      data?: {
-        issues?: {
-          nodes?: Array<{
-            id: string;
-            identifier: string;
-            title: string;
-            description?: string | null;
-            url: string;
-            priorityLabel?: string | null;
-            state?: { name?: string | null; type?: string | null } | null;
-            team?: { key?: string | null; name?: string | null } | null;
-            assignee?: { name?: string | null } | null;
-            updatedAt?: string | null;
-          }>;
+        const json = await response.json().catch(() => ({})) as {
+          data?: {
+            issues?: {
+              nodes?: Array<{
+                id: string;
+                identifier: string;
+                title: string;
+                description?: string | null;
+                url: string;
+                priorityLabel?: string | null;
+                state?: { name?: string | null; type?: string | null } | null;
+                team?: { key?: string | null; name?: string | null } | null;
+                assignee?: { name?: string | null } | null;
+                updatedAt?: string | null;
+              }>;
+            };
+          };
+          errors?: Array<{ message?: string }>;
         };
-      };
-      errors?: Array<{ message?: string }>;
-    };
 
-    if (!response.ok || (json.errors && json.errors.length > 0)) {
-      const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
-      return c.json({ error: firstError }, 502);
+        if (!response.ok || (json.errors && json.errors.length > 0)) {
+          const firstError = json.errors?.[0]?.message || response.statusText || "Linear request failed";
+          throw new Error(firstError);
+        }
+
+        return (json.data?.issues?.nodes || []).map((issue) => ({
+          id: issue.id,
+          identifier: issue.identifier,
+          title: issue.title,
+          description: issue.description || "",
+          url: issue.url,
+          priorityLabel: issue.priorityLabel || "",
+          stateName: issue.state?.name || "",
+          stateType: issue.state?.type || "",
+          teamName: issue.team?.name || "",
+          teamKey: issue.team?.key || "",
+          assigneeName: issue.assignee?.name || "",
+          updatedAt: issue.updatedAt || "",
+        }))
+          .filter((issue) => linearIssueStateCategory(issue) !== 2)
+          .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
+      });
+
+      return c.json({ issues });
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Linear request failed" }, 502);
     }
-
-    const issues = (json.data?.issues?.nodes || []).map((issue) => ({
-      id: issue.id,
-      identifier: issue.identifier,
-      title: issue.title,
-      description: issue.description || "",
-      url: issue.url,
-      priorityLabel: issue.priorityLabel || "",
-      stateName: issue.state?.name || "",
-      stateType: issue.state?.type || "",
-      teamName: issue.team?.name || "",
-      teamKey: issue.team?.key || "",
-      assigneeName: issue.assignee?.name || "",
-      updatedAt: issue.updatedAt || "",
-    }))
-      .filter((issue) => linearIssueStateCategory(issue) !== 2)
-      .sort((a, b) => linearIssueStateCategory(a) - linearIssueStateCategory(b));
-
-    return c.json({ issues });
   });
 
   // ─── Linear project mappings ──────────────────────────────────────
@@ -2065,6 +2241,10 @@ export function createRoutes(
       }
 
       const updatedIssue = updateJson.data?.issueUpdate?.issue;
+
+      // Invalidate cached issue data so the next fetch picks up the new state
+      linearCache.invalidate(`issue:${issueId}`);
+
       return c.json({
         ok: true,
         skipped: false,

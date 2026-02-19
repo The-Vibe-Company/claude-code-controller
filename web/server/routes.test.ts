@@ -572,6 +572,40 @@ describe("POST /api/sessions/create", () => {
     );
   });
 
+  it("always exposes VS Code editor port on new containers", async () => {
+    vi.mocked(envManager.getEnv).mockReturnValue({
+      name: "Companion",
+      slug: "companion",
+      variables: { CLAUDE_CODE_OAUTH_TOKEN: "token" },
+      baseImage: "the-companion:latest",
+      createdAt: 1000,
+      updatedAt: 1000,
+      ports: [3000],
+    } as any);
+    vi.mocked(envManager.getEffectiveImage).mockReturnValue("the-companion:latest");
+    const createSpy = vi.spyOn(containerManager, "createContainer").mockReturnValueOnce({
+      containerId: "cid-vscode",
+      name: "companion-vscode",
+      image: "the-companion:latest",
+      portMappings: [],
+      hostCwd: "/test",
+      containerCwd: "/workspace",
+      state: "running",
+    });
+    vi.spyOn(containerManager, "retrack").mockImplementation(() => {});
+
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: "/test", envSlug: "companion" }),
+    });
+
+    expect(res.status).toBe(200);
+    const config = createSpy.mock.calls[0][2];
+    expect(config.ports).toContain(3000);
+    expect(config.ports).toContain(13337);
+  });
+
   it("waits for background pull when image is not ready", async () => {
     // imagePullManager reports the image is not ready initially,
     // but waitForReady resolves to true (background pull succeeds).
@@ -809,6 +843,89 @@ describe("GET /api/sessions/:id", () => {
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json).toEqual({ error: "Session not found" });
+  });
+});
+
+describe("POST /api/sessions/:id/editor/start", () => {
+  it("returns unavailable when code-server is not installed on host", async () => {
+    launcher.getSession.mockReturnValue({
+      sessionId: "s1",
+      state: "running",
+      cwd: "/repo",
+    });
+    mockResolveBinary.mockImplementation((name: string) => (name === "code-server" ? null : null));
+
+    const res = await app.request("/api/sessions/s1/editor/start", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      available: false,
+      installed: false,
+      mode: "host",
+    });
+    expect(json.message).toContain("not installed");
+  });
+
+  it("starts host editor and returns a URL when code-server is available", async () => {
+    launcher.getSession.mockReturnValue({
+      sessionId: "s1",
+      state: "running",
+      cwd: "/repo/my app",
+    });
+    mockResolveBinary.mockImplementation((name: string) => (name === "code-server" ? "/usr/bin/code-server" : null));
+
+    const res = await app.request("/api/sessions/s1/editor/start", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      available: true,
+      installed: true,
+      mode: "host",
+      url: "http://localhost:13338/?folder=%2Frepo%2Fmy%20app",
+    });
+    expect(execSync).toHaveBeenCalledWith(
+      expect.stringContaining("--bind-addr 127.0.0.1:13338"),
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+  });
+
+  it("starts container editor and returns mapped host URL", async () => {
+    launcher.getSession.mockReturnValue({
+      sessionId: "s1",
+      state: "running",
+      cwd: "/repo",
+      containerId: "cid-1",
+    });
+    vi.spyOn(containerManager, "getContainer").mockReturnValue({
+      containerId: "cid-1",
+      name: "companion-s1",
+      image: "the-companion:latest",
+      portMappings: [{ containerPort: 13337, hostPort: 49152 }],
+      hostCwd: "/repo",
+      containerCwd: "/workspace",
+      state: "running",
+    });
+    vi.spyOn(containerManager, "hasBinaryInContainer").mockReturnValue(true);
+    vi.spyOn(containerManager, "isContainerAlive").mockReturnValue("running");
+    const execSpy = vi.spyOn(containerManager, "execInContainer").mockReturnValue("");
+
+    const res = await app.request("/api/sessions/s1/editor/start", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      available: true,
+      installed: true,
+      mode: "container",
+      url: "http://localhost:49152/?folder=%2Fworkspace",
+    });
+    expect(execSpy).toHaveBeenCalledWith(
+      "cid-1",
+      expect.arrayContaining(["sh", "-lc"]),
+      10_000,
+    );
   });
 });
 
