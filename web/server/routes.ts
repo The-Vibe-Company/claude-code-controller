@@ -676,6 +676,9 @@ export function createRoutes(
       const bridge = bridgeMap.get(s.sessionId);
       return {
         ...s,
+        // Bridge state is the source of truth for runtime cwd updates
+        // (notably containerized sessions mapped back to host paths).
+        cwd: bridge?.cwd || s.cwd,
         name: names[s.sessionId] ?? s.name,
         gitBranch: bridge?.git_branch || "",
         gitAhead: bridge?.git_ahead || 0,

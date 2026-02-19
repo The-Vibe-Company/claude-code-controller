@@ -35,8 +35,16 @@ export interface ProjectGroup {
  * Extracts a project key from a cwd path.
  * Uses repoRoot when available (normalizes to the parent repo).
  */
-export function extractProjectKey(cwd: string, repoRoot?: string): string {
-  const basePath = repoRoot || cwd;
+export function extractProjectKey(
+  cwd: string,
+  repoRoot?: string,
+  isContainerized = false,
+): string {
+  // Defensive fallback: container git state may transiently report /workspace*
+  // even when the host cwd is the real project location.
+  const containerWorkspaceRoot =
+    isContainerized && !!repoRoot && (repoRoot === "/workspace" || repoRoot.startsWith("/workspace/"));
+  const basePath = containerWorkspaceRoot ? cwd : (repoRoot || cwd);
   return basePath.replace(/\/+$/, "") || "/";
 }
 
@@ -60,7 +68,11 @@ export function groupSessionsByProject(
   const groups = new Map<string, ProjectGroup>();
 
   for (const session of sessions) {
-    const key = extractProjectKey(session.cwd, session.repoRoot || undefined);
+    const key = extractProjectKey(
+      session.cwd,
+      session.repoRoot || undefined,
+      session.isContainerized,
+    );
     const label = extractProjectLabel(key);
 
     if (!groups.has(key)) {

@@ -764,6 +764,29 @@ describe("GET /api/sessions", () => {
       totalLinesRemoved: 0,
     });
   });
+
+  it("prefers bridge cwd over launcher cwd when available", async () => {
+    const sessions = [
+      { sessionId: "s1", state: "running", cwd: "/workspace" },
+    ];
+    launcher.listSessions.mockReturnValue(sessions);
+    vi.mocked(sessionNames.getAllNames).mockReturnValue({});
+    bridge.getAllSessions.mockReturnValue([
+      {
+        session_id: "s1",
+        cwd: "/home/ubuntu/companion",
+      },
+    ]);
+
+    const res = await app.request("/api/sessions", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json[0]).toMatchObject({
+      sessionId: "s1",
+      cwd: "/home/ubuntu/companion",
+    });
+  });
 });
 
 describe("GET /api/sessions/:id", () => {

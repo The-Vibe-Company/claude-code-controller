@@ -136,6 +136,19 @@ function runGitCommand(sessionId: string, state: SessionState, command: string):
   }).trim();
 }
 
+function mapContainerPathToHost(sessionId: string, state: SessionState, pathValue: string): string {
+  if (!state.is_containerized || !pathValue) return pathValue;
+  const container = containerManager.getContainer(sessionId);
+  const containerCwd = (container?.containerCwd || "/workspace").replace(/\/+$/, "") || "/";
+  const hostCwd = (container?.hostCwd || state.cwd || "").replace(/\/+$/, "") || "/";
+
+  if (pathValue === containerCwd) return hostCwd;
+  if (containerCwd !== "/" && pathValue.startsWith(`${containerCwd}/`)) {
+    return `${hostCwd}${pathValue.slice(containerCwd.length)}`;
+  }
+  return pathValue;
+}
+
 function resolveGitInfo(sessionId: string, state: SessionState): void {
   if (!state.cwd) return;
   // Preserve is_containerized — it's set during session launch, not derived from git
@@ -168,6 +181,7 @@ function resolveGitInfo(sessionId: string, state: SessionState): void {
       } else {
         state.repo_root = runGitCommand(sessionId, state, "git rev-parse --show-toplevel 2>/dev/null");
       }
+      state.repo_root = mapContainerPathToHost(sessionId, state, state.repo_root);
     } catch { /* ignore */ }
 
     try {

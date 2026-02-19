@@ -407,9 +407,42 @@ describe("CLI handlers", () => {
     const state = bridge.getSession("s1")!.state;
     expect(state.cwd).toBe("/Users/stan/Dev/myproject");
     expect(state.git_branch).toBe("container-branch");
-    expect(state.repo_root).toBe("/workspace");
+    expect(state.repo_root).toBe("/Users/stan/Dev/myproject");
     expect(state.git_behind).toBe(1);
     expect(state.git_ahead).toBe(3);
+    expect(getContainerSpy).toHaveBeenCalledWith("s1");
+    getContainerSpy.mockRestore();
+  });
+
+  it("handleCLIMessage: maps nested container repo_root paths back to host paths", () => {
+    bridge.markContainerized("s1", "/Users/stan/Dev/myproject");
+    const getContainerSpy = vi.spyOn(containerManager, "getContainer").mockReturnValue({
+      containerId: "abc123def456",
+      name: "companion-test",
+      image: "the-companion:latest",
+      portMappings: [],
+      hostCwd: "/Users/stan/Dev/myproject",
+      containerCwd: "/workspace",
+      state: "running",
+    });
+
+    mockExecSync.mockImplementation((cmd: string) => {
+      if (!cmd.startsWith("docker exec abc123def456 sh -lc ")) {
+        throw new Error(`unexpected command: ${cmd}`);
+      }
+      if (cmd.includes("--abbrev-ref HEAD")) return "container-branch\n";
+      if (cmd.includes("--git-dir")) return ".git\n";
+      if (cmd.includes("--show-toplevel")) return "/workspace/packages/api\n";
+      if (cmd.includes("--left-right --count")) return "0\t0\n";
+      throw new Error(`unknown git cmd: ${cmd}`);
+    });
+
+    const cli = makeCliSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleCLIMessage(cli, makeInitMsg({ cwd: "/workspace" }));
+
+    const state = bridge.getSession("s1")!.state;
+    expect(state.repo_root).toBe("/Users/stan/Dev/myproject/packages/api");
     expect(getContainerSpy).toHaveBeenCalledWith("s1");
     getContainerSpy.mockRestore();
   });
