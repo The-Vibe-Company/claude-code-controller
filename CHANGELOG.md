@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.54.0...the-companion-v0.54.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* **server:** resolve branch from containerized session git state ([#340](https://github.com/The-Vibe-Company/companion/issues/340)) ([304092d](https://github.com/The-Vibe-Company/companion/commit/304092df1c2e3ce8eceaa3c2c39917beb94b2cdb))
+
 ## [0.54.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.53.1...the-companion-v0.54.0) (2026-02-19)
 
 
