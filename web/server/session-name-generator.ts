@@ -12,7 +12,6 @@ const nouns = [
   "Fern", "Harbor", "Iris", "Jade", "Lotus", "Mesa", "Nova", "Orbit", "Pebble", "Summit",
 ];
 
-/** Simple string hash (djb2) — deterministic, no crypto needed. */
 function hashString(s: string): number {
   let hash = 5381;
   for (let i = 0; i < s.length; i++) {
@@ -21,7 +20,6 @@ function hashString(s: string): number {
   return hash;
 }
 
-/** Generate a deterministic session name from a session ID. */
 export function generateSessionName(sessionId: string): string {
   const h = hashString(sessionId);
   const adj = adjectives[h % adjectives.length]!;

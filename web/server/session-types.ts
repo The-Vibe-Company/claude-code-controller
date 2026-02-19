@@ -173,7 +173,7 @@ export type ContentBlock =
 export type BrowserOutgoingMessage =
   | { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[]; client_msg_id?: string }
   | { type: "permission_response"; request_id: string; behavior: "allow" | "deny"; updated_input?: Record<string, unknown>; updated_permissions?: PermissionUpdate[]; message?: string; client_msg_id?: string }
-  | { type: "session_subscribe"; last_seq: number }
+  | { type: "session_subscribe"; last_seq: number; client_id?: string }
   | { type: "session_ack"; last_seq: number }
   | { type: "interrupt"; client_msg_id?: string }
   | { type: "set_model"; model: string; client_msg_id?: string }
@@ -199,7 +199,7 @@ export type BrowserIncomingMessageBase =
   | { type: "error"; message: string }
   | { type: "cli_disconnected" }
   | { type: "cli_connected" }
-  | { type: "user_message"; content: string; timestamp: number; id?: string }
+  | { type: "user_message"; content: string; timestamp: number; id?: string; sender_client_id?: string }
   | { type: "message_history"; messages: BrowserIncomingMessage[] }
   | { type: "event_replay"; events: BufferedBrowserEvent[] }
   | { type: "session_name_update"; name: string }

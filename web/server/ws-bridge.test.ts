@@ -1038,7 +1038,7 @@ describe("Browser message routing", () => {
     browser.send.mockClear();
   });
 
-  it("user_message: sends NDJSON to CLI and stores in history", () => {
+  it("user_message: sends NDJSON to CLI, stores in history, and broadcasts to browsers", () => {
     bridge.handleBrowserMessage(browser, JSON.stringify({
       type: "user_message",
       content: "What is 2+2?",
@@ -1059,6 +1059,17 @@ describe("Browser message routing", () => {
     if (session.messageHistory[0].type === "user_message") {
       expect(session.messageHistory[0].content).toBe("What is 2+2?");
     }
+
+    // Should broadcast user message to all connected browsers
+    const browserCalls = browser.send.mock.calls;
+    const userMsgBroadcast = browserCalls.find((call: unknown[]) => {
+      const parsed = JSON.parse(call[0] as string);
+      return parsed.type === "user_message";
+    });
+    expect(userMsgBroadcast).toBeDefined();
+    const broadcastMsg = JSON.parse(userMsgBroadcast![0] as string);
+    expect(broadcastMsg.content).toBe("What is 2+2?");
+    expect(broadcastMsg.timestamp).toBeDefined();
   });
 
   it("user_message: queues when CLI not connected", () => {

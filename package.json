@@ -7,6 +7,8 @@
     "dev": "cd web && bun run dev",
     "build": "cd web && bun run build",
     "start": "cd web && bun run start",
+    "tui": "cd packages/companion-tui && bun run tui",
+    "tui:typecheck": "cd packages/companion-tui && bun run typecheck",
     "prepare": "husky"
   },
   "author": "The Vibe Company",

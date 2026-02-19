@@ -1,6 +1,5 @@
 import { useStore } from "./store.js";
 import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
-import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
 const sockets = new Map<string, WebSocket>();
@@ -141,6 +140,9 @@ function nextClientMsgId(): string {
   return `cmsg-${Date.now()}-${++clientMsgCounter}`;
 }
 
+// Stable client identity for this tab — used to identify our own echoed messages
+const clientId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const IDEMPOTENT_OUTGOING_TYPES = new Set<BrowserOutgoingMessage["type"]>([
   "user_message",
   "permission_response",
@@ -236,11 +238,6 @@ function handleParsedMessage(
       store.setCliConnected(sessionId, true);
       if (!existingSession) {
         store.setSessionStatus(sessionId, "idle");
-      }
-      if (!store.sessionNames.has(sessionId)) {
-        const existingNames = new Set(store.sessionNames.values());
-        const name = generateUniqueSessionName(existingNames);
-        store.setSessionName(sessionId, name);
       }
       break;
     }
@@ -455,6 +452,18 @@ function handleParsedMessage(
       break;
     }
 
+    case "user_message": {
+      // Skip our own echoes; show messages from other clients
+      if (data.sender_client_id === clientId) break;
+      store.appendMessage(sessionId, {
+        id: data.id || nextId(),
+        role: "user",
+        content: data.content,
+        timestamp: data.timestamp,
+      });
+      break;
+    }
+
     case "error": {
       store.appendMessage(sessionId, {
         id: nextId(),
@@ -477,10 +486,8 @@ function handleParsedMessage(
     }
 
     case "session_name_update": {
-      // Only apply auto-name if user hasn't manually renamed (still has random Adj+Noun name)
       const currentName = store.sessionNames.get(sessionId);
-      const isRandomName = currentName && /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(currentName);
-      if (!currentName || isRandomName) {
+      if (currentName !== data.name) {
         store.setSessionName(sessionId, data.name);
         store.markRecentlyRenamed(sessionId);
       }
@@ -592,7 +599,7 @@ export function connectSession(sessionId: string) {
   ws.onopen = () => {
     useStore.getState().setConnectionStatus(sessionId, "connected");
     const lastSeq = getLastSeq(sessionId);
-    ws.send(JSON.stringify({ type: "session_subscribe", last_seq: lastSeq }));
+    ws.send(JSON.stringify({ type: "session_subscribe", last_seq: lastSeq, client_id: clientId }));
     // Clear any reconnect timer
     const timer = reconnectTimers.get(sessionId);
     if (timer) {

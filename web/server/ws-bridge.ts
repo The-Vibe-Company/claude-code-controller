@@ -40,6 +40,7 @@ interface BrowserSocketData {
   sessionId: string;
   subscribed?: boolean;
   lastAckSeq?: number;
+  clientId?: string;
 }
 
 interface TerminalSocketData {
@@ -948,6 +949,9 @@ export class WsBridge {
     ws?: ServerWebSocket<SocketData>,
   ) {
     if (msg.type === "session_subscribe") {
+      if (ws && msg.client_id) {
+        (ws.data as BrowserSocketData).clientId = msg.client_id;
+      }
       this.handleSessionSubscribe(session, ws, msg.last_seq);
       return;
     }
@@ -973,12 +977,16 @@ export class WsBridge {
       // Store user messages in history for replay with stable ID for dedup on reconnect
       if (msg.type === "user_message") {
         const ts = Date.now();
-        session.messageHistory.push({
+        const senderClientId = ws ? (ws.data as BrowserSocketData).clientId : undefined;
+        const userBrowserMsg: BrowserIncomingMessage = {
           type: "user_message",
           content: msg.content,
           timestamp: ts,
           id: `user-${ts}-${this.userMsgCounter++}`,
-        });
+          ...(senderClientId ? { sender_client_id: senderClientId } : {}),
+        };
+        session.messageHistory.push(userBrowserMsg);
+        this.broadcastToBrowsers(session, userBrowserMsg);
         this.persistSession(session);
       }
       if (msg.type === "permission_response") {
@@ -1001,7 +1009,7 @@ export class WsBridge {
     // Claude Code path (existing logic)
     switch (msg.type) {
       case "user_message":
-        this.handleUserMessage(session, msg);
+        this.handleUserMessage(session, msg, ws);
         break;
 
       case "permission_response":
@@ -1114,16 +1122,23 @@ export class WsBridge {
 
   private handleUserMessage(
     session: Session,
-    msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] }
+    msg: { type: "user_message"; content: string; session_id?: string; images?: { media_type: string; data: string }[] },
+    ws?: ServerWebSocket<SocketData>,
   ) {
     // Store user message in history for replay with stable ID for dedup on reconnect
     const ts = Date.now();
-    session.messageHistory.push({
+    const senderClientId = ws ? (ws.data as BrowserSocketData).clientId : undefined;
+    const userBrowserMsg: BrowserIncomingMessage = {
       type: "user_message",
       content: msg.content,
       timestamp: ts,
       id: `user-${ts}-${this.userMsgCounter++}`,
-    });
+      ...(senderClientId ? { sender_client_id: senderClientId } : {}),
+    };
+    session.messageHistory.push(userBrowserMsg);
+
+    // Broadcast to all browsers so multi-client setups (TUI + web UI) see each other's input
+    this.broadcastToBrowsers(session, userBrowserMsg);
 
     // Build content: if images are present, use content block array; otherwise plain string
     let content: string | unknown[];

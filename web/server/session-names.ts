@@ -48,6 +48,15 @@ export function setName(sessionId: string, name: string): void {
   persist();
 }
 
+export function setNameIfMissing(sessionId: string, name: string): string {
+  ensureLoaded();
+  const existing = names[sessionId];
+  if (existing) return existing;
+  names[sessionId] = name;
+  persist();
+  return name;
+}
+
 export function getAllNames(): Record<string, string> {
   ensureLoaded();
   return { ...names };

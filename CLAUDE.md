@@ -22,6 +22,9 @@ cd web && bun run typecheck
 # Production build + serve
 cd web && bun run build && bun run start
 
+# Companion TUI package
+cd packages/companion-tui && bun install && bun run tui
+
 # Landing page (thecompanion.sh) — idempotent: starts if down, no-op if up
 # IMPORTANT: Always use this script to run the landing page. Never cd into landing/ and run bun/vite manually.
 ./scripts/landing-start.sh          # start
@@ -63,7 +66,7 @@ Browser (React) ←→ WebSocket ←→ Hono Server (Bun) ←→ WebSocket (NDJS
 4. Server bridges messages between CLI WebSocket and browser WebSocket
 5. Tool calls arrive as `control_request` (subtype `can_use_tool`) — browser renders approval UI, server relays `control_response` back
 
-### All code lives under `web/`
+### Main app code lives under `web/`
 
 - **`web/server/`** — Hono + Bun backend (runs on port 3456)
   - `index.ts` — Server bootstrap, Bun.serve with dual WebSocket upgrade (CLI vs browser)
@@ -83,6 +86,13 @@ Browser (React) ←→ WebSocket ←→ Hono Server (Bun) ←→ WebSocket (NDJS
   - `components/` — UI: `ChatView`, `MessageFeed`, `MessageBubble`, `ToolBlock`, `Composer`, `Sidebar`, `TopBar`, `HomePage`, `TaskPanel`, `PermissionBanner`, `EnvManager`, `Playground`.
 
 - **`web/bin/cli.ts`** — CLI entry point (`bunx the-companion`). Sets `__COMPANION_PACKAGE_ROOT` and imports the server.
+
+### Companion TUI package
+
+- **`packages/companion-tui/`** — standalone terminal client package
+  - `src/tui.ts` — main TUI entrypoint and rendering flow
+  - `src/companion-client.ts` — WebSocket/REST client for Companion server APIs
+  - `src/types.ts` — browser protocol message types shared by the TUI client
 
 ### WebSocket Protocol
 

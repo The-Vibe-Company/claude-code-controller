@@ -17,6 +17,7 @@ import * as promptManager from "./prompt-manager.js";
 import * as cronStore from "./cron-store.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
+import { generateSessionName } from "./session-name-generator.js";
 import { containerManager, ContainerManager, type ContainerConfig, type ContainerInfo } from "./container-manager.js";
 import type { CreationStepId } from "./session-types.js";
 import { hasContainerClaudeAuth } from "./claude-container-auth.js";
@@ -316,7 +317,14 @@ export function createRoutes(
         });
       }
 
-      return c.json(session);
+      const sessionName = sessionNames.setNameIfMissing(
+        session.sessionId,
+        generateSessionName(session.sessionId),
+      );
+      return c.json({
+        ...session,
+        name: sessionName,
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[routes] Failed to create session:", msg);
@@ -630,12 +638,17 @@ export function createRoutes(
         await emitProgress(stream, "launching_cli", "Session started", "done");
 
         // --- Done ---
+        const sessionName = sessionNames.setNameIfMissing(
+          session.sessionId,
+          generateSessionName(session.sessionId),
+        );
         await stream.writeSSE({
           event: "done",
           data: JSON.stringify({
             sessionId: session.sessionId,
             state: session.state,
             cwd: session.cwd,
+            name: sessionName,
           }),
         });
       } catch (e: unknown) {
@@ -651,14 +664,16 @@ export function createRoutes(
 
   api.get("/sessions", (c) => {
     const sessions = launcher.listSessions();
-    const names = sessionNames.getAllNames();
     const bridgeStates = wsBridge.getAllSessions();
     const bridgeMap = new Map(bridgeStates.map((s) => [s.session_id, s]));
     const enriched = sessions.map((s) => {
       const bridge = bridgeMap.get(s.sessionId);
+      const fallbackName = s.name?.trim() || generateSessionName(s.sessionId);
+      const name = sessionNames.setNameIfMissing(s.sessionId, fallbackName);
       return {
         ...s,
-        name: names[s.sessionId] ?? s.name,
+        name,
+        numTurns: bridge?.num_turns ?? 0,
         gitBranch: bridge?.git_branch || "",
         gitAhead: bridge?.git_ahead || 0,
         gitBehind: bridge?.git_behind || 0,
@@ -684,8 +699,11 @@ export function createRoutes(
     }
     const session = launcher.getSession(id);
     if (!session) return c.json({ error: "Session not found" }, 404);
-    sessionNames.setName(id, body.name.trim());
-    return c.json({ ok: true, name: body.name.trim() });
+    const name = body.name.trim();
+    sessionNames.setName(id, name);
+    session.name = name;
+    wsBridge.broadcastNameUpdate(id, name);
+    return c.json({ ok: true, name });
   });
 
   api.post("/sessions/:id/kill", async (c) => {

@@ -1,0 +1,29 @@
+{
+  "name": "companion-tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Terminal UI client for The Companion",
+  "bin": {
+    "companion-tui": "./src/tui.ts"
+  },
+  "scripts": {
+    "tui": "bun run src/tui.ts",
+    "start": "bun run src/tui.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.53.0",
+    "@mariozechner/pi-tui": "^0.53.0",
+    "chalk": "^5.6.2",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.5",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  },
+  "patchedDependencies": {
+    "@mariozechner/pi-coding-agent@0.53.0": "patches/@mariozechner%2Fpi-coding-agent@0.53.0.patch"
+  }
+}

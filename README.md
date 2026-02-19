@@ -28,6 +28,21 @@ Alternative foreground command:
 the-companion serve
 ```
 
+## Companion TUI package
+The repository now includes a terminal companion client package at `packages/companion-tui`.
+
+Run it from the repo root:
+```bash
+bun run tui
+```
+
+Or directly:
+```bash
+cd packages/companion-tui
+bun install
+bun run tui -- --host localhost:3456
+```
+
 ## Why this is useful
 - **Parallel sessions**: work on multiple tasks without juggling terminals.
 - **Full visibility**: see streaming output, tool calls, and tool results in one timeline.
