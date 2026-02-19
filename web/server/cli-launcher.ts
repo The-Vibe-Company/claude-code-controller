@@ -79,6 +79,8 @@ export interface SdkSessionInfo {
   containerName?: string;
   /** Docker image used for the container */
   containerImage?: string;
+  /** Runtime cwd inside container for agent RPC calls (e.g. "/workspace"). */
+  containerCwd?: string;
 }
 
 export interface LaunchOptions {
@@ -102,6 +104,8 @@ export interface LaunchOptions {
   containerName?: string;
   /** Docker image used for the container */
   containerImage?: string;
+  /** Runtime cwd inside the container (typically "/workspace"). */
+  containerCwd?: string;
 }
 
 /**
@@ -215,6 +219,7 @@ export class CliLauncher {
       info.containerId = options.containerId;
       info.containerName = options.containerName;
       info.containerImage = options.containerImage;
+      info.containerCwd = options.containerCwd || "/workspace";
     }
 
     this.sessions.set(sessionId, info);
@@ -314,6 +319,7 @@ export class CliLauncher {
         containerId: info.containerId,
         containerName: info.containerName,
         containerImage: info.containerImage,
+        containerCwd: info.containerCwd,
         env: runtimeEnv,
       });
     } else {
@@ -650,6 +656,7 @@ export class CliLauncher {
     const adapter = new CodexAdapter(proc, sessionId, {
       model: options.model,
       cwd: info.cwd,
+      executionCwd: options.containerId ? (info.containerCwd || "/workspace") : info.cwd,
       approvalMode: options.permissionMode,
       threadId: info.cliSessionId,
       sandbox: options.codexSandbox,

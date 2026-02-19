@@ -348,6 +348,36 @@ describe("CodexAdapter", () => {
     expect(allWritten).toContain("thr_123");
   });
 
+  it("uses executionCwd for turn/start when receiving user_message", async () => {
+    const adapter = new CodexAdapter(proc as never, "test-session", {
+      model: "o4-mini",
+      cwd: "/Users/stan/Dev/myproject",
+      executionCwd: "/workspace",
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Complete initialization
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Clear written chunks to focus on turn/start
+    stdin.chunks = [];
+
+    adapter.sendBrowserMessage({
+      type: "user_message",
+      content: "Fix the bug",
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = stdin.chunks.join("");
+    expect(allWritten).toContain('"method":"turn/start"');
+    expect(allWritten).toContain('"cwd":"/workspace"');
+  });
+
   it("sends approval response when receiving permission_response", async () => {
     const messages: BrowserIncomingMessage[] = [];
     const adapter = new CodexAdapter(proc as never, "test-session", { model: "o4-mini" });
@@ -777,6 +807,31 @@ describe("CodexAdapter", () => {
     expect(allWritten).toContain('"cwd":"/workspace/app"');
   });
 
+  it("uses executionCwd for thread/start while preserving session cwd in session_init", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", {
+      model: "gpt-5.2-codex",
+      cwd: "/Users/stan/Dev/myproject",
+      executionCwd: "/workspace",
+    });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = stdin.chunks.join("");
+    expect(allWritten).toContain('"method":"thread/start"');
+    expect(allWritten).toContain('"cwd":"/workspace"');
+
+    const initMsg = messages.find((m) => m.type === "session_init");
+    expect(initMsg).toBeDefined();
+    const session = (initMsg as unknown as { session: { cwd: string } }).session;
+    expect(session.cwd).toBe("/Users/stan/Dev/myproject");
+  });
+
   // ── Init error handling ────────────────────────────────────────────────────
 
   it("calls onInitError when initialization fails", async () => {
@@ -854,6 +909,27 @@ describe("CodexAdapter", () => {
     expect(allWritten).toContain('"method":"thread/resume"');
     expect(allWritten).toContain('"threadId":"thr_existing_456"');
     expect(allWritten).not.toContain('"method":"thread/start"');
+  });
+
+  it("uses executionCwd for thread/resume when provided", async () => {
+    const mock = createMockProcess();
+
+    new CodexAdapter(mock.proc as never, "test-session", {
+      model: "gpt-5.3-codex",
+      cwd: "/Users/stan/Dev/myproject",
+      executionCwd: "/workspace",
+      threadId: "thr_existing_456",
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    mock.stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+    mock.stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_existing_456" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const allWritten = mock.stdin.chunks.join("");
+    expect(allWritten).toContain('"method":"thread/resume"');
+    expect(allWritten).toContain('"cwd":"/workspace"');
   });
 
   // ── Backfill tool_use when item/started is missing ──────────────────────────
@@ -1816,6 +1892,43 @@ describe("CodexAdapter", () => {
     expect(perm.request.input.command).toBe("npm install");
     expect(perm.request.input.cwd).toBe("/workspace");
     expect(perm.request.description).toBe("Installing dependencies");
+  });
+
+  it("falls back to executionCwd for execCommandApproval when params.cwd is missing", async () => {
+    const messages: BrowserIncomingMessage[] = [];
+    const adapter = new CodexAdapter(proc as never, "test-session", {
+      model: "o4-mini",
+      cwd: "/Users/stan/Dev/myproject",
+      executionCwd: "/workspace",
+    });
+    adapter.onBrowserMessage((msg) => messages.push(msg));
+
+    await new Promise((r) => setTimeout(r, 50));
+    stdout.push(JSON.stringify({ id: 1, result: { userAgent: "codex" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    stdout.push(JSON.stringify({ id: 2, result: { thread: { id: "thr_123" } } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    stdout.push(JSON.stringify({
+      method: "execCommandApproval",
+      id: 902,
+      params: {
+        conversationId: "thr_123",
+        callId: "call_exec_3",
+        command: ["npm", "test"],
+        reason: "Run tests",
+        parsedCmd: [],
+      },
+    }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    const permReqs = messages.filter((m) => m.type === "permission_request");
+    expect(permReqs.length).toBe(1);
+    const perm = permReqs[0] as unknown as {
+      request: { input: { command: string; cwd: string } };
+    };
+    expect(perm.request.input.command).toBe("npm test");
+    expect(perm.request.input.cwd).toBe("/workspace");
   });
 
   it("responds to execCommandApproval with ReviewDecision format (denied)", async () => {

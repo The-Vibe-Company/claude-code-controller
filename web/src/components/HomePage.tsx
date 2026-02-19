@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo } from "../api.js";
+import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -61,6 +61,10 @@ export function HomePage() {
   const [selectedEnv, setSelectedEnv] = useState(() => localStorage.getItem("cc-selected-env") || "");
   const [showEnvDropdown, setShowEnvDropdown] = useState(false);
   const [showEnvManager, setShowEnvManager] = useState(false);
+
+  // Docker image readiness for selected env
+  const [envImageState, setEnvImageState] = useState<ImagePullState | null>(null);
+  const envImagePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -139,6 +143,51 @@ export function HomePage() {
       // Fall back to hardcoded models silently
     });
   }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When selectedEnv changes, check its Docker image status and auto-pull if needed
+  useEffect(() => {
+    // Cleanup any existing poll
+    if (envImagePollRef.current) {
+      clearInterval(envImagePollRef.current);
+      envImagePollRef.current = null;
+    }
+    setEnvImageState(null);
+
+    if (!selectedEnv) return;
+    const env = envs.find((e) => e.slug === selectedEnv);
+    if (!env) return;
+    const effectiveImage = env.imageTag || env.baseImage;
+    if (!effectiveImage) return;
+
+    // Check image status
+    const checkAndPull = () => {
+      api.getImageStatus(effectiveImage).then((state) => {
+        setEnvImageState(state);
+        // Auto-trigger pull if image is not available
+        if (state.status === "idle") {
+          api.pullImage(effectiveImage).catch(() => {});
+        }
+        // Stop polling once settled
+        if (state.status === "ready" || state.status === "error") {
+          if (envImagePollRef.current) {
+            clearInterval(envImagePollRef.current);
+            envImagePollRef.current = null;
+          }
+        }
+      }).catch(() => {});
+    };
+
+    checkAndPull();
+    // Poll while pulling
+    envImagePollRef.current = setInterval(checkAndPull, 2000);
+
+    return () => {
+      if (envImagePollRef.current) {
+        clearInterval(envImagePollRef.current);
+        envImagePollRef.current = null;
+      }
+    };
+  }, [selectedEnv, envs]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -781,6 +830,25 @@ export function HomePage() {
               <span className="max-w-[120px] truncate">
                 {selectedEnv ? envs.find((e) => e.slug === selectedEnv)?.name || "Env" : "No env"}
               </span>
+              {/* Image readiness dot */}
+              {selectedEnv && envImageState && envImageState.status !== "idle" && (
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    envImageState.status === "ready"
+                      ? "bg-green-500"
+                      : envImageState.status === "pulling"
+                        ? "bg-amber-500 animate-pulse"
+                        : "bg-cc-error"
+                  }`}
+                  title={
+                    envImageState.status === "ready"
+                      ? "Docker image ready"
+                      : envImageState.status === "pulling"
+                        ? "Pulling Docker image..."
+                        : `Image error: ${envImageState.error || "unknown"}`
+                  }
+                />
+              )}
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
                 <path d="M4 6l4 4 4-4" />
               </svg>

@@ -421,6 +421,92 @@ describe("AskUserQuestionDisplay", () => {
     expect(screen.queryByText("Allow")).toBeNull();
     expect(screen.queryByText("Deny")).toBeNull();
   });
+
+  it("removes Other send button and includes typed Other answer in submit", () => {
+    const perm = makePermission({
+      request_id: "req-ask-2",
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [
+          {
+            header: "Q1",
+            question: "Pick one",
+            options: [{ label: "A", description: "Option A" }],
+          },
+          {
+            header: "Q2",
+            question: "Add context",
+            options: [{ label: "B", description: "Option B" }],
+          },
+        ],
+      },
+    });
+    render(<PermissionBanner permission={perm} sessionId="s1" />);
+
+    const otherButtons = screen.getAllByText("Other...");
+    fireEvent.click(otherButtons[1]);
+    const input = screen.getByPlaceholderText("Type your answer...");
+    fireEvent.change(input, { target: { value: "Custom response" } });
+
+    expect(screen.queryByText("Send")).toBeNull();
+    fireEvent.click(screen.getByText("Submit answers"));
+
+    const payload = mockSendToSession.mock.calls[0][1];
+    expect(payload.updated_input.answers).toEqual({ "1": "Custom response" });
+  });
+
+  it("shows Enter hint for single-question custom Other input", () => {
+    const perm = makePermission({
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [
+          {
+            header: "Q",
+            question: "Choose",
+            options: [{ label: "X", description: "Option X" }],
+          },
+        ],
+      },
+    });
+    render(<PermissionBanner permission={perm} sessionId="s1" />);
+
+    fireEvent.click(screen.getByText("Other..."));
+    expect(screen.getByText("Press Enter to submit")).toBeTruthy();
+  });
+
+  it("clears custom Other answer when toggled off before submit", () => {
+    const perm = makePermission({
+      request_id: "req-ask-3",
+      tool_name: "AskUserQuestion",
+      input: {
+        questions: [
+          {
+            header: "Q1",
+            question: "Primary",
+            options: [{ label: "Keep", description: "Use default" }],
+          },
+          {
+            header: "Q2",
+            question: "Details",
+            options: [{ label: "Preset", description: "Use preset value" }],
+          },
+        ],
+      },
+    });
+    render(<PermissionBanner permission={perm} sessionId="s1" />);
+
+    const otherButtons = screen.getAllByText("Other...");
+    fireEvent.click(otherButtons[1]);
+    const input = screen.getByPlaceholderText("Type your answer...");
+    fireEvent.change(input, { target: { value: "Stale answer" } });
+    fireEvent.click(otherButtons[1]); // toggle off
+
+    fireEvent.click(screen.getByText("Keep"));
+    fireEvent.click(screen.getByText("Submit answers"));
+
+    const payload = mockSendToSession.mock.calls[0][1];
+    expect(payload.updated_input.answers).toEqual({ "0": "Keep" });
+  });
 });
 
 // ─── ExitPlanModeDisplay ─────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useStore } from "../store.js";
 import { sendToSession } from "../ws.js";
-import { api } from "../api.js";
 import { CLAUDE_MODES, CODEX_MODES } from "../utils/backends.js";
+import { api, type SavedPrompt } from "../api.js";
 import type { ModeOption } from "../utils/backends.js";
 
 let idCounter = 0;
@@ -31,16 +31,31 @@ interface CommandItem {
   type: "command" | "skill";
 }
 
+interface MentionContext {
+  query: string;
+  start: number;
+  end: number;
+}
+
 export function Composer({ sessionId }: { sessionId: string }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
+  const [mentionMenuOpen, setMentionMenuOpen] = useState(false);
+  const [mentionMenuIndex, setMentionMenuIndex] = useState(0);
+  const [savePromptOpen, setSavePromptOpen] = useState(false);
+  const [savePromptName, setSavePromptName] = useState("");
+  const [savePromptError, setSavePromptError] = useState<string | null>(null);
+  const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [caretPos, setCaretPos] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const pendingSelectionRef = useRef<number | null>(null);
   const cliConnected = useStore((s) => s.cliConnected);
-  const assistantSessionId = useStore((s) => s.assistantSessionId);
   const sessionData = useStore((s) => s.sessions.get(sessionId));
   const previousMode = useStore((s) => s.previousPermissionMode.get(sessionId) || "acceptEdits");
 
@@ -50,6 +65,22 @@ export function Composer({ sessionId }: { sessionId: string }) {
   const isCodex = sessionData?.backend_type === "codex";
   const modes: ModeOption[] = isCodex ? CODEX_MODES : CLAUDE_MODES;
   const modeLabel = modes.find((m) => m.value === currentMode)?.label?.toLowerCase() || currentMode;
+
+  const refreshPrompts = useCallback(async () => {
+    setPromptsLoading(true);
+    try {
+      const prompts = await api.listPrompts(sessionData?.cwd, "global");
+      setSavedPrompts(prompts.filter((p) => !!p.name.trim()));
+    } catch {
+      setSavedPrompts([]);
+    } finally {
+      setPromptsLoading(false);
+    }
+  }, [sessionData?.cwd]);
+
+  useEffect(() => {
+    void refreshPrompts();
+  }, [refreshPrompts]);
 
   // Build command list from session data
   const allCommands = useMemo<CommandItem[]>(() => {
@@ -78,6 +109,29 @@ export function Composer({ sessionId }: { sessionId: string }) {
     return allCommands.filter((cmd) => cmd.name.toLowerCase().includes(query));
   }, [text, slashMenuOpen, allCommands]);
 
+  const mentionContext = useMemo<MentionContext | null>(() => {
+    const prefix = text.slice(0, caretPos);
+    const match = prefix.match(/(^|\s)@([^\s@]*)$/);
+    if (!match || match.index === undefined) return null;
+    const start = prefix.length - match[0].length + match[1].length;
+    return {
+      query: match[2] || "",
+      start,
+      end: caretPos,
+    };
+  }, [text, caretPos]);
+
+  const filteredPrompts = useMemo(() => {
+    if (!mentionMenuOpen || !mentionContext) return [];
+    const query = mentionContext.query.toLowerCase();
+    if (!query) return savedPrompts;
+    const startsWith = savedPrompts.filter((p) => p.name.toLowerCase().startsWith(query));
+    const includes = savedPrompts.filter(
+      (p) => !p.name.toLowerCase().startsWith(query) && p.name.toLowerCase().includes(query),
+    );
+    return [...startsWith, ...includes];
+  }, [mentionMenuOpen, mentionContext, savedPrompts]);
+
   // Open/close menu based on text
   useEffect(() => {
     const shouldOpen = text.startsWith("/") && /^\/\S*$/.test(text) && allCommands.length > 0;
@@ -89,12 +143,28 @@ export function Composer({ sessionId }: { sessionId: string }) {
     }
   }, [text, allCommands.length, slashMenuOpen]);
 
+  useEffect(() => {
+    const shouldOpen = !slashMenuOpen && !!mentionContext;
+    if (shouldOpen && !mentionMenuOpen) {
+      setMentionMenuOpen(true);
+      setMentionMenuIndex(0);
+    } else if (!shouldOpen && mentionMenuOpen) {
+      setMentionMenuOpen(false);
+    }
+  }, [slashMenuOpen, mentionContext, mentionMenuOpen]);
+
   // Keep selected index in bounds
   useEffect(() => {
     if (slashMenuIndex >= filteredCommands.length) {
       setSlashMenuIndex(Math.max(0, filteredCommands.length - 1));
     }
   }, [filteredCommands.length, slashMenuIndex]);
+
+  useEffect(() => {
+    if (mentionMenuIndex >= filteredPrompts.length) {
+      setMentionMenuIndex(Math.max(0, filteredPrompts.length - 1));
+    }
+  }, [filteredPrompts.length, mentionMenuIndex]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -106,11 +176,39 @@ export function Composer({ sessionId }: { sessionId: string }) {
     }
   }, [slashMenuIndex, slashMenuOpen]);
 
+  useEffect(() => {
+    if (!mentionMenuRef.current || !mentionMenuOpen) return;
+    const items = mentionMenuRef.current.querySelectorAll("[data-prompt-index]");
+    const selected = items[mentionMenuIndex];
+    if (selected) {
+      selected.scrollIntoView({ block: "nearest" });
+    }
+  }, [mentionMenuIndex, mentionMenuOpen]);
+
+  useEffect(() => {
+    if (pendingSelectionRef.current === null || !textareaRef.current) return;
+    const next = pendingSelectionRef.current;
+    textareaRef.current.setSelectionRange(next, next);
+    pendingSelectionRef.current = null;
+  }, [text]);
+
   const selectCommand = useCallback((cmd: CommandItem) => {
     setText(`/${cmd.name} `);
     setSlashMenuOpen(false);
     textareaRef.current?.focus();
   }, []);
+
+  const selectPrompt = useCallback((prompt: SavedPrompt) => {
+    if (!mentionContext) return;
+    const insertion = `${prompt.content} `;
+    const nextText = `${text.slice(0, mentionContext.start)}${insertion}${text.slice(mentionContext.end)}`;
+    const nextCursor = mentionContext.start + insertion.length;
+    pendingSelectionRef.current = nextCursor;
+    setText(nextText);
+    setMentionMenuOpen(false);
+    setCaretPos(nextCursor);
+    textareaRef.current?.focus();
+  }, [mentionContext, text]);
 
   function handleSend() {
     const msg = text.trim();
@@ -134,6 +232,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
     setText("");
     setImages([]);
     setSlashMenuOpen(false);
+    setMentionMenuOpen(false);
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -171,6 +270,41 @@ export function Composer({ sessionId }: { sessionId: string }) {
       }
     }
 
+    if (mentionMenuOpen) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMentionMenuOpen(false);
+        return;
+      }
+    }
+
+    if (mentionMenuOpen && filteredPrompts.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionMenuIndex((i) => (i + 1) % filteredPrompts.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionMenuIndex((i) => (i - 1 + filteredPrompts.length) % filteredPrompts.length);
+        return;
+      }
+      if ((e.key === "Tab" && !e.shiftKey) || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        selectPrompt(filteredPrompts[mentionMenuIndex]);
+        return;
+      }
+    }
+
+    if (
+      mentionMenuOpen
+      && filteredPrompts.length === 0
+      && ((e.key === "Enter" && !e.shiftKey) || (e.key === "Tab" && !e.shiftKey))
+    ) {
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
       toggleMode();
@@ -184,9 +318,15 @@ export function Composer({ sessionId }: { sessionId: string }) {
 
   function handleInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     setText(e.target.value);
+    setCaretPos(e.target.selectionStart ?? e.target.value.length);
     const ta = e.target;
     ta.style.height = "auto";
     ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
+  }
+
+  function syncCaret() {
+    if (!textareaRef.current) return;
+    setCaretPos(textareaRef.current.selectionStart ?? 0);
   }
 
   function handleInterrupt() {
@@ -241,13 +381,34 @@ export function Composer({ sessionId }: { sessionId: string }) {
     }
   }
 
+  async function handleCreatePrompt() {
+    const content = text.trim();
+    const name = savePromptName.trim();
+    if (!content || !name) return;
+    const payload: { name: string; content: string; scope: "global" | "project"; cwd?: string } = {
+      name,
+      content,
+      scope: "global",
+    };
+    try {
+      await api.createPrompt(payload);
+      await refreshPrompts();
+      setSavePromptOpen(false);
+      setSavePromptName("");
+      setSavePromptError(null);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Could not save prompt.";
+      setSavePromptError(message);
+    }
+  }
+
   const sessionStatus = useStore((s) => s.sessionStatus);
   const isRunning = sessionStatus.get(sessionId) === "running";
   const canSend = text.trim().length > 0 && isConnected;
 
   return (
-    <div className="shrink-0 border-t border-cc-border bg-cc-card px-2 sm:px-4 py-2 sm:py-3">
-      <div className="max-w-3xl mx-auto">
+    <div className="shrink-0 px-2 sm:px-4 pt-2.5 sm:pt-3 pb-3 sm:pb-4 bg-transparent">
+      <div className="max-w-4xl mx-auto">
         {/* Image thumbnails */}
         {images.length > 0 && (
           <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -282,7 +443,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
         />
 
         {/* Unified input card */}
-        <div className={`relative bg-cc-input-bg border rounded-[14px] overflow-visible transition-colors ${
+        <div className={`relative bg-cc-input-bg/95 border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible transition-colors backdrop-blur-sm ${
           isPlan
             ? "border-cc-primary/40"
             : "border-cc-border focus-within:border-cc-primary/30"
@@ -324,116 +485,163 @@ export function Composer({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleInput}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={isConnected
-              ? (sessionId === assistantSessionId
-                ? "Ask the assistant to manage sessions, schedule tasks..."
-                : "Type a message... (/ for commands)")
-              : "Waiting for CLI connection..."}
-            disabled={!isConnected}
-            rows={1}
-            className="w-full px-4 pt-3 pb-1 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto"
-            style={{ minHeight: "36px", maxHeight: "200px" }}
-          />
-
-          {/* Git branch + lines info — hidden for assistant */}
-          {sessionData?.git_branch && sessionId !== assistantSessionId && (
-            <div className="flex items-center gap-2 px-2 sm:px-4 pb-1 text-[11px] text-cc-muted overflow-hidden">
-              <span className="flex items-center gap-1 truncate min-w-0">
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0 opacity-60">
-                  <path d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.116.862a2.25 2.25 0 10-.862.862A4.48 4.48 0 007.25 7.5h-1.5A2.25 2.25 0 003.5 9.75v.318a2.25 2.25 0 101.5 0V9.75a.75.75 0 01.75-.75h1.5a5.98 5.98 0 003.884-1.435A2.25 2.25 0 109.634 3.362zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                </svg>
-                <span className="truncate max-w-[100px] sm:max-w-[160px]">{sessionData.git_branch}</span>
-                {sessionData.is_containerized && (
-                  <span className="text-[10px] bg-blue-500/10 text-blue-400 px-1 rounded">container</span>
-                )}
-              </span>
-              {((sessionData.git_ahead || 0) > 0 || (sessionData.git_behind || 0) > 0) && (
-                <span className="flex items-center gap-0.5 text-[10px]">
-                  {(sessionData.git_ahead || 0) > 0 && <span className="text-green-500">{sessionData.git_ahead}&#8593;</span>}
-                  {(sessionData.git_behind || 0) > 0 && (
-                    <button
-                      className="text-cc-warning hover:text-amber-400 cursor-pointer hover:underline"
-                      title="Pull latest changes"
-                      onClick={() => {
-                        const cwd = sessionData.repo_root || sessionData.cwd;
-                        if (!cwd) return;
-                        api.gitPull(cwd).then((r) => {
-                          useStore.getState().updateSession(sessionId, {
-                            git_ahead: r.git_ahead,
-                            git_behind: r.git_behind,
-                          });
-                          if (!r.success) console.warn("[git pull]", r.output);
-                        }).catch((e) => console.error("[git pull]", e));
-                      }}
-                    >
-                      {sessionData.git_behind}&#8595;
-                    </button>
-                  )}
-                </span>
-              )}
-              {((sessionData.total_lines_added || 0) > 0 || (sessionData.total_lines_removed || 0) > 0) && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <span className="text-green-500">+{sessionData.total_lines_added || 0}</span>
-                  <span className="text-red-400">-{sessionData.total_lines_removed || 0}</span>
-                </span>
+          {/* @ prompt menu */}
+          {mentionMenuOpen && (
+            <div
+              ref={mentionMenuRef}
+              className="absolute left-2 right-2 bottom-full mb-1 max-h-[240px] overflow-y-auto bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 py-1"
+            >
+              {promptsLoading ? (
+                <div className="px-3 py-2 text-[12px] text-cc-muted">
+                  Searching prompts...
+                </div>
+              ) : filteredPrompts.length > 0 ? (
+                filteredPrompts.map((prompt, i) => (
+                  <button
+                    key={prompt.id}
+                    data-prompt-index={i}
+                    onClick={() => selectPrompt(prompt)}
+                    className={`w-full px-3 py-2 text-left flex items-center gap-2.5 transition-colors cursor-pointer ${
+                      i === mentionMenuIndex
+                        ? "bg-cc-hover"
+                        : "hover:bg-cc-hover/50"
+                    }`}
+                  >
+                    <span className="flex items-center justify-center w-6 h-6 rounded-md bg-cc-hover text-cc-muted shrink-0">
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+                        <path d="M2.5 8a5.5 5.5 0 1111 0v3a2.5 2.5 0 01-2.5 2.5h-1" strokeLinecap="round" />
+                        <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
+                      </svg>
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-medium text-cc-fg truncate">@{prompt.name}</div>
+                      <div className="text-[11px] text-cc-muted truncate">{prompt.content}</div>
+                    </div>
+                    <span className="text-[10px] text-cc-muted shrink-0">{prompt.scope}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-[12px] text-cc-muted">
+                  No prompts found.
+                </div>
               )}
             </div>
           )}
 
-          {/* Bottom toolbar */}
-          <div className="flex items-center justify-between px-2.5 pb-2.5">
-            {/* Left: mode indicator — static for assistant (always bypass) */}
-            {sessionId === assistantSessionId ? (
-              <span className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-medium text-cc-muted select-none">
+          {savePromptOpen && (
+            <div className="absolute left-2 right-2 bottom-full mb-1 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 p-3 space-y-2">
+              <div className="text-xs font-semibold text-cc-fg">Save prompt</div>
+              <input
+                value={savePromptName}
+                onChange={(e) => {
+                  setSavePromptName(e.target.value);
+                  if (savePromptError) setSavePromptError(null);
+                }}
+                placeholder="Prompt title"
+                className="w-full px-2 py-1.5 text-sm bg-cc-input-bg border border-cc-border rounded-md text-cc-fg focus:outline-none focus:border-cc-primary/40"
+              />
+              <div className="text-[11px] text-cc-muted">Scope: global • stored locally</div>
+              {savePromptError ? (
+                <div className="text-[11px] text-cc-error">{savePromptError}</div>
+              ) : null}
+              <div className="flex items-center gap-1.5 justify-end">
+                <button
+                  onClick={() => {
+                    setSavePromptOpen(false);
+                    setSavePromptError(null);
+                  }}
+                  className="px-2 py-1 text-[11px] rounded-md border border-cc-border text-cc-muted hover:text-cc-fg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreatePrompt}
+                  disabled={!savePromptName.trim() || !text.trim()}
+                  className={`px-2 py-1 text-[11px] rounded-md border ${
+                    savePromptName.trim() && text.trim()
+                      ? "border-cc-primary/40 text-cc-primary bg-cc-primary/8 cursor-pointer"
+                      : "border-cc-border text-cc-muted cursor-not-allowed"
+                  }`}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-end gap-2 px-2.5 py-2">
+            <button
+              onClick={toggleMode}
+              disabled={!isConnected || isCodex}
+              className={`mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold transition-all border select-none shrink-0 ${
+                !isConnected || isCodex
+                  ? "opacity-30 cursor-not-allowed text-cc-muted border-transparent"
+                  : isPlan
+                    ? "text-cc-primary border-cc-primary/30 bg-cc-primary/8 hover:bg-cc-primary/12 cursor-pointer"
+                    : "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+              }`}
+              title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
+            >
+              {isPlan ? (
+                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                  <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
+                  <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
+                </svg>
+              ) : (
                 <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                   <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
-                <span>bypass</span>
-              </span>
-            ) : (
-              <button
-                onClick={toggleMode}
-                disabled={!isConnected || isCodex}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[12px] font-medium transition-all select-none ${
-                  !isConnected || isCodex
-                    ? "opacity-30 cursor-not-allowed text-cc-muted"
-                    : isPlan
-                    ? "text-cc-primary hover:bg-cc-primary/10 cursor-pointer"
-                    : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
-                }`}
-                title={isCodex ? "Mode is fixed for Codex sessions" : "Toggle mode (Shift+Tab)"}
-              >
-                {isPlan ? (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                    <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
-                    <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                    <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                    <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                  </svg>
-                )}
-                <span>{modeLabel}</span>
-              </button>
-            )}
+              )}
+              <span>{modeLabel}</span>
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleInput}
+              onKeyDown={handleKeyDown}
+              onClick={syncCaret}
+              onKeyUp={syncCaret}
+              onPaste={handlePaste}
+              placeholder={isConnected
+                ? "Type a message... (/ + @)"
+                : "Waiting for CLI connection..."}
+              disabled={!isConnected}
+              rows={1}
+              className="flex-1 min-w-0 px-2 py-1.5 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto"
+              style={{ minHeight: "36px", maxHeight: "200px" }}
+            />
 
             {/* Right: image + send/stop */}
-            <div className="flex items-center gap-1">
+            <div className="mb-0.5 flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => {
+                  const defaultName = text.trim().slice(0, 32);
+                  setSavePromptName(defaultName || "");
+                  setSavePromptError(null);
+                  setSavePromptOpen((v) => !v);
+                }}
+                disabled={!isConnected || !text.trim()}
+                className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
+                  isConnected && text.trim()
+                    ? "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+                    : "text-cc-muted opacity-30 border-cc-border/60 cursor-not-allowed"
+                }`}
+                title="Save as prompt"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                  <path d="M4 2.75h8A1.25 1.25 0 0113.25 4v9.25L8 10.5l-5.25 2.75V4A1.25 1.25 0 014 2.75z" />
+                </svg>
+              </button>
+
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={!isConnected}
-                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
                   isConnected
-                    ? "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
-                    : "text-cc-muted opacity-30 cursor-not-allowed"
+                    ? "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
+                    : "text-cc-muted opacity-30 border-cc-border/60 cursor-not-allowed"
                 }`}
                 title="Upload image"
               >
@@ -447,7 +655,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               {isRunning ? (
                 <button
                   onClick={handleInterrupt}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-cc-error/10 hover:bg-cc-error/20 text-cc-error transition-colors cursor-pointer"
+                  className="flex items-center justify-center w-9 h-9 rounded-lg bg-cc-error/10 hover:bg-cc-error/20 text-cc-error transition-colors cursor-pointer"
                   title="Stop generation"
                 >
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
@@ -458,9 +666,9 @@ export function Composer({ sessionId }: { sessionId: string }) {
                 <button
                   onClick={handleSend}
                   disabled={!canSend}
-                  className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                  className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
                     canSend
-                      ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer"
+                      ? "bg-cc-primary hover:bg-cc-primary-hover text-white cursor-pointer shadow-[0_6px_20px_rgba(0,0,0,0.18)]"
                       : "bg-cc-hover text-cc-muted cursor-not-allowed"
                   }`}
                   title="Send message"
@@ -472,6 +680,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               )}
             </div>
           </div>
+
         </div>
       </div>
     </div>

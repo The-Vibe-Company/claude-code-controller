@@ -453,23 +453,28 @@ export { CodexRateLimitsSection, CodexTokenDetailsSection };
 export function TaskPanel({ sessionId }: { sessionId: string }) {
   const tasks = useStore((s) => s.sessionTasks.get(sessionId) || EMPTY_TASKS);
   const session = useStore((s) => s.sessions.get(sessionId));
-  const sdkBackendType = useStore((s) => s.sdkSessions.find((x) => x.sessionId === sessionId)?.backendType);
+  const sdk = useStore((s) => s.sdkSessions.find((x) => x.sessionId === sessionId));
+  const sdkBackendType = sdk?.backendType;
   const taskPanelOpen = useStore((s) => s.taskPanelOpen);
   const setTaskPanelOpen = useStore((s) => s.setTaskPanelOpen);
-  const isAssistant = useStore((s) => s.assistantSessionId === sessionId);
-
   if (!taskPanelOpen) return null;
 
   const completedCount = tasks.filter((t) => t.status === "completed").length;
   const isCodex = (session?.backend_type || sdkBackendType) === "codex";
   const showTasks = !!session && !isCodex;
+  const branch = session?.git_branch || sdk?.gitBranch;
+  const branchAhead = session?.git_ahead || 0;
+  const branchBehind = session?.git_behind || 0;
+  const lineAdds = session?.total_lines_added || 0;
+  const lineRemoves = session?.total_lines_removed || 0;
+  const branchCwd = session?.repo_root || session?.cwd || sdk?.cwd;
 
   return (
-    <aside className="w-[280px] h-full flex flex-col overflow-hidden bg-cc-card border-l border-cc-border">
+    <aside className="w-[320px] h-full flex flex-col overflow-hidden bg-cc-card border-l border-cc-border">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-cc-border">
         <span className="text-sm font-semibold text-cc-fg tracking-tight">
-          Session
+          Context
         </span>
         <button
           onClick={() => setTaskPanelOpen(false)}
@@ -498,8 +503,53 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
           <UsageLimitsSection sessionId={sessionId} />
         )}
 
-        {/* GitHub PR status — hidden for assistant (no git context) */}
-        {!isAssistant && <GitHubPRSection sessionId={sessionId} />}
+        {/* Git branch snapshot — moved from composer for cleaner input surface */}
+        {branch && (
+          <div className="shrink-0 px-4 py-3 border-b border-cc-border space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-cc-muted uppercase tracking-wider">
+                Branch
+              </span>
+              {session?.is_containerized && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">container</span>
+              )}
+            </div>
+            <p className="text-xs font-mono-code text-cc-fg truncate" title={branch}>
+              {branch}
+            </p>
+            {(branchAhead > 0 || branchBehind > 0 || lineAdds > 0 || lineRemoves > 0) && (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  {branchAhead > 0 && <span className="text-green-500">{branchAhead}&#8593;</span>}
+                  {branchBehind > 0 && <span className="text-cc-warning">{branchBehind}&#8595;</span>}
+                  {lineAdds > 0 && <span className="text-green-500">+{lineAdds}</span>}
+                  {lineRemoves > 0 && <span className="text-red-400">-{lineRemoves}</span>}
+                </div>
+                {branchBehind > 0 && branchCwd && (
+                  <button
+                    type="button"
+                    className="text-[11px] font-medium text-cc-warning hover:text-amber-400 transition-colors cursor-pointer"
+                    onClick={() => {
+                      api.gitPull(branchCwd).then((r) => {
+                        useStore.getState().updateSession(sessionId, {
+                          git_ahead: r.git_ahead,
+                          git_behind: r.git_behind,
+                        });
+                        if (!r.success) console.warn("[git pull]", r.output);
+                      }).catch((e) => console.error("[git pull]", e));
+                    }}
+                    title="Pull latest changes"
+                  >
+                    Pull
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* GitHub PR status */}
+        <GitHubPRSection sessionId={sessionId} />
 
         {/* MCP servers */}
         <McpSection sessionId={sessionId} />

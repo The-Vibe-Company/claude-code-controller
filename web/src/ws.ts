@@ -7,6 +7,7 @@ const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastSeqBySession = new Map<string, number>();
 const taskCounters = new Map<string, number>();
+const streamingPhaseBySession = new Map<string, "thinking" | "text">();
 /** Track processed tool_use IDs to prevent duplicate task creation */
 const processedToolUseIds = new Map<string, Set<string>>();
 
@@ -264,6 +265,7 @@ function handleParsedMessage(
       };
       store.appendMessage(sessionId, chatMsg);
       store.setStreaming(sessionId, null);
+      streamingPhaseBySession.delete(sessionId);
       // Clear progress only for completed tools (tool_result blocks), not all tools.
       // Blanket clear would cause flickering during concurrent tool execution.
       if (msg.content?.length) {
@@ -294,6 +296,7 @@ function handleParsedMessage(
       if (evt && typeof evt === "object") {
         // message_start → mark generation start time
         if (evt.type === "message_start") {
+          streamingPhaseBySession.delete(sessionId);
           if (!store.streamingStartedAt.has(sessionId)) {
             store.setStreamingStats(sessionId, { startedAt: Date.now(), outputTokens: 0 });
           }
@@ -303,8 +306,24 @@ function handleParsedMessage(
         if (evt.type === "content_block_delta") {
           const delta = evt.delta as Record<string, unknown> | undefined;
           if (delta?.type === "text_delta" && typeof delta.text === "string") {
-            const current = store.streaming.get(sessionId) || "";
+            let current = store.streaming.get(sessionId) || "";
+            const thinkingPrefix = "Thinking:\n";
+            const responsePrefix = "\n\nResponse:\n";
+            if (streamingPhaseBySession.get(sessionId) === "thinking" && !current.includes(responsePrefix)) {
+              current += responsePrefix;
+            }
+            streamingPhaseBySession.set(sessionId, "text");
             store.setStreaming(sessionId, current + delta.text);
+          }
+          if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+            const current = store.streaming.get(sessionId) || "";
+            const prefix = "Thinking:\n";
+            const phase = streamingPhaseBySession.get(sessionId);
+            const base = phase === "thinking"
+              ? (current.startsWith(prefix) ? current : prefix)
+              : prefix;
+            streamingPhaseBySession.set(sessionId, "thinking");
+            store.setStreaming(sessionId, base + delta.thinking);
           }
         }
 
@@ -345,6 +364,7 @@ function handleParsedMessage(
       }
       store.updateSession(sessionId, sessionUpdates);
       store.setStreaming(sessionId, null);
+      streamingPhaseBySession.delete(sessionId);
       store.setStreamingStats(sessionId, null);
       store.clearToolProgress(sessionId);
       store.setSessionStatus(sessionId, "idle");
@@ -621,6 +641,7 @@ export function disconnectSession(sessionId: string) {
   }
   processedToolUseIds.delete(sessionId);
   taskCounters.delete(sessionId);
+  streamingPhaseBySession.delete(sessionId);
 }
 
 export function disconnectAll() {

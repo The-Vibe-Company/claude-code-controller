@@ -63,6 +63,71 @@ describe("ContainerManager git auth seeding", () => {
   });
 });
 
+describe("ContainerManager git identity seeding from host .gitconfig", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+    mockExistsSync.mockReset();
+    mockExistsSync.mockReturnValue(false);
+  });
+
+  it("copies user.name and user.email from /companion-host-gitconfig into container global config", () => {
+    // The host .gitconfig is mounted read-only at /companion-host-gitconfig.
+    // seedGitAuth should read identity from that file and write it into the
+    // container's writable /root/.gitconfig via git config --global.
+    mockExecSync.mockImplementation((...args: unknown[]) => {
+      const cmd = String(args[0] ?? "");
+      if (cmd.includes("gh auth token")) throw new Error("no token");
+      return "";
+    });
+
+    const manager = new ContainerManager();
+    manager.reseedGitAuth("container123");
+
+    const commands = mockExecSync.mock.calls.map((call) => String(call[0] ?? ""));
+    // The seeding command should reference the staged host gitconfig path
+    const identityCmd = commands.find((cmd) => cmd.includes("companion-host-gitconfig"));
+    expect(identityCmd).toBeDefined();
+    // It should use git config -f to read from the mounted file
+    expect(identityCmd).toContain("git config -f /companion-host-gitconfig user.name");
+    expect(identityCmd).toContain("git config -f /companion-host-gitconfig user.email");
+    // It should write user.name and user.email via git config --global
+    expect(identityCmd).toContain("git config --global user.name");
+    expect(identityCmd).toContain("git config --global user.email");
+  });
+
+  it("disables gpgsign in writable global config (not the read-only mount)", () => {
+    // With the host .gitconfig mounted at /companion-host-gitconfig instead
+    // of /root/.gitconfig, git config --global writes succeed in the container.
+    mockExecSync.mockImplementation((...args: unknown[]) => {
+      const cmd = String(args[0] ?? "");
+      if (cmd.includes("gh auth token")) throw new Error("no token");
+      return "";
+    });
+
+    const manager = new ContainerManager();
+    manager.reseedGitAuth("container123");
+
+    const commands = mockExecSync.mock.calls.map((call) => String(call[0] ?? ""));
+    expect(commands.some((cmd) => cmd.includes("git config --global commit.gpgsign false"))).toBe(true);
+  });
+
+  it("marks /workspace as a safe directory to avoid dubious ownership errors", () => {
+    // The workspace volume may be owned by a different uid (e.g. ubuntu)
+    // than the container user (root), triggering git's ownership check.
+    mockExecSync.mockImplementation((...args: unknown[]) => {
+      const cmd = String(args[0] ?? "");
+      if (cmd.includes("gh auth token")) throw new Error("no token");
+      return "";
+    });
+
+    const manager = new ContainerManager();
+    manager.reseedGitAuth("container123");
+
+    const commands = mockExecSync.mock.calls.map((call) => String(call[0] ?? ""));
+    expect(commands.some((cmd) => cmd.includes("safe.directory /workspace"))).toBe(true);
+  });
+});
+
 describe("ContainerManager Codex file seeding", () => {
   beforeEach(() => {
     mockExecSync.mockReset();

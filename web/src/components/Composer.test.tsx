@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { SessionState } from "../../server/session-types.js";
 
@@ -8,6 +8,8 @@ import type { SessionState } from "../../server/session-types.js";
 Element.prototype.scrollIntoView = vi.fn();
 
 const mockSendToSession = vi.fn();
+const mockListPrompts = vi.fn();
+const mockCreatePrompt = vi.fn();
 
 // Build a controllable mock store state
 let mockStoreState: Record<string, unknown> = {};
@@ -19,6 +21,8 @@ vi.mock("../ws.js", () => ({
 vi.mock("../api.js", () => ({
   api: {
     gitPull: vi.fn().mockResolvedValue({ success: true, output: "", git_ahead: 0, git_behind: 0 }),
+    listPrompts: (...args: unknown[]) => mockListPrompts(...args),
+    createPrompt: (...args: unknown[]) => mockCreatePrompt(...args),
   },
 }));
 
@@ -103,6 +107,15 @@ function setupMockStore(overrides: {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockListPrompts.mockResolvedValue([]);
+  mockCreatePrompt.mockResolvedValue({
+    id: "p-new",
+    name: "New Prompt",
+    content: "Text",
+    scope: "project",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
   setupMockStore();
 });
 
@@ -343,5 +356,106 @@ describe("Composer disabled state", () => {
     const textarea = container.querySelector("textarea")! as HTMLTextAreaElement;
 
     expect(textarea.placeholder).toContain("Waiting for CLI connection");
+  });
+});
+
+describe("Composer @ prompts menu", () => {
+  it("opens @ menu and inserts selected prompt with Enter", async () => {
+    // Validates keyboard insertion from @ suggestions without sending the message.
+    mockListPrompts.mockResolvedValue([
+      {
+        id: "p1",
+        name: "review-pr",
+        content: "Review this PR and list risks.",
+        scope: "global",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ]);
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "@rev", selectionStart: 4 } });
+    await screen.findByText("@review-pr");
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    expect((textarea as HTMLTextAreaElement).value).toContain("Review this PR and list risks.");
+    expect(mockSendToSession).not.toHaveBeenCalled();
+  });
+
+  it("filters prompts by typed query", async () => {
+    // Validates fuzzy filtering by prompt name while typing after @.
+    mockListPrompts.mockResolvedValue([
+      {
+        id: "p1",
+        name: "review-pr",
+        content: "Review this PR",
+        scope: "global",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      {
+        id: "p2",
+        name: "write-tests",
+        content: "Write tests",
+        scope: "project",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ]);
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "@wri", selectionStart: 4 } });
+    await screen.findByText("@write-tests");
+
+    expect(screen.getByText("@write-tests")).toBeTruthy();
+    expect(screen.queryByText("@review-pr")).toBeNull();
+  });
+
+  it("does not refetch prompts on each @ query keystroke", async () => {
+    // Validates prompt fetch remains stable while filtering happens client-side.
+    mockListPrompts.mockResolvedValue([
+      {
+        id: "p1",
+        name: "review-pr",
+        content: "Review this PR",
+        scope: "global",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ]);
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    await waitFor(() => {
+      expect(mockListPrompts).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(textarea, { target: { value: "@r", selectionStart: 2 } });
+    await screen.findByText("@review-pr");
+    fireEvent.change(textarea, { target: { value: "@re", selectionStart: 3 } });
+    await screen.findByText("@review-pr");
+    fireEvent.change(textarea, { target: { value: "@rev", selectionStart: 4 } });
+    await screen.findByText("@review-pr");
+
+    expect(mockListPrompts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Composer save prompt", () => {
+  it("shows save error when create prompt fails", async () => {
+    // Validates API failures are visible to the user instead of being silently ignored.
+    mockCreatePrompt.mockRejectedValue(new Error("Could not save prompt right now"));
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "Prompt body text" } });
+    fireEvent.click(screen.getByTitle("Save as prompt"));
+    const titleInput = screen.getByPlaceholderText("Prompt title");
+    fireEvent.change(titleInput, { target: { value: "My Prompt" } });
+    fireEvent.click(screen.getByText("Save"));
+
+    expect(await screen.findByText("Could not save prompt right now")).toBeTruthy();
   });
 });

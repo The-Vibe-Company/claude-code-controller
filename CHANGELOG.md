@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.51.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.3...the-companion-v0.51.0) (2026-02-18)
+
+
+### Features
+
+* **prompts:** add global prompt library with @ insertion ([#319](https://github.com/The-Vibe-Company/companion/issues/319)) ([10b97b4](https://github.com/The-Vibe-Company/companion/commit/10b97b450c26e57ee0a2a5c96f42bc2c27cbb0c7))
+* **server:** allow configuring session storage directory via COMPANION_SESSION_DIR ([#266](https://github.com/The-Vibe-Company/companion/issues/266)) ([3a63bc9](https://github.com/The-Vibe-Company/companion/commit/3a63bc915a16844aa2fbf33f08b60587efb9ea4a))
+
+## [0.50.3](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.2...the-companion-v0.50.3) (2026-02-18)
+
+
+### Bug Fixes
+
+* **topbar:** hide context button on home page ([#317](https://github.com/The-Vibe-Company/companion/issues/317)) ([e5152e5](https://github.com/The-Vibe-Company/companion/commit/e5152e573ffc43ee5ad9aecc7bd76c937dd03d79))
+
+## [0.50.2](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.1...the-companion-v0.50.2) (2026-02-18)
+
+
+### Bug Fixes
+
+* **topbar:** sample active tab color from underlying surface ([#315](https://github.com/The-Vibe-Company/companion/issues/315)) ([ebce0ec](https://github.com/The-Vibe-Company/companion/commit/ebce0ec12b5280ac46a8b63b4511202801009fcc))
+
+## [0.50.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.50.0...the-companion-v0.50.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* **codex:** use container cwd for docker runtime context ([#313](https://github.com/The-Vibe-Company/companion/issues/313)) ([ba6347b](https://github.com/The-Vibe-Company/companion/commit/ba6347ba90e93ba3e750b13b8687b7e428484725))
+
+## [0.50.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.49.0...the-companion-v0.50.0) (2026-02-18)
+
+
+### Features
+
+* **docker:** background image pulls and streaming creation progress ([#311](https://github.com/The-Vibe-Company/companion/issues/311)) ([f3a7a5e](https://github.com/The-Vibe-Company/companion/commit/f3a7a5e48bbb371b828f8ffe53c8ad3448f1c07b))
+
+## [0.49.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.48.0...the-companion-v0.49.0) (2026-02-18)
+
+
+### Features
+
+* **diff:** add diff base setting (last commit vs default branch) ([#308](https://github.com/The-Vibe-Company/companion/issues/308)) ([2a7f427](https://github.com/The-Vibe-Company/companion/commit/2a7f4271ef021db67c5b57d6509fe54853e930cc))
+
+
+### Bug Fixes
+
+* **docker:** propagate host git identity into containers ([#310](https://github.com/The-Vibe-Company/companion/issues/310)) ([81be828](https://github.com/The-Vibe-Company/companion/commit/81be828db84efb74772ef4cb89d4d83fc5b4e9f5))
+
+## [0.48.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.47.0...the-companion-v0.48.0) (2026-02-18)
+
+
+### Features
+
+* **session-ui:** redesign tabs, terminal persistence and composer ([#306](https://github.com/The-Vibe-Company/companion/issues/306)) ([4a7fe9f](https://github.com/The-Vibe-Company/companion/commit/4a7fe9f4bdeef0dd41bb24d16dd530ed8c6e1939))
+
+
+### Bug Fixes
+
+* **ui:** dock session terminal inside workspace and prioritize docker target ([#302](https://github.com/The-Vibe-Company/companion/issues/302)) ([b3f0dd4](https://github.com/The-Vibe-Company/companion/commit/b3f0dd4196af53fd05fd8c432afdc40547a3f2c9))
+
+## [0.47.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.1...the-companion-v0.47.0) (2026-02-18)
+
+
+### Features
+
+* **terminal:** add quick session terminal tabs for host and docker ([#299](https://github.com/The-Vibe-Company/companion/issues/299)) ([e4dfc51](https://github.com/The-Vibe-Company/companion/commit/e4dfc5141c54a898b0a5d4583ef3733b23a7d25d))
+
 ## [0.46.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.46.0...the-companion-v0.46.1) (2026-02-17)
 
 

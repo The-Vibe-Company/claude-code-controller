@@ -279,6 +279,21 @@ describe("launch", () => {
     expect(info.containerId).toBe("abc123def456");
     expect(info.containerName).toBe("companion-session-1");
     expect(info.containerImage).toBe("ubuntu:22.04");
+    expect(info.containerCwd).toBe("/workspace");
+  });
+
+  it("stores explicit containerCwd when provided", () => {
+    mockSpawn.mockReturnValueOnce(createMockCodexProc());
+    const info = launcher.launch({
+      cwd: "/tmp/project",
+      backendType: "codex",
+      containerId: "abc123def456",
+      containerName: "companion-session-1",
+      containerImage: "ubuntu:22.04",
+      containerCwd: "/workspace/repo",
+    });
+
+    expect(info.containerCwd).toBe("/workspace/repo");
   });
 
   it("uses docker exec -i with bash -lc for containerized Claude sessions", () => {

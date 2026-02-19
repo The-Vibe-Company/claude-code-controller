@@ -5,6 +5,7 @@ import { getToolIcon, getToolLabel, getPreview, ToolIcon } from "./ToolBlock.js"
 import type { ChatMessage, ContentBlock } from "../types.js";
 
 const FEED_PAGE_SIZE = 100;
+const savedDistanceFromBottomBySession = new Map<string, number>();
 
 function formatElapsed(ms: number): string {
   const secs = Math.floor(ms / 1000);
@@ -377,6 +378,7 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
   const isNearBottom = useRef(true);
   const [elapsed, setElapsed] = useState(0);
   const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
+  const chatTabReentryTick = useStore((s) => s.chatTabReentryTickBySession.get(sessionId) ?? 0);
 
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
@@ -420,7 +422,53 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     if (!el) return;
     isNearBottom.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const distanceFromBottom = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+    savedDistanceFromBottomBySession.set(sessionId, distanceFromBottom);
   }
+
+  const scrollToBottomInstant = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const previousBehavior = el.style.scrollBehavior;
+    el.style.scrollBehavior = "auto";
+    el.scrollTop = el.scrollHeight;
+    el.style.scrollBehavior = previousBehavior;
+  }, []);
+
+  const restoreSavedScrollPosition = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const previousBehavior = el.style.scrollBehavior;
+    el.style.scrollBehavior = "auto";
+    const savedDistance = savedDistanceFromBottomBySession.get(sessionId);
+    if (typeof savedDistance === "number") {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - savedDistance);
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    el.style.scrollBehavior = previousBehavior;
+  }, [sessionId]);
+
+  // On mount / session switch, restore previous reading position (or default to bottom).
+  useEffect(() => {
+    requestAnimationFrame(() => restoreSavedScrollPosition());
+  }, [sessionId, restoreSavedScrollPosition]);
+
+  // Persist the current scroll position for this session on unmount.
+  useEffect(() => {
+    return () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const distanceFromBottom = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+      savedDistanceFromBottomBySession.set(sessionId, distanceFromBottom);
+    };
+  }, [sessionId]);
+
+  // Only force bottom on explicit workspace tab switch back to chat.
+  useEffect(() => {
+    if (!chatTabReentryTick) return;
+    requestAnimationFrame(() => scrollToBottomInstant());
+  }, [chatTabReentryTick, scrollToBottomInstant]);
 
   useEffect(() => {
     if (isNearBottom.current) {
@@ -452,7 +500,7 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto scroll-smooth px-3 sm:px-4 py-4 sm:py-6"
+        className="h-full overflow-y-auto px-3 sm:px-4 py-4 sm:py-6"
       >
         <div className="max-w-3xl mx-auto space-y-3 sm:space-y-5">
           {hasMore && (

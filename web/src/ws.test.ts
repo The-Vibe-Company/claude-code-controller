@@ -436,6 +436,86 @@ describe("handleMessage: stream_event content_block_delta", () => {
 
     expect(useStore.getState().streaming.get("s1")).toBe("Hello world");
   });
+
+  it("accumulates streaming text from thinking_delta events", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Analyzing " } },
+      parent_tool_use_id: null,
+    });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "context" } },
+      parent_tool_use_id: null,
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Thinking:\nAnalyzing context");
+  });
+
+  it("separates thinking and response text when both delta types stream", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Planning..." } },
+      parent_tool_use_id: null,
+    });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "Final answer" } },
+      parent_tool_use_id: null,
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Thinking:\nPlanning...\n\nResponse:\nFinal answer");
+  });
+
+  it("does not wedge prior text into thinking section when thinking arrives after text", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "Hello" } },
+      parent_tool_use_id: null,
+    });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Plan" } },
+      parent_tool_use_id: null,
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Thinking:\nPlan");
+  });
+
+  it("resets to a new thinking section if thinking resumes after response text", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "A" } },
+      parent_tool_use_id: null,
+    });
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "B" } },
+      parent_tool_use_id: null,
+    });
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "C" } },
+      parent_tool_use_id: null,
+    });
+
+    expect(useStore.getState().streaming.get("s1")).toBe("Thinking:\nC");
+  });
 });
 
 // ===========================================================================

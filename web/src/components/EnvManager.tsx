@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { api, type CompanionEnv } from "../api.js";
+import { api, type CompanionEnv, type ImagePullState } from "../api.js";
 
 interface Props {
   onClose?: () => void;
@@ -44,6 +44,67 @@ export function EnvManager({ onClose, embedded = false }: Props) {
   // Docker availability
   const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
   const [availableImages, setAvailableImages] = useState<string[]>([]);
+
+  // Image pull state tracking (keyed by image tag)
+  const [imageStates, setImageStates] = useState<Record<string, ImagePullState>>({});
+  const pullPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /** Fetch pull status for a specific image and update state */
+  const refreshImageStatus = useCallback((tag: string) => {
+    api.getImageStatus(tag).then((state) => {
+      setImageStates((prev) => ({ ...prev, [tag]: state }));
+    }).catch(() => {});
+  }, []);
+
+  /** Trigger a pull for an image and start polling */
+  const handlePullImage = useCallback((tag: string) => {
+    api.pullImage(tag).then((res) => {
+      if (res.state) {
+        setImageStates((prev) => ({ ...prev, [tag]: res.state }));
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Track pulling images in a ref so the interval callback always reads current values
+  const pullingImagesRef = useRef<string[]>([]);
+  useEffect(() => {
+    const pullingImages = Object.entries(imageStates)
+      .filter(([, s]) => s.status === "pulling")
+      .map(([tag]) => tag);
+    pullingImagesRef.current = pullingImages;
+
+    if (pullingImages.length === 0) {
+      if (pullPollRef.current) {
+        clearInterval(pullPollRef.current);
+        pullPollRef.current = null;
+      }
+      return;
+    }
+
+    if (!pullPollRef.current) {
+      pullPollRef.current = setInterval(() => {
+        for (const tag of pullingImagesRef.current) {
+          refreshImageStatus(tag);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (pullPollRef.current) {
+        clearInterval(pullPollRef.current);
+        pullPollRef.current = null;
+      }
+    };
+  }, [imageStates, refreshImageStatus]);
+
+  // On mount, check image status for all envs that have docker images
+  useEffect(() => {
+    if (!dockerAvailable) return;
+    for (const env of envs) {
+      const img = env.imageTag || env.baseImage;
+      if (img) refreshImageStatus(img);
+    }
+  }, [envs, dockerAvailable, refreshImageStatus]);
 
   // New env form
   const [newName, setNewName] = useState("");
@@ -226,14 +287,56 @@ export function EnvManager({ onClose, embedded = false }: Props) {
     slug?: string,
     env?: CompanionEnv,
   ) {
+    const effectiveImg = env?.imageTag || baseImage;
+    const imgState = effectiveImg ? imageStates[effectiveImg] : undefined;
+    const isPulling = imgState?.status === "pulling";
+
     return (
       <div className="space-y-3">
         {/* Base image selector */}
         <div>
-          <label className="block text-[11px] text-cc-muted mb-1">Base Image</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[11px] text-cc-muted">Base Image</label>
+            {effectiveImg && (
+              <div className="flex items-center gap-1.5">
+                {/* Image status badge */}
+                {imgState?.status === "ready" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-500">Ready</span>
+                )}
+                {imgState?.status === "pulling" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 border border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+                    Pulling...
+                  </span>
+                )}
+                {imgState?.status === "idle" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-cc-hover text-cc-muted">Not downloaded</span>
+                )}
+                {imgState?.status === "error" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-cc-error/10 text-cc-error">Pull failed</span>
+                )}
+                {/* Pull / Update button */}
+                <button
+                  onClick={() => handlePullImage(effectiveImg)}
+                  disabled={isPulling}
+                  className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                    isPulling
+                      ? "bg-cc-hover text-cc-muted cursor-not-allowed"
+                      : "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 cursor-pointer"
+                  }`}
+                >
+                  {isPulling ? "Pulling..." : imgState?.status === "ready" ? "Update" : "Pull"}
+                </button>
+              </div>
+            )}
+          </div>
           <select
             value={baseImage}
-            onChange={(e) => setBaseImage(e.target.value)}
+            onChange={(e) => {
+              setBaseImage(e.target.value);
+              // Immediately check status for the newly selected image
+              if (e.target.value) refreshImageStatus(e.target.value);
+            }}
             className="w-full px-2 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg focus:outline-none focus:border-cc-primary/50"
           >
             <option value="">None (local execution)</option>
@@ -245,6 +348,13 @@ export function EnvManager({ onClose, embedded = false }: Props) {
               ))}
           </select>
         </div>
+
+        {/* Pull progress */}
+        {isPulling && imgState?.progress && imgState.progress.length > 0 && (
+          <pre className="px-3 py-2 text-[10px] font-mono-code bg-black/20 border border-cc-border rounded-md text-cc-muted max-h-[120px] overflow-auto whitespace-pre-wrap">
+            {imgState.progress.slice(-20).join("\n")}
+          </pre>
+        )}
 
         {/* Dockerfile editor */}
         <div>

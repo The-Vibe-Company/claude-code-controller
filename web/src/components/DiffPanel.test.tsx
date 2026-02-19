@@ -22,6 +22,8 @@ interface MockStoreState {
   diffPanelSelectedFile: Map<string, string>;
   changedFiles: Map<string, Set<string>>;
   setDiffPanelSelectedFile: ReturnType<typeof vi.fn>;
+  diffBase: "last-commit" | "default-branch";
+  setDiffBase: ReturnType<typeof vi.fn>;
 }
 
 let storeState: MockStoreState;
@@ -33,6 +35,8 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     diffPanelSelectedFile: new Map(),
     changedFiles: new Map(),
     setDiffPanelSelectedFile: vi.fn(),
+    diffBase: "last-commit",
+    setDiffBase: vi.fn(),
     ...overrides,
   };
 }
@@ -101,14 +105,14 @@ describe("DiffPanel", () => {
     const { container } = render(<DiffPanel sessionId="s1" />);
 
     await waitFor(() => {
-      expect(mockApi.getFileDiff).toHaveBeenCalledWith("/repo/src/app.ts");
+      expect(mockApi.getFileDiff).toHaveBeenCalledWith("/repo/src/app.ts", "last-commit");
     });
 
     // DiffViewer should render the diff content (may appear in top bar + DiffViewer header)
     await waitFor(() => {
       expect(container.querySelector(".diff-line-add")).toBeTruthy();
     });
-    expect(screen.getByText("Compared to default branch")).toBeInTheDocument();
+    expect(screen.getByText("vs last commit")).toBeInTheDocument();
   });
 
   it("shows 'No changes' when diff is empty for selected file", async () => {
@@ -133,6 +137,53 @@ describe("DiffPanel", () => {
 
     render(<DiffPanel sessionId="s1" />);
     expect(screen.getByText("Waiting for session to initialize...")).toBeInTheDocument();
+  });
+
+  it("passes default-branch to API and shows correct label", async () => {
+    // Validates that when diffBase is "default-branch", the API receives it and the label updates.
+    const diffOutput = `diff --git a/src/app.ts b/src/app.ts
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,3 +1,3 @@
+ line1
+-old line
++new line
+ line3`;
+
+    mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/src/app.ts", diff: diffOutput });
+
+    resetStore({
+      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts"])]]),
+      diffPanelSelectedFile: new Map([["s1", "/repo/src/app.ts"]]),
+      diffBase: "default-branch",
+    });
+
+    render(<DiffPanel sessionId="s1" />);
+
+    await waitFor(() => {
+      expect(mockApi.getFileDiff).toHaveBeenCalledWith("/repo/src/app.ts", "default-branch");
+    });
+    expect(screen.getByText("vs default branch")).toBeInTheDocument();
+  });
+
+  it("toggles diff base when label button is clicked", async () => {
+    // Validates that clicking the diff base toggle calls setDiffBase with the opposite value.
+    mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/src/app.ts", diff: "some diff" });
+
+    resetStore({
+      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts"])]]),
+      diffPanelSelectedFile: new Map([["s1", "/repo/src/app.ts"]]),
+      diffBase: "last-commit",
+    });
+
+    render(<DiffPanel sessionId="s1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("vs last commit")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("vs last commit"));
+    expect(storeState.setDiffBase).toHaveBeenCalledWith("default-branch");
   });
 
   it("reselects when selected file is outside cwd scope", async () => {

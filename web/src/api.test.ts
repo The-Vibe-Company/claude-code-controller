@@ -354,3 +354,37 @@ describe("getCloudProviderPlan", () => {
     expect(result).toEqual(plan);
   });
 });
+
+// ===========================================================================
+// terminal API
+// ===========================================================================
+describe("terminal API", () => {
+  it("spawnTerminal sends cwd, size, and optional containerId", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({ terminalId: "term-1" }));
+
+    const result = await api.spawnTerminal("/workspace", 120, 40, { containerId: "abc123" });
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/terminal/spawn");
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(opts.body)).toEqual({
+      cwd: "/workspace",
+      cols: 120,
+      rows: 40,
+      containerId: "abc123",
+    });
+    expect(result).toEqual({ terminalId: "term-1" });
+  });
+
+  it("killTerminal sends terminalId in request body", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse({ ok: true }));
+
+    const result = await api.killTerminal("term-1");
+
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/terminal/kill");
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(opts.body)).toEqual({ terminalId: "term-1" });
+    expect(result).toEqual({ ok: true });
+  });
+});

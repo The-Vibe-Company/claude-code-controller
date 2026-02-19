@@ -8,6 +8,8 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
   const sdkSession = useStore((s) => s.sdkSessions.find((sdk) => sdk.sessionId === sessionId));
   const selectedFile = useStore((s) => s.diffPanelSelectedFile.get(sessionId) ?? null);
   const setSelectedFile = useStore((s) => s.setDiffPanelSelectedFile);
+  const diffBase = useStore((s) => s.diffBase);
+  const setDiffBase = useStore((s) => s.setDiffBase);
   const changedFilesSet = useStore((s) => s.changedFiles.get(sessionId));
 
   const cwd = session?.cwd || sdkSession?.cwd;
@@ -52,7 +54,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
     let cancelled = false;
     setDiffLoading(true);
     api
-      .getFileDiff(selectedFile)
+      .getFileDiff(selectedFile, diffBase)
       .then((res) => {
         if (!cancelled) {
           setDiffContent(res.diff);
@@ -66,7 +68,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
         }
       });
     return () => { cancelled = true; };
-  }, [selectedFile]);
+  }, [selectedFile, diffBase]);
 
   const handleFileSelect = useCallback(
     (path: string) => {
@@ -190,9 +192,13 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
                 {selectedRelPath}
               </span>
             </div>
-            <span className="text-cc-muted text-[11px] shrink-0 hidden sm:inline">
-              Compared to default branch
-            </span>
+            <button
+              onClick={() => setDiffBase(diffBase === "last-commit" ? "default-branch" : "last-commit")}
+              className="text-cc-muted text-[11px] shrink-0 hidden sm:inline hover:text-cc-fg transition-colors cursor-pointer"
+              title={`Switch to ${diffBase === "last-commit" ? "default branch" : "last commit"} comparison`}
+            >
+              {diffBase === "default-branch" ? "vs default branch" : "vs last commit"}
+            </button>
           </div>
         )}
 

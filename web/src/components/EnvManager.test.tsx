@@ -17,6 +17,8 @@ vi.mock("../api.js", () => ({
     deleteEnv: vi.fn(),
     buildEnvImage: vi.fn(),
     getEnvBuildStatus: vi.fn(),
+    getImageStatus: vi.fn().mockResolvedValue({ image: "", status: "ready", progress: [] }),
+    pullImage: vi.fn().mockResolvedValue({ ok: true, state: { image: "", status: "pulling", progress: [] } }),
   },
 }));
 

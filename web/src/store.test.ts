@@ -498,6 +498,31 @@ describe("UI state", () => {
     expect(useStore.getState().homeResetKey).toBe(keyBefore + 1);
     expect(localStorage.getItem("cc-current-session")).toBeNull();
   });
+
+  it("openQuickTerminal with reuseIfExists focuses existing tab instead of creating a new one", () => {
+    useStore.getState().openQuickTerminal({ target: "host", cwd: "/repo" });
+    const firstTabId = useStore.getState().activeQuickTerminalTabId;
+
+    useStore.getState().openQuickTerminal({ target: "host", cwd: "/repo", reuseIfExists: true });
+    const state = useStore.getState();
+    expect(state.quickTerminalTabs).toHaveLength(1);
+    expect(state.activeQuickTerminalTabId).toBe(firstTabId);
+  });
+
+  it("openQuickTerminal host labels stay monotonic after closing tabs", () => {
+    const store = useStore.getState();
+    store.openQuickTerminal({ target: "host", cwd: "/repo/a" });
+    store.openQuickTerminal({ target: "host", cwd: "/repo/b" });
+    store.openQuickTerminal({ target: "host", cwd: "/repo/c" });
+    const secondId = useStore.getState().quickTerminalTabs[1]?.id;
+    if (secondId) store.closeQuickTerminalTab(secondId);
+    store.openQuickTerminal({ target: "host", cwd: "/repo/d" });
+
+    const labels = useStore.getState().quickTerminalTabs.map((t) => t.label);
+    expect(labels).toContain("Terminal");
+    expect(labels).toContain("Terminal 3");
+    expect(labels).toContain("Terminal 4");
+  });
 });
 
 // ─── Reset ──────────────────────────────────────────────────────────────────

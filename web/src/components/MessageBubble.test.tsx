@@ -128,7 +128,7 @@ describe("MessageBubble - assistant messages", () => {
     expect(screen.getByText("pwd")).toBeTruthy();
   });
 
-  it("renders thinking blocks with 'Thinking' label and char count", () => {
+  it("renders thinking blocks with 'Reasoning' label and char count", () => {
     const thinkingText = "Let me analyze this problem step by step...";
     const msg = makeMessage({
       role: "assistant",
@@ -139,7 +139,7 @@ describe("MessageBubble - assistant messages", () => {
     });
     render(<MessageBubble message={msg} />);
 
-    expect(screen.getByText("Thinking")).toBeTruthy();
+    expect(screen.getByText("Reasoning")).toBeTruthy();
     expect(screen.getByText(`${thinkingText.length} chars`)).toBeTruthy();
   });
 
@@ -152,21 +152,22 @@ describe("MessageBubble - assistant messages", () => {
         { type: "thinking", thinking: thinkingText },
       ],
     });
-    render(<MessageBubble message={msg} />);
+    const { container } = render(<MessageBubble message={msg} />);
 
-    // Initially collapsed - thinking text should not be visible in a pre
-    expect(screen.queryByText(thinkingText)).toBeNull();
-
-    // Find and click the thinking button
-    const thinkingButton = screen.getByText("Thinking").closest("button")!;
-    fireEvent.click(thinkingButton);
-
-    // Now the thinking text should be visible
+    // Thinking content is visible by default
     expect(screen.getByText(thinkingText)).toBeTruthy();
 
-    // Click again to collapse
+    // Find and click the thinking button
+    const thinkingButton = screen.getByText("Reasoning").closest("button")!;
     fireEvent.click(thinkingButton);
-    expect(screen.queryByText(thinkingText)).toBeNull();
+
+    // Now collapsed
+    const preAfterCollapse = container.querySelector("pre");
+    expect(preAfterCollapse?.textContent || "").not.toContain(thinkingText);
+
+    // Click again to re-open
+    fireEvent.click(thinkingButton);
+    expect(screen.getByText(thinkingText)).toBeTruthy();
   });
 
   it("renders tool_result blocks with string content", () => {
@@ -228,6 +229,31 @@ describe("MessageBubble - assistant messages", () => {
     const resultDiv = screen.getByText("Success output");
     expect(resultDiv.className).toContain("text-cc-muted");
     expect(resultDiv.className).not.toContain("text-cc-error");
+  });
+
+  it("renders Bash tool_result with last 20 lines and supports full output toggle", () => {
+    const outputLines = Array.from({ length: 25 }, (_, i) => `line-${i + 1}`).join("\n");
+    const msg = makeMessage({
+      role: "assistant",
+      content: "",
+      contentBlocks: [
+        { type: "tool_use", id: "tu-bash", name: "Bash", input: { command: "cat big.log" } },
+        { type: "tool_result", tool_use_id: "tu-bash", content: outputLines },
+      ],
+    });
+    render(<MessageBubble message={msg} />);
+
+    expect(screen.getByText("Output (last 20 lines)")).toBeTruthy();
+    const resultPre = document.querySelector("pre");
+    const tailLines = (resultPre?.textContent || "").split("\n");
+    expect(tailLines.includes("line-1")).toBe(false);
+    expect(tailLines.includes("line-25")).toBe(true);
+
+    fireEvent.click(screen.getByText("Show full"));
+    const fullPre = document.querySelector("pre");
+    const fullLines = (fullPre?.textContent || "").split("\n");
+    expect(fullLines.includes("line-1")).toBe(true);
+    expect(screen.getByText("Show tail")).toBeTruthy();
   });
 });
 

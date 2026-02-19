@@ -23,6 +23,10 @@ describe("parseHash", () => {
     expect(parseHash("#/terminal")).toEqual({ page: "terminal" });
   });
 
+  it("parses prompts route", () => {
+    expect(parseHash("#/prompts")).toEqual({ page: "prompts" });
+  });
+
   it("parses environments route", () => {
     expect(parseHash("#/environments")).toEqual({ page: "environments" });
   });

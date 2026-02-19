@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 vi.mock("../api.js", () => ({
@@ -16,10 +16,15 @@ interface MockStoreState {
   setSidebarOpen: ReturnType<typeof vi.fn>;
   taskPanelOpen: boolean;
   setTaskPanelOpen: ReturnType<typeof vi.fn>;
-  activeTab: "chat" | "diff";
+  activeTab: "chat" | "diff" | "terminal";
   setActiveTab: ReturnType<typeof vi.fn>;
-  sessions: Map<string, { cwd?: string }>;
-  sdkSessions: { sessionId: string; cwd?: string }[];
+  markChatTabReentry: ReturnType<typeof vi.fn>;
+  quickTerminalOpen: boolean;
+  quickTerminalTabs: { id: string; label: string; cwd: string; containerId?: string }[];
+  openQuickTerminal: ReturnType<typeof vi.fn>;
+  resetQuickTerminal: ReturnType<typeof vi.fn>;
+  sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
+  sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
   changedFiles: Map<string, Set<string>>;
 }
 
@@ -36,6 +41,11 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     setTaskPanelOpen: vi.fn(),
     activeTab: "chat",
     setActiveTab: vi.fn(),
+    markChatTabReentry: vi.fn(),
+    quickTerminalOpen: false,
+    quickTerminalTabs: [],
+    openQuickTerminal: vi.fn(),
+    resetQuickTerminal: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
     changedFiles: new Map(),
@@ -52,6 +62,7 @@ import { TopBar } from "./TopBar.js";
 beforeEach(() => {
   vi.clearAllMocks();
   resetStore();
+  window.localStorage.clear();
 });
 
 describe("TopBar", () => {
@@ -77,5 +88,136 @@ describe("TopBar", () => {
 
     render(<TopBar />);
     expect(screen.queryByText("1")).not.toBeInTheDocument();
+  });
+
+  it("opens quick terminal on shell-tab click", () => {
+    render(<TopBar />);
+
+    const btn = screen.getByRole("button", { name: "Shell tab" });
+    fireEvent.click(btn);
+    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({ target: "host", cwd: "/repo", reuseIfExists: true });
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
+  });
+
+  it("opens docker quick terminal in containerized sessions", () => {
+    resetStore({
+      sdkSessions: [{ sessionId: "s1", cwd: "/repo", containerId: "ctr-1" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
+    expect(storeState.openQuickTerminal).toHaveBeenCalledWith({
+      target: "docker",
+      cwd: "/workspace",
+      containerId: "ctr-1",
+      reuseIfExists: true,
+    });
+  });
+
+  it("reuses an existing quick terminal when already open", () => {
+    resetStore({
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
+    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
+  });
+
+  it("shows terminal tab disabled when cwd is unavailable", () => {
+    resetStore({
+      sessions: new Map([["s1", {}]]),
+      sdkSessions: [],
+    });
+    render(<TopBar />);
+
+    const btn = screen.getByRole("button", { name: "Shell tab" });
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(storeState.openQuickTerminal).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal tab active when clicking shell while already active", () => {
+    resetStore({
+      activeTab: "terminal",
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Shell tab" }));
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("terminal");
+  });
+
+  it("keeps terminal session alive when switching back to the session tab", () => {
+    resetStore({
+      activeTab: "terminal",
+      quickTerminalOpen: true,
+      quickTerminalTabs: [{ id: "t1", label: "Terminal", cwd: "/repo" }],
+    });
+    render(<TopBar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Session tab" }));
+    expect(storeState.markChatTabReentry).toHaveBeenCalledWith("s1");
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("chat");
+  });
+
+  it("cycles to the next workspace tab on Cmd/Ctrl+J", () => {
+    render(<TopBar />);
+
+    fireEvent.keyDown(window, { key: "j", metaKey: true });
+    expect(storeState.setActiveTab).toHaveBeenCalledWith("diff");
+  });
+
+  it("samples the active tab background color from the pixel below it", async () => {
+    resetStore({ activeTab: "diff" });
+    const underlay = document.createElement("div");
+    underlay.style.backgroundColor = "rgb(12, 34, 56)";
+    document.body.appendChild(underlay);
+
+    const originalElementsFromPoint = (document as Document & {
+      elementsFromPoint?: (x: number, y: number) => Element[];
+    }).elementsFromPoint;
+    Object.defineProperty(document, "elementsFromPoint", {
+      configurable: true,
+      writable: true,
+      value: () => [underlay],
+    });
+
+    render(<TopBar />);
+
+    const diffTab = screen.getByRole("button", { name: "Diffs tab" });
+    vi.spyOn(diffTab, "getBoundingClientRect").mockReturnValue({
+      x: 10,
+      y: 10,
+      left: 10,
+      top: 10,
+      right: 110,
+      bottom: 40,
+      width: 100,
+      height: 30,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    await waitFor(() => {
+      expect(diffTab).toHaveStyle({ backgroundColor: "rgb(12, 34, 56)" });
+    });
+
+    if (originalElementsFromPoint) {
+      Object.defineProperty(document, "elementsFromPoint", {
+        configurable: true,
+        writable: true,
+        value: originalElementsFromPoint,
+      });
+    } else {
+      Reflect.deleteProperty(document as unknown as Record<string, unknown>, "elementsFromPoint");
+    }
+    underlay.remove();
   });
 });

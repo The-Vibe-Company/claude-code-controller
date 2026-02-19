@@ -13,6 +13,7 @@ import type { SessionStore } from "./session-store.js";
 import type { WorktreeTracker } from "./worktree-tracker.js";
 import type { TerminalManager } from "./terminal-manager.js";
 import * as envManager from "./env-manager.js";
+import * as promptManager from "./prompt-manager.js";
 import * as cronStore from "./cron-store.js";
 import * as gitUtils from "./git-utils.js";
 import * as sessionNames from "./session-names.js";
@@ -29,7 +30,7 @@ import {
   setUpdateInProgress,
 } from "./update-checker.js";
 import { refreshServiceDefinition } from "./service.js";
-import type { AssistantManager } from "./assistant-manager.js";
+import { imagePullManager } from "./image-pull-manager.js";
 
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
@@ -86,7 +87,6 @@ export function createRoutes(
   prPoller?: import("./pr-poller.js").PRPoller,
   recorder?: import("./recorder.js").RecorderManager,
   cronScheduler?: import("./cron-scheduler.js").CronScheduler,
-  assistantManager?: AssistantManager,
 ) {
   const api = new Hono();
 
@@ -195,43 +195,18 @@ export function createRoutes(
       // Do not silently fall back to host execution: if container startup fails,
       // return an explicit error.
       if (effectiveImage) {
-        if (!containerManager.imageExists(effectiveImage)) {
-          // Auto-build for the default base image.
-          const isDefaultImage = effectiveImage === "the-companion:latest";
-          if (isDefaultImage) {
-            // Try pulling from Docker Hub first, fall back to local build
-            const registryImage = ContainerManager.getRegistryImage(effectiveImage);
-            let pulled = false;
-            if (registryImage) {
-              console.log(`[routes] ${effectiveImage} missing locally, trying docker pull ${registryImage}...`);
-              pulled = await containerManager.pullImage(registryImage, effectiveImage);
-            }
-
-            if (!pulled) {
-              // Fall back to local Dockerfile build
-              const dockerfilePath = join(WEB_DIR, "docker", "Dockerfile.the-companion");
-              if (!existsSync(dockerfilePath)) {
-                return c.json({
-                  error:
-                    `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
-                }, 503);
-              }
-              try {
-                console.log(`[routes] Pull failed/unavailable, building ${effectiveImage} from Dockerfile...`);
-                containerManager.buildImage(dockerfilePath, effectiveImage);
-              } catch (err) {
-                const reason = err instanceof Error ? err.message : String(err);
-                return c.json({
-                  error:
-                    `Docker image ${effectiveImage} is missing: pull and build both failed: ${reason}`,
-                }, 503);
-              }
-            }
-          } else {
+        if (!imagePullManager.isReady(effectiveImage)) {
+          // Image not available — use the pull manager to get it
+          const pullState = imagePullManager.getState(effectiveImage);
+          if (pullState.status === "idle" || pullState.status === "error") {
+            imagePullManager.ensureImage(effectiveImage);
+          }
+          const ready = await imagePullManager.waitForReady(effectiveImage, 300_000);
+          if (!ready) {
+            const state = imagePullManager.getState(effectiveImage);
             return c.json({
-              error:
-                `Docker image not found locally: ${effectiveImage}. ` +
-                "Build/pull the image first, then retry.",
+              error: state.error
+                || `Docker image ${effectiveImage} could not be pulled or built. Use the environment manager to pull/build the image first.`,
             }, 503);
           }
         }
@@ -321,6 +296,7 @@ export function createRoutes(
         containerId,
         containerName,
         containerImage,
+        containerCwd: containerInfo?.containerCwd,
       });
 
       // Re-track container with real session ID and mark session as containerized
@@ -485,56 +461,33 @@ export function createRoutes(
         }
 
         if (effectiveImage) {
-          if (!containerManager.imageExists(effectiveImage)) {
-            const isDefaultImage = effectiveImage === "the-companion:latest";
-            if (isDefaultImage) {
-              // Try pulling from Docker Hub first
-              const registryImage = ContainerManager.getRegistryImage(effectiveImage);
-              let pulled = false;
-              if (registryImage) {
-                await emitProgress(stream, "pulling_image", "Pulling Docker image...", "in_progress");
-                pulled = await containerManager.pullImage(registryImage, effectiveImage);
-                if (pulled) {
-                  await emitProgress(stream, "pulling_image", "Image pulled", "done");
-                } else {
-                  await emitProgress(stream, "pulling_image", "Pull failed, falling back to build", "error");
-                }
-              }
+          if (!imagePullManager.isReady(effectiveImage)) {
+            // Image not available — wait for background pull with progress streaming
+            const pullState = imagePullManager.getState(effectiveImage);
+            if (pullState.status === "idle" || pullState.status === "error") {
+              imagePullManager.ensureImage(effectiveImage);
+            }
 
-              // Fall back to local build if pull failed
-              if (!pulled) {
-                const dockerfilePath = join(WEB_DIR, "docker", "Dockerfile.the-companion");
-                if (!existsSync(dockerfilePath)) {
-                  await stream.writeSSE({
-                    event: "error",
-                    data: JSON.stringify({
-                      error: `Docker image ${effectiveImage} is missing, pull failed, and Dockerfile not found at ${dockerfilePath}`,
-                      step: "building_image",
-                    }),
-                  });
-                  return;
-                }
-                try {
-                  await emitProgress(stream, "building_image", "Building Docker image (this may take a minute)...", "in_progress");
-                  containerManager.buildImage(dockerfilePath, effectiveImage);
-                  await emitProgress(stream, "building_image", "Image built", "done");
-                } catch (err) {
-                  const reason = err instanceof Error ? err.message : String(err);
-                  await stream.writeSSE({
-                    event: "error",
-                    data: JSON.stringify({
-                      error: `Docker image build failed: ${reason}`,
-                      step: "building_image",
-                    }),
-                  });
-                  return;
-                }
-              }
+            await emitProgress(stream, "pulling_image", "Pulling Docker image...", "in_progress");
+
+            // Stream pull progress lines to the client
+            const unsub = imagePullManager.onProgress(effectiveImage, (line) => {
+              emitProgress(stream, "pulling_image", "Pulling Docker image...", "in_progress", line).catch(() => {});
+            });
+
+            const ready = await imagePullManager.waitForReady(effectiveImage, 300_000);
+            unsub();
+
+            if (ready) {
+              await emitProgress(stream, "pulling_image", "Image ready", "done");
             } else {
+              const state = imagePullManager.getState(effectiveImage);
               await stream.writeSSE({
                 event: "error",
                 data: JSON.stringify({
-                  error: `Docker image not found locally: ${effectiveImage}. Build/pull the image first, then retry.`,
+                  error: state.error
+                    || `Docker image ${effectiveImage} could not be pulled or built. Use the environment manager to pull/build the image first.`,
+                  step: "pulling_image",
                 }),
               });
               return;
@@ -598,7 +551,12 @@ export function createRoutes(
               const result = await containerManager.execInContainerAsync(
                 containerInfo.containerId,
                 ["sh", "-lc", companionEnv.initScript],
-                { timeout: initTimeout },
+                {
+                  timeout: initTimeout,
+                  onOutput: (line) => {
+                    emitProgress(stream, "running_init_script", "Running init script...", "in_progress", line).catch(() => {});
+                  },
+                },
               );
               if (result.exitCode !== 0) {
                 console.error(
@@ -652,6 +610,7 @@ export function createRoutes(
           containerId,
           containerName,
           containerImage,
+          containerCwd: containerInfo?.containerCwd,
         });
 
         // Re-track container and mark session as containerized
@@ -757,9 +716,6 @@ export function createRoutes(
 
   api.delete("/sessions/:id", async (c) => {
     const id = c.req.param("id");
-    if (assistantManager?.isAssistantSession(id)) {
-      return c.json({ error: "Cannot delete the assistant session. Use companion assistant stop instead." }, 403);
-    }
     await launcher.kill(id);
 
     // Clean up container if any
@@ -774,9 +730,6 @@ export function createRoutes(
 
   api.post("/sessions/:id/archive", async (c) => {
     const id = c.req.param("id");
-    if (assistantManager?.isAssistantSession(id)) {
-      return c.json({ error: "Cannot archive the assistant session. Use companion assistant stop instead." }, 403);
-    }
     const body = await c.req.json().catch(() => ({}));
     await launcher.kill(id);
 
@@ -1026,6 +979,7 @@ export function createRoutes(
   api.get("/fs/diff", (c) => {
     const filePath = c.req.query("path");
     if (!filePath) return c.json({ error: "path required" }, 400);
+    const base = c.req.query("base"); // "last-commit" | "default-branch" | undefined
     const absPath = resolve(filePath);
     try {
       const repoRoot = execSync("git rev-parse --show-toplevel", {
@@ -1039,21 +993,36 @@ export function createRoutes(
       }).trim() || absPath;
 
       let diff = "";
-      const diffBases = resolveBranchDiffBases(repoRoot);
-      for (const base of diffBases) {
+
+      if (base === "default-branch") {
+        // Diff against the resolved default branch (origin/HEAD, main, master)
+        const diffBases = resolveBranchDiffBases(repoRoot);
+        for (const b of diffBases) {
+          try {
+            diff = execCaptureStdout(`git diff ${b} -- "${relPath}"`, {
+              cwd: repoRoot,
+              encoding: "utf-8",
+              timeout: 5000,
+            });
+            break;
+          } catch {
+            // If a base ref is unavailable, try the next candidate.
+          }
+        }
+      } else {
+        // Default ("last-commit" or absent): diff against HEAD (uncommitted changes only)
         try {
-          diff = execCaptureStdout(`git diff ${base} -- "${relPath}"`, {
+          diff = execCaptureStdout(`git diff HEAD -- "${relPath}"`, {
             cwd: repoRoot,
             encoding: "utf-8",
             timeout: 5000,
           });
-          break;
         } catch {
-          // If a base ref is unavailable, try the next candidate.
+          // HEAD may not exist in a fresh repo with no commits; fall through to untracked handling.
         }
       }
 
-      // For untracked files, base-branch diff is empty. Show full file as added.
+      // For untracked files, the diff above is empty. Show full file as added.
       if (!diff.trim()) {
         const untracked = execSync(`git ls-files --others --exclude-standard -- "${relPath}"`, {
           cwd: repoRoot,
@@ -1230,6 +1199,63 @@ export function createRoutes(
     });
   });
 
+  // ─── Saved Prompts (~/.companion/prompts.json) ──────────────────────
+
+  api.get("/prompts", (c) => {
+    try {
+      const cwd = c.req.query("cwd");
+      const scope = c.req.query("scope");
+      const normalizedScope =
+        scope === "global" || scope === "project" || scope === "all"
+          ? scope
+          : undefined;
+      return c.json(promptManager.listPrompts({ cwd, scope: normalizedScope }));
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+    }
+  });
+
+  api.get("/prompts/:id", (c) => {
+    const prompt = promptManager.getPrompt(c.req.param("id"));
+    if (!prompt) return c.json({ error: "Prompt not found" }, 404);
+    return c.json(prompt);
+  });
+
+  api.post("/prompts", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      const prompt = promptManager.createPrompt(
+        String(body.title || body.name || ""),
+        String(body.content || ""),
+        body.scope,
+        body.cwd,
+      );
+      return c.json(prompt, 201);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  api.put("/prompts/:id", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      const prompt = promptManager.updatePrompt(c.req.param("id"), {
+        name: body.title ?? body.name,
+        content: body.content,
+      });
+      if (!prompt) return c.json({ error: "Prompt not found" }, 404);
+      return c.json(prompt);
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  api.delete("/prompts/:id", (c) => {
+    const deleted = promptManager.deletePrompt(c.req.param("id"));
+    if (!deleted) return c.json({ error: "Prompt not found" }, 404);
+    return c.json({ ok: true });
+  });
+
   api.post("/docker/build-base", async (c) => {
     if (!containerManager.checkDocker()) return c.json({ error: "Docker is not available" }, 503);
     // Build the-companion base image from the repo's Dockerfile
@@ -1248,6 +1274,26 @@ export function createRoutes(
   api.get("/docker/base-image", (c) => {
     const exists = containerManager.imageExists("the-companion:latest");
     return c.json({ exists, image: "the-companion:latest" });
+  });
+
+  // ─── Image Pull Manager ──────────────────────────────────────────────
+
+  /** Get pull state for a Docker image */
+  api.get("/images/:tag/status", (c) => {
+    const tag = decodeURIComponent(c.req.param("tag"));
+    if (!tag) return c.json({ error: "Image tag is required" }, 400);
+    return c.json(imagePullManager.getState(tag));
+  });
+
+  /** Trigger a background pull for an image (idempotent) */
+  api.post("/images/:tag/pull", (c) => {
+    const tag = decodeURIComponent(c.req.param("tag"));
+    if (!tag) return c.json({ error: "Image tag is required" }, 400);
+    if (!containerManager.checkDocker()) {
+      return c.json({ error: "Docker is not available" }, 503);
+    }
+    imagePullManager.pull(tag);
+    return c.json({ ok: true, state: imagePullManager.getState(tag) });
   });
 
   // ─── Settings (~/.companion/settings.json) ────────────────────────
@@ -1548,20 +1594,26 @@ export function createRoutes(
   // ─── Terminal ──────────────────────────────────────────────────────
 
   api.get("/terminal", (c) => {
-    const info = terminalManager.getInfo();
+    const terminalId = c.req.query("terminalId");
+    const info = terminalManager.getInfo(terminalId || undefined);
     if (!info) return c.json({ active: false });
     return c.json({ active: true, terminalId: info.id, cwd: info.cwd });
   });
 
   api.post("/terminal/spawn", async (c) => {
-    const body = await c.req.json<{ cwd: string; cols?: number; rows?: number }>();
+    const body = await c.req.json<{ cwd: string; cols?: number; rows?: number; containerId?: string }>();
     if (!body.cwd) return c.json({ error: "cwd is required" }, 400);
-    const terminalId = terminalManager.spawn(body.cwd, body.cols, body.rows);
+    const terminalId = terminalManager.spawn(body.cwd, body.cols, body.rows, {
+      containerId: body.containerId,
+    });
     return c.json({ terminalId });
   });
 
-  api.post("/terminal/kill", (c) => {
-    terminalManager.kill();
+  api.post("/terminal/kill", async (c) => {
+    const body = await c.req.json<{ terminalId?: string }>().catch(() => undefined);
+    const terminalId = body?.terminalId?.trim();
+    if (!terminalId) return c.json({ error: "terminalId is required" }, 400);
+    terminalManager.kill(terminalId);
     return c.json({ ok: true });
   });
 
@@ -1578,42 +1630,6 @@ export function createRoutes(
     }
     wsBridge.injectUserMessage(id, body.content);
     return c.json({ ok: true, sessionId: id });
-  });
-
-  // ─── Companion Assistant ──────────────────────────────────────────
-
-  api.get("/assistant/status", (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    return c.json(assistantManager.getStatus());
-  });
-
-  api.post("/assistant/launch", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const session = await assistantManager.start();
-    if (!session) return c.json({ error: "Failed to launch assistant" }, 500);
-    return c.json({ ok: true, sessionId: session.sessionId });
-  });
-
-  api.post("/assistant/stop", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const stopped = await assistantManager.stop();
-    return c.json({ ok: stopped });
-  });
-
-  api.get("/assistant/config", (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    return c.json(assistantManager.getConfig());
-  });
-
-  api.put("/assistant/config", async (c) => {
-    if (!assistantManager) return c.json({ error: "Assistant not available" }, 501);
-    const body = await c.req.json().catch(() => ({}));
-    const config = assistantManager.updateConfig({
-      model: typeof body.model === "string" ? body.model : undefined,
-      permissionMode: typeof body.permissionMode === "string" ? body.permissionMode : undefined,
-      enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
-    });
-    return c.json(config);
   });
 
   // ─── Skills ─────────────────────────────────────────────────────────

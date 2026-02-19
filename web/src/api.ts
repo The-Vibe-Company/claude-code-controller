@@ -258,6 +258,15 @@ export interface CompanionEnv {
   updatedAt: number;
 }
 
+export interface ImagePullState {
+  image: string;
+  status: "idle" | "pulling" | "ready" | "error";
+  progress: string[];
+  error?: string;
+  startedAt?: number;
+  completedAt?: number;
+}
+
 export interface DirEntry {
   name: string;
   path: string;
@@ -354,26 +363,14 @@ export interface CronJobExecution {
   costUsd?: number;
 }
 
-export interface AssistantStatus {
-  running: boolean;
-  sessionId: string | null;
-  config: {
-    enabled: boolean;
-    sessionId: string | null;
-    cliSessionId: string | null;
-    model: string;
-    permissionMode: string;
-    createdAt: number;
-    lastActiveAt: number;
-    contextRestorations: number;
-  };
-  cwd: string;
-}
-
-export interface AssistantConfig {
-  enabled: boolean;
-  model: string;
-  permissionMode: string;
+export interface SavedPrompt {
+  id: string;
+  name: string;
+  content: string;
+  scope: "global" | "project";
+  projectPath?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ─── SSE Session Creation ────────────────────────────────────────────────────
@@ -581,6 +578,12 @@ export const api = {
   // Containers
   getContainerStatus: () => get<ContainerStatus>("/containers/status"),
   getContainerImages: () => get<string[]>("/containers/images"),
+
+  // Image pull manager
+  getImageStatus: (tag: string) =>
+    get<ImagePullState>(`/images/${encodeURIComponent(tag)}/status`),
+  pullImage: (tag: string) =>
+    post<{ ok: boolean; state: ImagePullState }>(`/images/${encodeURIComponent(tag)}/pull`),
   getCloudProviderPlan: (provider: "modal", cwd: string, sessionId: string) =>
     get<CloudProviderPlan>(
       `/cloud/providers/${encodeURIComponent(provider)}/plan?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`,
@@ -603,9 +606,9 @@ export const api = {
     ),
   writeFile: (path: string, content: string) =>
     put<{ ok: boolean; path: string }>("/fs/write", { path, content }),
-  getFileDiff: (path: string) =>
+  getFileDiff: (path: string, base?: "last-commit" | "default-branch") =>
     get<{ path: string; diff: string }>(
-      `/fs/diff?path=${encodeURIComponent(path)}`,
+      `/fs/diff?path=${encodeURIComponent(path)}${base ? `&base=${encodeURIComponent(base)}` : ""}`,
     ),
   getClaudeMdFiles: (cwd: string) =>
     get<{ cwd: string; files: { path: string; content: string }[] }>(
@@ -620,12 +623,16 @@ export const api = {
     get<UsageLimits>(`/sessions/${encodeURIComponent(sessionId)}/usage-limits`),
 
   // Terminal
-  spawnTerminal: (cwd: string, cols?: number, rows?: number) =>
-    post<{ terminalId: string }>("/terminal/spawn", { cwd, cols, rows }),
-  killTerminal: () =>
-    post<{ ok: boolean }>("/terminal/kill"),
-  getTerminal: () =>
-    get<{ active: boolean; terminalId?: string; cwd?: string }>("/terminal"),
+  spawnTerminal: (cwd: string, cols?: number, rows?: number, opts?: { containerId?: string }) =>
+    post<{ terminalId: string }>("/terminal/spawn", { cwd, cols, rows, containerId: opts?.containerId }),
+  killTerminal: (terminalId: string) =>
+    post<{ ok: boolean }>("/terminal/kill", { terminalId }),
+  getTerminal: (terminalId?: string) =>
+    get<{ active: boolean; terminalId?: string; cwd?: string }>(
+      terminalId
+        ? `/terminal?terminalId=${encodeURIComponent(terminalId)}`
+        : "/terminal",
+    ),
 
   // Update checking
   checkForUpdate: () => get<UpdateInfo>("/update-check"),
@@ -645,15 +652,22 @@ export const api = {
   getCronJobExecutions: (id: string) =>
     get<CronJobExecution[]>(`/cron/jobs/${encodeURIComponent(id)}/executions`),
 
-  // Assistant
-  getAssistantStatus: () => get<AssistantStatus>("/assistant/status"),
-  launchAssistant: () => post<{ ok: boolean; sessionId: string }>("/assistant/launch"),
-  stopAssistant: () => post<{ ok: boolean }>("/assistant/stop"),
-  getAssistantConfig: () => get<AssistantConfig>("/assistant/config"),
-  updateAssistantConfig: (data: Partial<AssistantConfig>) =>
-    put<AssistantConfig>("/assistant/config", data),
-
   // Cross-session messaging
   sendSessionMessage: (sessionId: string, content: string) =>
     post<{ ok: boolean }>(`/sessions/${encodeURIComponent(sessionId)}/message`, { content }),
+
+  // Saved prompts
+  listPrompts: (cwd?: string, scope?: "global" | "project" | "all") => {
+    const params = new URLSearchParams();
+    if (cwd) params.set("cwd", cwd);
+    if (scope) params.set("scope", scope);
+    const query = params.toString();
+    return get<SavedPrompt[]>(`/prompts${query ? `?${query}` : ""}`);
+  },
+  createPrompt: (data: { name: string; content: string; scope: "global" | "project"; cwd?: string }) =>
+    post<SavedPrompt>("/prompts", data),
+  updatePrompt: (id: string, data: { name?: string; content?: string }) =>
+    put<SavedPrompt>(`/prompts/${encodeURIComponent(id)}`, data),
+  deletePrompt: (id: string) =>
+    del<{ ok: boolean }>(`/prompts/${encodeURIComponent(id)}`),
 };
