@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.3](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.2...the-companion-v0.55.3) (2026-02-19)
+
+
+### Bug Fixes
+
+* **update:** add full-screen overlay with auto-refresh after update ([#349](https://github.com/The-Vibe-Company/companion/issues/349)) ([f988b14](https://github.com/The-Vibe-Company/companion/commit/f988b142ea5458cb6654211a24e7cd02d7ee02da))
+
 ## [0.55.2](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.1...the-companion-v0.55.2) (2026-02-19)
 
 
