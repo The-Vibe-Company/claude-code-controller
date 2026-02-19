@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.55.0...the-companion-v0.55.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* **linear:** show only active issues and prioritize backlog ([#346](https://github.com/The-Vibe-Company/companion/issues/346)) ([c2a6e1a](https://github.com/The-Vibe-Company/companion/commit/c2a6e1a0b8d22d032b516a186d5e23db906fdfc2))
+
 ## [0.55.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.54.1...the-companion-v0.55.0) (2026-02-19)
 
 
