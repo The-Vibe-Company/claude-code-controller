@@ -526,14 +526,14 @@ function LinearIssueSection({ sessionId }: { sessionId: string }) {
     } catch {
       // silent
     }
-  }, [sessionId, linkedIssue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, linkedIssue]);
 
   useEffect(() => {
     if (!linkedIssue) return;
     fetchIssueDetails();
     const id = setInterval(fetchIssueDetails, LINEAR_POLL_INTERVAL);
     return () => clearInterval(id);
-  }, [fetchIssueDetails, linkedIssue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchIssueDetails, linkedIssue]);
 
   // Search debounce
   useEffect(() => {
