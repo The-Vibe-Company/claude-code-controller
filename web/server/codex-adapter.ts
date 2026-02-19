@@ -1837,7 +1837,7 @@ export class CodexAdapter {
     // Use last turn's input tokens for context usage — that's what's actually in the window
     // (total is cumulative across all turns and can far exceed the context window)
     if (last && contextWindow && contextWindow > 0) {
-      const usedInContext = (last.inputTokens || 0) + (last.cachedInputTokens || 0) + (last.outputTokens || 0);
+      const usedInContext = (last.inputTokens || 0) + (last.outputTokens || 0);
       const pct = Math.round((usedInContext / contextWindow) * 100);
       updates.context_used_percent = Math.max(0, Math.min(pct, 100));
     }
