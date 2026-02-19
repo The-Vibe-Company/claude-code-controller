@@ -145,6 +145,7 @@ import { Sidebar } from "./Sidebar.js";
 beforeEach(() => {
   vi.clearAllMocks();
   mockState = createMockState();
+  localStorage.removeItem("cc-sidebar-footer-expanded");
   window.location.hash = "";
 });
 
@@ -443,6 +444,28 @@ describe("Sidebar", () => {
     render(<Sidebar />);
     fireEvent.click(screen.getByText("Terminal").closest("button")!);
     expect(window.location.hash).toBe("#/terminal");
+  });
+
+  it("collapses footer links while keeping settings visible", () => {
+    localStorage.setItem("cc-sidebar-footer-expanded", "false");
+
+    render(<Sidebar />);
+
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.queryByText("Prompts")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Expand sidebar links" })).toBeInTheDocument();
+  });
+
+  it("persists footer accordion state when toggled", () => {
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar links" }));
+    expect(localStorage.getItem("cc-sidebar-footer-expanded")).toBe("false");
+    expect(screen.queryByText("Prompts")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar links" }));
+    expect(localStorage.getItem("cc-sidebar-footer-expanded")).toBe("true");
+    expect(screen.getByText("Prompts")).toBeInTheDocument();
   });
 
   it("session name shows animate-name-appear class when recently renamed", () => {
