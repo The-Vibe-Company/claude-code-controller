@@ -106,6 +106,10 @@ export interface LaunchOptions {
   containerImage?: string;
   /** Runtime cwd inside the container (typically "/workspace"). */
   containerCwd?: string;
+  /** Resume an existing Claude Code session by its session ID. */
+  resume?: string;
+  /** When true with resume, fork into a new session instead of continuing the original. */
+  forkSession?: boolean;
 }
 
 /**
@@ -416,6 +420,16 @@ export class CliLauncher {
     if (options.resumeSessionId) {
       args.push("--resume", options.resumeSessionId);
     }
+
+    // User-facing resume/fork: adopt or fork an existing Claude Code session.
+    // Only applies when creating a new session (not relaunching).
+    if (!options.resumeSessionId && options.resume) {
+      args.push("--resume", options.resume);
+      if (options.forkSession) {
+        args.push("--fork-session");
+      }
+    }
+
     args.push("-p", "");
 
     let spawnCmd: string[];

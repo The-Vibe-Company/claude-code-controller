@@ -420,6 +420,45 @@ describe("launch", () => {
     expect(info.exitCode).toBe(127);
     expect(mockSpawn).not.toHaveBeenCalled();
   });
+
+  it("passes --resume when resume option is provided", () => {
+    launcher.launch({
+      cwd: "/tmp/project",
+      resume: "existing-session-abc",
+    });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    const resumeIdx = cmdAndArgs.indexOf("--resume");
+    expect(resumeIdx).toBeGreaterThan(-1);
+    expect(cmdAndArgs[resumeIdx + 1]).toBe("existing-session-abc");
+    // Should NOT have --fork-session
+    expect(cmdAndArgs).not.toContain("--fork-session");
+  });
+
+  it("passes --resume and --fork-session when both options are provided", () => {
+    launcher.launch({
+      cwd: "/tmp/project",
+      resume: "existing-session-abc",
+      forkSession: true,
+    });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    const resumeIdx = cmdAndArgs.indexOf("--resume");
+    expect(resumeIdx).toBeGreaterThan(-1);
+    expect(cmdAndArgs[resumeIdx + 1]).toBe("existing-session-abc");
+    expect(cmdAndArgs).toContain("--fork-session");
+  });
+
+  it("does not pass --fork-session without resume", () => {
+    launcher.launch({
+      cwd: "/tmp/project",
+      forkSession: true,
+    });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    expect(cmdAndArgs).not.toContain("--resume");
+    expect(cmdAndArgs).not.toContain("--fork-session");
+  });
 });
 
 // ─── state management ────────────────────────────────────────────────────────

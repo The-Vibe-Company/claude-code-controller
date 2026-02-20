@@ -264,6 +264,8 @@ export function createRoutes(
         containerName,
         containerImage,
         containerCwd: containerInfo?.containerCwd,
+        resume: body.resume,
+        forkSession: body.forkSession,
       });
 
       // Re-track container with real session ID and mark session as containerized
@@ -583,6 +585,8 @@ export function createRoutes(
           containerName,
           containerImage,
           containerCwd: containerInfo?.containerCwd,
+          resume: body.resume,
+          forkSession: body.forkSession,
         });
 
         // Re-track container and mark session as containerized
