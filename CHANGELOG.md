@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.1](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.58.0...the-companion-v0.58.1) (2026-02-20)
+
+
+### Bug Fixes
+
+* **sidebar:** prevent hover overlay and restore archived click ([#370](https://github.com/The-Vibe-Company/companion/issues/370)) ([56abbc1](https://github.com/The-Vibe-Company/companion/commit/56abbc1ca11b5ff34d0a2c1350740d697640b6d9))
+
 ## [0.58.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.57.0...the-companion-v0.58.0) (2026-02-20)
 
 
