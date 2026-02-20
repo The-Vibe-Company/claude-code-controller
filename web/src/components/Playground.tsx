@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { PermissionBanner } from "./PermissionBanner.js";
 import { MessageBubble } from "./MessageBubble.js";
-import { ToolBlock, getToolIcon, getToolLabel, getPreview, ToolIcon } from "./ToolBlock.js";
+import {
+  ToolBlock,
+  getToolIcon,
+  getToolLabel,
+  getPreview,
+  ToolIcon,
+} from "./ToolBlock.js";
 import { DiffViewer } from "./DiffViewer.js";
 import { useStore } from "../store.js";
 import { navigateToSession, navigateHome } from "../utils/routing.js";
@@ -9,10 +15,25 @@ import { UpdateBanner } from "./UpdateBanner.js";
 import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
 import { ChatView } from "./ChatView.js";
 import { api } from "../api.js";
-import type { PermissionRequest, ChatMessage, ContentBlock, SessionState, McpServerDetail } from "../types.js";
+import type {
+  PermissionRequest,
+  ChatMessage,
+  ContentBlock,
+  SessionState,
+  McpServerDetail,
+} from "../types.js";
 import type { TaskItem } from "../types.js";
-import type { UpdateInfo, GitHubPRInfo, LinearIssue, LinearComment } from "../api.js";
-import { GitHubPRDisplay, CodexRateLimitsSection, CodexTokenDetailsSection } from "./TaskPanel.js";
+import type {
+  UpdateInfo,
+  GitHubPRInfo,
+  LinearIssue,
+  LinearComment,
+} from "../api.js";
+import {
+  GitHubPRDisplay,
+  CodexRateLimitsSection,
+  CodexTokenDetailsSection,
+} from "./TaskPanel.js";
 import { LinearLogo } from "./LinearLogo.js";
 import { SessionCreationProgress } from "./SessionCreationProgress.js";
 import { SessionLaunchOverlay } from "./SessionLaunchOverlay.js";
@@ -25,7 +46,12 @@ import type { SessionItem as SessionItemType } from "../utils/project-grouping.j
 
 const MOCK_SESSION_ID = "playground-session";
 
-function mockPermission(overrides: Partial<PermissionRequest> & { tool_name: string; input: Record<string, unknown> }): PermissionRequest {
+function mockPermission(
+  overrides: Partial<PermissionRequest> & {
+    tool_name: string;
+    input: Record<string, unknown>;
+  },
+): PermissionRequest {
   return {
     request_id: `perm-${Math.random().toString(36).slice(2, 8)}`,
     tool_use_id: `tu-${Math.random().toString(36).slice(2, 8)}`,
@@ -43,13 +69,23 @@ const PERM_BASH = mockPermission({
   permission_suggestions: [
     {
       type: "addRules" as const,
-      rules: [{ toolName: "Bash", ruleContent: "git log --oneline -20 && npm run build" }],
+      rules: [
+        {
+          toolName: "Bash",
+          ruleContent: "git log --oneline -20 && npm run build",
+        },
+      ],
       behavior: "allow" as const,
       destination: "session" as const,
     },
     {
       type: "addRules" as const,
-      rules: [{ toolName: "Bash", ruleContent: "git log --oneline -20 && npm run build" }],
+      rules: [
+        {
+          toolName: "Bash",
+          ruleContent: "git log --oneline -20 && npm run build",
+        },
+      ],
       behavior: "allow" as const,
       destination: "projectSettings" as const,
     },
@@ -60,8 +96,10 @@ const PERM_EDIT = mockPermission({
   tool_name: "Edit",
   input: {
     file_path: "/Users/stan/Dev/project/src/utils/format.ts",
-    old_string: 'export function formatDate(d: Date) {\n  return d.toISOString();\n}',
-    new_string: 'export function formatDate(d: Date, locale = "en-US") {\n  return d.toLocaleDateString(locale, {\n    year: "numeric",\n    month: "short",\n    day: "numeric",\n  });\n}',
+    old_string:
+      "export function formatDate(d: Date) {\n  return d.toISOString();\n}",
+    new_string:
+      'export function formatDate(d: Date, locale = "en-US") {\n  return d.toLocaleDateString(locale, {\n    year: "numeric",\n    month: "short",\n    day: "numeric",\n  });\n}',
   },
   permission_suggestions: [
     {
@@ -77,7 +115,8 @@ const PERM_WRITE = mockPermission({
   tool_name: "Write",
   input: {
     file_path: "/Users/stan/Dev/project/src/config.ts",
-    content: 'export const config = {\n  apiUrl: "https://api.example.com",\n  timeout: 5000,\n  retries: 3,\n  debug: process.env.NODE_ENV !== "production",\n};\n',
+    content:
+      'export const config = {\n  apiUrl: "https://api.example.com",\n  timeout: 5000,\n  retries: 3,\n  debug: process.env.NODE_ENV !== "production",\n};\n',
   },
 });
 
@@ -107,7 +146,11 @@ const PERM_GLOB = mockPermission({
 
 const PERM_GREP = mockPermission({
   tool_name: "Grep",
-  input: { pattern: "TODO|FIXME|HACK", path: "/Users/stan/Dev/project/src", glob: "*.ts" },
+  input: {
+    pattern: "TODO|FIXME|HACK",
+    path: "/Users/stan/Dev/project/src",
+    glob: "*.ts",
+  },
 });
 
 const PERM_EXIT_PLAN = mockPermission({
@@ -123,7 +166,10 @@ const PERM_EXIT_PLAN = mockPermission({
 
 const PERM_GENERIC = mockPermission({
   tool_name: "WebSearch",
-  input: { query: "TypeScript 5.5 new features", allowed_domains: ["typescriptlang.org", "github.com"] },
+  input: {
+    query: "TypeScript 5.5 new features",
+    allowed_domains: ["typescriptlang.org", "github.com"],
+  },
   description: "Search the web for TypeScript 5.5 features",
 });
 
@@ -141,9 +187,19 @@ const PERM_ASK_SINGLE = mockPermission({
         header: "Auth method",
         question: "Which authentication method should we use for the API?",
         options: [
-          { label: "JWT tokens (Recommended)", description: "Stateless, scalable, works well with microservices" },
-          { label: "Session cookies", description: "Traditional approach, simpler but requires session storage" },
-          { label: "OAuth 2.0", description: "Delegated auth, best for third-party integrations" },
+          {
+            label: "JWT tokens (Recommended)",
+            description: "Stateless, scalable, works well with microservices",
+          },
+          {
+            label: "Session cookies",
+            description:
+              "Traditional approach, simpler but requires session storage",
+          },
+          {
+            label: "OAuth 2.0",
+            description: "Delegated auth, best for third-party integrations",
+          },
         ],
         multiSelect: false,
       },
@@ -159,7 +215,10 @@ const PERM_ASK_MULTI = mockPermission({
         header: "Database",
         question: "Which database should we use?",
         options: [
-          { label: "PostgreSQL", description: "Relational, strong consistency" },
+          {
+            label: "PostgreSQL",
+            description: "Relational, strong consistency",
+          },
           { label: "MongoDB", description: "Document store, flexible schema" },
         ],
         multiSelect: false,
@@ -181,7 +240,8 @@ const PERM_ASK_MULTI = mockPermission({
 const MSG_USER: ChatMessage = {
   id: "msg-1",
   role: "user",
-  content: "Can you help me refactor the authentication module to use JWT tokens?",
+  content:
+    "Can you help me refactor the authentication module to use JWT tokens?",
   timestamp: Date.now() - 60000,
 };
 
@@ -237,9 +297,13 @@ const MSG_ASSISTANT_TOOLS: ChatMessage = {
     {
       type: "tool_result",
       tool_use_id: "tu-2",
-      content: 'export function authMiddleware(req, res, next) {\n  if (!req.session.userId) {\n    return res.status(401).json({ error: "Unauthorized" });\n  }\n  next();\n}',
+      content:
+        'export function authMiddleware(req, res, next) {\n  if (!req.session.userId) {\n    return res.status(401).json({ error: "Unauthorized" });\n  }\n  next();\n}',
     },
-    { type: "text", text: "Now I understand the current structure. Let me create the JWT utility." },
+    {
+      type: "text",
+      text: "Now I understand the current structure. Let me create the JWT utility.",
+    },
   ],
   timestamp: Date.now() - 45000,
 };
@@ -251,9 +315,13 @@ const MSG_ASSISTANT_THINKING: ChatMessage = {
   contentBlocks: [
     {
       type: "thinking",
-      thinking: "Let me think about the best approach here. The user wants to migrate from session cookies to JWT. I need to:\n1. Create a JWT sign/verify utility\n2. Update the middleware to read Authorization header\n3. Change the login endpoint to return a token\n4. Update all tests\n\nI should use jsonwebtoken package for signing and jose for verification in edge environments. But since this is a Node.js server, jsonwebtoken is fine.\n\nThe token should contain: userId, role, iat, exp. Expiry should be configurable. I'll also add a refresh token mechanism.",
+      thinking:
+        "Let me think about the best approach here. The user wants to migrate from session cookies to JWT. I need to:\n1. Create a JWT sign/verify utility\n2. Update the middleware to read Authorization header\n3. Change the login endpoint to return a token\n4. Update all tests\n\nI should use jsonwebtoken package for signing and jose for verification in edge environments. But since this is a Node.js server, jsonwebtoken is fine.\n\nThe token should contain: userId, role, iat, exp. Expiry should be configurable. I'll also add a refresh token mechanism.",
     },
-    { type: "text", text: "I've analyzed the codebase and have a clear plan. Let me start implementing." },
+    {
+      type: "text",
+      text: "I've analyzed the codebase and have a clear plan. Let me start implementing.",
+    },
   ],
   timestamp: Date.now() - 40000,
 };
@@ -281,7 +349,8 @@ const MSG_TOOL_ERROR: ChatMessage = {
     {
       type: "tool_result",
       tool_use_id: "tu-3",
-      content: "FAIL src/auth/__tests__/middleware.test.ts\n  ● Auth Middleware › should reject expired tokens\n    Expected: 401\n    Received: 500\n\n    TypeError: Cannot read property 'verify' of undefined",
+      content:
+        "FAIL src/auth/__tests__/middleware.test.ts\n  ● Auth Middleware › should reject expired tokens\n    Expected: 401\n    Received: 500\n\n    TypeError: Cannot read property 'verify' of undefined",
       is_error: true,
     },
     { type: "text", text: "There's a test failure. Let me fix the issue." },
@@ -291,12 +360,46 @@ const MSG_TOOL_ERROR: ChatMessage = {
 
 // Tasks
 const MOCK_TASKS: TaskItem[] = [
-  { id: "1", subject: "Create JWT utility module", description: "", status: "completed" },
-  { id: "2", subject: "Update auth middleware", description: "", status: "completed", activeForm: "Updating auth middleware" },
-  { id: "3", subject: "Migrate login endpoint", description: "", status: "in_progress", activeForm: "Refactoring login to return JWT" },
-  { id: "4", subject: "Add refresh token support", description: "", status: "pending" },
-  { id: "5", subject: "Update all auth tests", description: "", status: "pending", blockedBy: ["3"] },
-  { id: "6", subject: "Run full test suite and fix failures", description: "", status: "pending", blockedBy: ["5"] },
+  {
+    id: "1",
+    subject: "Create JWT utility module",
+    description: "",
+    status: "completed",
+  },
+  {
+    id: "2",
+    subject: "Update auth middleware",
+    description: "",
+    status: "completed",
+    activeForm: "Updating auth middleware",
+  },
+  {
+    id: "3",
+    subject: "Migrate login endpoint",
+    description: "",
+    status: "in_progress",
+    activeForm: "Refactoring login to return JWT",
+  },
+  {
+    id: "4",
+    subject: "Add refresh token support",
+    description: "",
+    status: "pending",
+  },
+  {
+    id: "5",
+    subject: "Update all auth tests",
+    description: "",
+    status: "pending",
+    blockedBy: ["3"],
+  },
+  {
+    id: "6",
+    subject: "Run full test suite and fix failures",
+    description: "",
+    status: "pending",
+    blockedBy: ["5"],
+  },
 ];
 
 // Tool group items (for ToolMessageGroup mock)
@@ -309,7 +412,11 @@ const MOCK_TOOL_GROUP_ITEMS = [
 
 const MOCK_SUBAGENT_TOOL_ITEMS = [
   { id: "sa-1", name: "Grep", input: { pattern: "useAuth", path: "src/" } },
-  { id: "sa-2", name: "Grep", input: { pattern: "session.userId", path: "src/" } },
+  {
+    id: "sa-2",
+    name: "Grep",
+    input: { pattern: "session.userId", path: "src/" },
+  },
 ];
 
 // GitHub PR mock data
@@ -392,7 +499,11 @@ const MOCK_MCP_SERVERS: McpServerDetail[] = [
   {
     name: "filesystem",
     status: "connected",
-    config: { type: "stdio", command: "npx", args: ["-y", "@anthropic/mcp-fs"] },
+    config: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@anthropic/mcp-fs"],
+    },
     scope: "project",
     tools: [
       { name: "read_file", annotations: { readOnly: true } },
@@ -403,7 +514,11 @@ const MOCK_MCP_SERVERS: McpServerDetail[] = [
   {
     name: "github",
     status: "connected",
-    config: { type: "stdio", command: "npx", args: ["-y", "@anthropic/mcp-github"] },
+    config: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@anthropic/mcp-github"],
+    },
     scope: "user",
     tools: [
       { name: "create_issue" },
@@ -415,7 +530,11 @@ const MOCK_MCP_SERVERS: McpServerDetail[] = [
     name: "postgres",
     status: "failed",
     error: "Connection refused: ECONNREFUSED 127.0.0.1:5432",
-    config: { type: "stdio", command: "npx", args: ["-y", "@anthropic/mcp-postgres"] },
+    config: {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "@anthropic/mcp-postgres"],
+    },
     scope: "project",
     tools: [],
   },
@@ -424,7 +543,9 @@ const MOCK_MCP_SERVERS: McpServerDetail[] = [
     status: "disabled",
     config: { type: "sse", url: "http://localhost:8080/sse" },
     scope: "user",
-    tools: [{ name: "search", annotations: { readOnly: true, openWorld: true } }],
+    tools: [
+      { name: "search", annotations: { readOnly: true, openWorld: true } },
+    ],
   },
   {
     name: "docker",
@@ -439,7 +560,8 @@ const MOCK_MCP_SERVERS: McpServerDetail[] = [
 const MOCK_LINEAR_ISSUE_ACTIVE: LinearIssue = {
   id: "issue-1",
   identifier: "THE-147",
-  title: "Associer un ticket Linear a une session dans le panneau lateral droit",
+  title:
+    "Associer un ticket Linear a une session dans le panneau lateral droit",
   description: "Pouvoir associer un ticket Linear a une session.",
   url: "https://linear.app/thevibecompany/issue/THE-147",
   branchName: "the-147-associer-un-ticket-linear",
@@ -467,16 +589,31 @@ const MOCK_LINEAR_ISSUE_DONE: LinearIssue = {
 };
 
 const MOCK_LINEAR_COMMENTS: LinearComment[] = [
-  { id: "c1", body: "Started working on the sidebar integration", createdAt: new Date(Date.now() - 3600_000).toISOString(), userName: "Alice" },
-  { id: "c2", body: "Added the search component, LGTM", createdAt: new Date(Date.now() - 1800_000).toISOString(), userName: "Bob" },
-  { id: "c3", body: "Testing the polling flow now", createdAt: new Date(Date.now() - 300_000).toISOString(), userName: "Alice" },
+  {
+    id: "c1",
+    body: "Started working on the sidebar integration",
+    createdAt: new Date(Date.now() - 3600_000).toISOString(),
+    userName: "Alice",
+  },
+  {
+    id: "c2",
+    body: "Added the search component, LGTM",
+    createdAt: new Date(Date.now() - 1800_000).toISOString(),
+    userName: "Bob",
+  },
+  {
+    id: "c3",
+    body: "Testing the polling flow now",
+    createdAt: new Date(Date.now() - 300_000).toISOString(),
+    userName: "Alice",
+  },
 ];
 
 // ─── Playground Component ───────────────────────────────────────────────────
 
 export function Playground() {
-  const [darkMode, setDarkMode] = useState(
-    () => document.documentElement.classList.contains("dark")
+  const [darkMode, setDarkMode] = useState(() =>
+    document.documentElement.classList.contains("dark"),
   );
 
   useEffect(() => {
@@ -496,7 +633,8 @@ export function Playground() {
     const prevStatus = snapshot.sessionStatus.get(sessionId);
     const prevStreaming = snapshot.streaming.get(sessionId);
     const prevStreamingStartedAt = snapshot.streamingStartedAt.get(sessionId);
-    const prevStreamingOutputTokens = snapshot.streamingOutputTokens.get(sessionId);
+    const prevStreamingOutputTokens =
+      snapshot.streamingOutputTokens.get(sessionId);
 
     const session: SessionState = {
       session_id: sessionId,
@@ -513,6 +651,14 @@ export function Playground() {
       total_cost_usd: 0.1847,
       num_turns: 14,
       context_used_percent: 62,
+      claude_token_details: {
+        inputTokens: 98_500,
+        outputTokens: 25_200,
+        cacheReadInputTokens: 45_000,
+        cacheCreationInputTokens: 12_300,
+        contextWindow: 200_000,
+        maxOutputTokens: 16_384,
+      },
       is_compacting: false,
       git_branch: "feat/jwt-auth",
       is_worktree: false,
@@ -534,8 +680,14 @@ export function Playground() {
       MSG_ASSISTANT_TOOLS,
       MSG_TOOL_ERROR,
     ]);
-    store.setStreaming(sessionId, "I'm updating tests and then I'll run the full suite.");
-    store.setStreamingStats(sessionId, { startedAt: Date.now() - 12000, outputTokens: 1200 });
+    store.setStreaming(
+      sessionId,
+      "I'm updating tests and then I'll run the full suite.",
+    );
+    store.setStreamingStats(sessionId, {
+      startedAt: Date.now() - 12000,
+      outputTokens: 1200,
+    });
     store.addPermission(sessionId, PERM_BASH);
     store.addPermission(sessionId, PERM_DYNAMIC);
 
@@ -551,15 +703,27 @@ export function Playground() {
         const streamingStartedAt = new Map(s.streamingStartedAt);
         const streamingOutputTokens = new Map(s.streamingOutputTokens);
 
-        if (prevSession) sessions.set(sessionId, prevSession); else sessions.delete(sessionId);
-        if (prevMessages) messages.set(sessionId, prevMessages); else messages.delete(sessionId);
-        if (prevPerms) pendingPermissions.set(sessionId, prevPerms); else pendingPermissions.delete(sessionId);
-        if (prevConn) connectionStatus.set(sessionId, prevConn); else connectionStatus.delete(sessionId);
-        if (typeof prevCli === "boolean") cliConnected.set(sessionId, prevCli); else cliConnected.delete(sessionId);
-        if (prevStatus) sessionStatus.set(sessionId, prevStatus); else sessionStatus.delete(sessionId);
-        if (typeof prevStreaming === "string") streaming.set(sessionId, prevStreaming); else streaming.delete(sessionId);
-        if (typeof prevStreamingStartedAt === "number") streamingStartedAt.set(sessionId, prevStreamingStartedAt); else streamingStartedAt.delete(sessionId);
-        if (typeof prevStreamingOutputTokens === "number") streamingOutputTokens.set(sessionId, prevStreamingOutputTokens); else streamingOutputTokens.delete(sessionId);
+        if (prevSession) sessions.set(sessionId, prevSession);
+        else sessions.delete(sessionId);
+        if (prevMessages) messages.set(sessionId, prevMessages);
+        else messages.delete(sessionId);
+        if (prevPerms) pendingPermissions.set(sessionId, prevPerms);
+        else pendingPermissions.delete(sessionId);
+        if (prevConn) connectionStatus.set(sessionId, prevConn);
+        else connectionStatus.delete(sessionId);
+        if (typeof prevCli === "boolean") cliConnected.set(sessionId, prevCli);
+        else cliConnected.delete(sessionId);
+        if (prevStatus) sessionStatus.set(sessionId, prevStatus);
+        else sessionStatus.delete(sessionId);
+        if (typeof prevStreaming === "string")
+          streaming.set(sessionId, prevStreaming);
+        else streaming.delete(sessionId);
+        if (typeof prevStreamingStartedAt === "number")
+          streamingStartedAt.set(sessionId, prevStreamingStartedAt);
+        else streamingStartedAt.delete(sessionId);
+        if (typeof prevStreamingOutputTokens === "number")
+          streamingOutputTokens.set(sessionId, prevStreamingOutputTokens);
+        else streamingOutputTokens.delete(sessionId);
 
         return {
           sessions,
@@ -582,8 +746,12 @@ export function Playground() {
       <header className="sticky top-0 z-50 bg-cc-sidebar border-b border-cc-border">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-cc-fg tracking-tight">Component Playground</h1>
-            <p className="text-xs text-cc-muted mt-0.5">Visual catalog of all UI components</p>
+            <h1 className="text-lg font-semibold text-cc-fg tracking-tight">
+              Component Playground
+            </h1>
+            <p className="text-xs text-cc-muted mt-0.5">
+              Visual catalog of all UI components
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -611,47 +779,98 @@ export function Playground() {
 
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-12">
         {/* ─── Permission Banners ──────────────────────────────── */}
-        <Section title="Permission Banners" description="Tool approval requests shown above the composer">
+        <Section
+          title="Permission Banners"
+          description="Tool approval requests shown above the composer"
+        >
           <div className="border border-cc-border rounded-xl overflow-hidden bg-cc-card divide-y divide-cc-border">
-            <PermissionBanner permission={PERM_BASH} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_EDIT} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_WRITE} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_READ} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_GLOB} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_GREP} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_GENERIC} sessionId={MOCK_SESSION_ID} />
-            <PermissionBanner permission={PERM_DYNAMIC} sessionId={MOCK_SESSION_ID} />
+            <PermissionBanner
+              permission={PERM_BASH}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_EDIT}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_WRITE}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_READ}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_GLOB}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_GREP}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_GENERIC}
+              sessionId={MOCK_SESSION_ID}
+            />
+            <PermissionBanner
+              permission={PERM_DYNAMIC}
+              sessionId={MOCK_SESSION_ID}
+            />
           </div>
         </Section>
 
         {/* ─── Real Chat Stack ──────────────────────────────── */}
-        <Section title="Real Chat Stack" description="Integrated ChatView using real MessageFeed + PermissionBanner + Composer components">
-          <div data-testid="playground-real-chat-stack" className="max-w-3xl border border-cc-border rounded-xl overflow-hidden bg-cc-card h-[620px]">
+        <Section
+          title="Real Chat Stack"
+          description="Integrated ChatView using real MessageFeed + PermissionBanner + Composer components"
+        >
+          <div
+            data-testid="playground-real-chat-stack"
+            className="max-w-3xl border border-cc-border rounded-xl overflow-hidden bg-cc-card h-[620px]"
+          >
             <ChatView sessionId={MOCK_SESSION_ID} />
           </div>
         </Section>
 
         {/* ─── ExitPlanMode (the fix) ──────────────────────────── */}
-        <Section title="ExitPlanMode" description="Plan approval request — previously rendered as raw JSON, now shows formatted markdown">
+        <Section
+          title="ExitPlanMode"
+          description="Plan approval request — previously rendered as raw JSON, now shows formatted markdown"
+        >
           <div className="border border-cc-border rounded-xl overflow-hidden bg-cc-card">
-            <PermissionBanner permission={PERM_EXIT_PLAN} sessionId={MOCK_SESSION_ID} />
+            <PermissionBanner
+              permission={PERM_EXIT_PLAN}
+              sessionId={MOCK_SESSION_ID}
+            />
           </div>
         </Section>
 
         {/* ─── AskUserQuestion ──────────────────────────────── */}
-        <Section title="AskUserQuestion" description="Interactive questions with selectable options">
+        <Section
+          title="AskUserQuestion"
+          description="Interactive questions with selectable options"
+        >
           <div className="space-y-4">
             <Card label="Single question">
-              <PermissionBanner permission={PERM_ASK_SINGLE} sessionId={MOCK_SESSION_ID} />
+              <PermissionBanner
+                permission={PERM_ASK_SINGLE}
+                sessionId={MOCK_SESSION_ID}
+              />
             </Card>
             <Card label="Multi-question">
-              <PermissionBanner permission={PERM_ASK_MULTI} sessionId={MOCK_SESSION_ID} />
+              <PermissionBanner
+                permission={PERM_ASK_MULTI}
+                sessionId={MOCK_SESSION_ID}
+              />
             </Card>
           </div>
         </Section>
 
         {/* ─── Messages ──────────────────────────────── */}
-        <Section title="Messages" description="Chat message bubbles for all roles">
+        <Section
+          title="Messages"
+          description="Chat message bubbles for all roles"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="User message">
               <MessageBubble message={MSG_USER} />
@@ -678,41 +897,165 @@ export function Playground() {
         </Section>
 
         {/* ─── Tool Blocks (standalone) ──────────────────────── */}
-        <Section title="Tool Blocks" description="Expandable tool call visualization">
+        <Section
+          title="Tool Blocks"
+          description="Expandable tool call visualization"
+        >
           <div className="space-y-2 max-w-3xl">
-            <ToolBlock name="Bash" input={{ command: "git status && npm run lint", description: "Check git status and lint" }} toolUseId="tb-1" />
-            <ToolBlock name="Read" input={{ file_path: "/Users/stan/Dev/project/src/index.ts", offset: 10, limit: 50 }} toolUseId="tb-2" />
-            <ToolBlock name="Edit" input={{ file_path: "src/utils.ts", old_string: "const x = 1;", new_string: "const x = 2;", replace_all: true }} toolUseId="tb-3" />
+            <ToolBlock
+              name="Bash"
+              input={{
+                command: "git status && npm run lint",
+                description: "Check git status and lint",
+              }}
+              toolUseId="tb-1"
+            />
+            <ToolBlock
+              name="Read"
+              input={{
+                file_path: "/Users/stan/Dev/project/src/index.ts",
+                offset: 10,
+                limit: 50,
+              }}
+              toolUseId="tb-2"
+            />
+            <ToolBlock
+              name="Edit"
+              input={{
+                file_path: "src/utils.ts",
+                old_string: "const x = 1;",
+                new_string: "const x = 2;",
+                replace_all: true,
+              }}
+              toolUseId="tb-3"
+            />
             <ToolBlock
               name="Edit"
               input={{
                 file_path: "/Users/stan/Dev/project/src/store.ts",
                 changes: [
-                  { path: "/Users/stan/Dev/project/src/store.ts", kind: "update" },
+                  {
+                    path: "/Users/stan/Dev/project/src/store.ts",
+                    kind: "update",
+                  },
                   { path: "/Users/stan/Dev/project/src/ws.ts", kind: "update" },
                 ],
               }}
               toolUseId="tb-3b"
             />
-            <ToolBlock name="Write" input={{ file_path: "src/new-file.ts", content: 'export const hello = "world";\n' }} toolUseId="tb-4" />
-            <ToolBlock name="Glob" input={{ pattern: "**/*.tsx", path: "/Users/stan/Dev/project/src" }} toolUseId="tb-5" />
-            <ToolBlock name="Grep" input={{ pattern: "useEffect", path: "src/", glob: "*.tsx", output_mode: "content", context: 3, head_limit: 20 }} toolUseId="tb-6" />
-            <ToolBlock name="WebSearch" input={{ query: "React 19 new features", allowed_domains: ["react.dev", "github.com"] }} toolUseId="tb-7" />
-            <ToolBlock name="WebFetch" input={{ url: "https://react.dev/blog/2024/12/05/react-19", prompt: "Summarize the key changes in React 19" }} toolUseId="tb-8" />
-            <ToolBlock name="Task" input={{ description: "Search for auth patterns", subagent_type: "Explore", prompt: "Find all files related to authentication and authorization in the codebase. Look for middleware, guards, and token handling." }} toolUseId="tb-9" />
-            <ToolBlock name="TodoWrite" input={{ todos: [
-              { content: "Create JWT utility module", status: "completed", activeForm: "Creating JWT module" },
-              { content: "Update auth middleware", status: "in_progress", activeForm: "Updating middleware" },
-              { content: "Migrate login endpoint", status: "pending", activeForm: "Migrating login" },
-              { content: "Run full test suite", status: "pending", activeForm: "Running tests" },
-            ]}} toolUseId="tb-10" />
-            <ToolBlock name="NotebookEdit" input={{ notebook_path: "/Users/stan/Dev/project/analysis.ipynb", cell_type: "code", edit_mode: "replace", cell_number: 3, new_source: "import pandas as pd\ndf = pd.read_csv('data.csv')\ndf.describe()" }} toolUseId="tb-11" />
-            <ToolBlock name="SendMessage" input={{ type: "message", recipient: "researcher", content: "Please investigate the auth module structure and report back.", summary: "Requesting auth module investigation" }} toolUseId="tb-12" />
+            <ToolBlock
+              name="Write"
+              input={{
+                file_path: "src/new-file.ts",
+                content: 'export const hello = "world";\n',
+              }}
+              toolUseId="tb-4"
+            />
+            <ToolBlock
+              name="Glob"
+              input={{
+                pattern: "**/*.tsx",
+                path: "/Users/stan/Dev/project/src",
+              }}
+              toolUseId="tb-5"
+            />
+            <ToolBlock
+              name="Grep"
+              input={{
+                pattern: "useEffect",
+                path: "src/",
+                glob: "*.tsx",
+                output_mode: "content",
+                context: 3,
+                head_limit: 20,
+              }}
+              toolUseId="tb-6"
+            />
+            <ToolBlock
+              name="WebSearch"
+              input={{
+                query: "React 19 new features",
+                allowed_domains: ["react.dev", "github.com"],
+              }}
+              toolUseId="tb-7"
+            />
+            <ToolBlock
+              name="WebFetch"
+              input={{
+                url: "https://react.dev/blog/2024/12/05/react-19",
+                prompt: "Summarize the key changes in React 19",
+              }}
+              toolUseId="tb-8"
+            />
+            <ToolBlock
+              name="Task"
+              input={{
+                description: "Search for auth patterns",
+                subagent_type: "Explore",
+                prompt:
+                  "Find all files related to authentication and authorization in the codebase. Look for middleware, guards, and token handling.",
+              }}
+              toolUseId="tb-9"
+            />
+            <ToolBlock
+              name="TodoWrite"
+              input={{
+                todos: [
+                  {
+                    content: "Create JWT utility module",
+                    status: "completed",
+                    activeForm: "Creating JWT module",
+                  },
+                  {
+                    content: "Update auth middleware",
+                    status: "in_progress",
+                    activeForm: "Updating middleware",
+                  },
+                  {
+                    content: "Migrate login endpoint",
+                    status: "pending",
+                    activeForm: "Migrating login",
+                  },
+                  {
+                    content: "Run full test suite",
+                    status: "pending",
+                    activeForm: "Running tests",
+                  },
+                ],
+              }}
+              toolUseId="tb-10"
+            />
+            <ToolBlock
+              name="NotebookEdit"
+              input={{
+                notebook_path: "/Users/stan/Dev/project/analysis.ipynb",
+                cell_type: "code",
+                edit_mode: "replace",
+                cell_number: 3,
+                new_source:
+                  "import pandas as pd\ndf = pd.read_csv('data.csv')\ndf.describe()",
+              }}
+              toolUseId="tb-11"
+            />
+            <ToolBlock
+              name="SendMessage"
+              input={{
+                type: "message",
+                recipient: "researcher",
+                content:
+                  "Please investigate the auth module structure and report back.",
+                summary: "Requesting auth module investigation",
+              }}
+              toolUseId="tb-12"
+            />
           </div>
         </Section>
 
         {/* ─── Tool Progress Indicator ──────────────────────── */}
-        <Section title="Tool Progress" description="Real-time progress indicator shown while tools are running">
+        <Section
+          title="Tool Progress"
+          description="Real-time progress indicator shown while tools are running"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Single tool running">
               <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
@@ -735,46 +1078,74 @@ export function Playground() {
         </Section>
 
         {/* ─── Tool Use Summary ──────────────────────────────── */}
-        <Section title="Tool Use Summary" description="System message summarizing batch tool execution">
+        <Section
+          title="Tool Use Summary"
+          description="System message summarizing batch tool execution"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Summary as system message">
-              <MessageBubble message={{
-                id: "summary-1",
-                role: "system",
-                content: "Read 4 files, searched 12 matches across 3 directories",
-                timestamp: Date.now(),
-              }} />
+              <MessageBubble
+                message={{
+                  id: "summary-1",
+                  role: "system",
+                  content:
+                    "Read 4 files, searched 12 matches across 3 directories",
+                  timestamp: Date.now(),
+                }}
+              />
             </Card>
           </div>
         </Section>
 
         {/* ─── Task Panel ──────────────────────────────── */}
-        <Section title="Tasks" description="Task list states: pending, in progress, completed, blocked">
+        <Section
+          title="Tasks"
+          description="Task list states: pending, in progress, completed, blocked"
+        >
           <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
             {/* Session stats mock */}
             <div className="px-4 py-3 border-b border-cc-border space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-cc-muted uppercase tracking-wider">Cost</span>
-                <span className="text-[13px] font-medium text-cc-fg tabular-nums">$0.1847</span>
+                <span className="text-[11px] text-cc-muted uppercase tracking-wider">
+                  Cost
+                </span>
+                <span className="text-[13px] font-medium text-cc-fg tabular-nums">
+                  $0.1847
+                </span>
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-cc-muted uppercase tracking-wider">Context</span>
-                  <span className="text-[11px] text-cc-muted tabular-nums">62%</span>
+                  <span className="text-[11px] text-cc-muted uppercase tracking-wider">
+                    Context
+                  </span>
+                  <span className="text-[11px] text-cc-muted tabular-nums">
+                    62%
+                  </span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-cc-hover overflow-hidden">
-                  <div className="h-full rounded-full bg-cc-warning transition-all duration-500" style={{ width: "62%" }} />
+                  <div
+                    className="h-full rounded-full bg-cc-warning transition-all duration-500"
+                    style={{ width: "62%" }}
+                  />
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-cc-muted uppercase tracking-wider">Turns</span>
-                <span className="text-[13px] font-medium text-cc-fg tabular-nums">14</span>
+                <span className="text-[11px] text-cc-muted uppercase tracking-wider">
+                  Turns
+                </span>
+                <span className="text-[13px] font-medium text-cc-fg tabular-nums">
+                  14
+                </span>
               </div>
             </div>
             {/* Task header */}
             <div className="px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
-              <span className="text-[12px] font-semibold text-cc-fg">Tasks</span>
-              <span className="text-[11px] text-cc-muted tabular-nums">2/{MOCK_TASKS.length}</span>
+              <span className="text-[12px] font-semibold text-cc-fg">
+                Tasks
+              </span>
+              <span className="text-[11px] text-cc-muted tabular-nums">
+                2/{MOCK_TASKS.length}
+              </span>
             </div>
             {/* Task list */}
             <div className="px-3 py-2 space-y-0.5">
@@ -786,7 +1157,10 @@ export function Playground() {
         </Section>
 
         {/* ─── GitHub PR Status ──────────────────────────────── */}
-        <Section title="GitHub PR Status" description="PR health shown in the TaskPanel — checks, reviews, unresolved comments">
+        <Section
+          title="GitHub PR Status"
+          description="PR health shown in the TaskPanel — checks, reviews, unresolved comments"
+        >
           <div className="space-y-4">
             <Card label="Open PR — failing checks + changes requested">
               <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
@@ -812,22 +1186,40 @@ export function Playground() {
         </Section>
 
         {/* ─── Linear Issue (TaskPanel) ────────────────── */}
-        <Section title="Linear Issue (TaskPanel)" description="Linear issue linked to a session — displayed in TaskPanel with status, comments, and actions">
+        <Section
+          title="Linear Issue (TaskPanel)"
+          description="Linear issue linked to a session — displayed in TaskPanel with status, comments, and actions"
+        >
           <div className="space-y-4">
             <Card label="Active issue — In Progress with comments">
               <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
                 <div className="px-4 py-3 space-y-2">
                   <div className="flex items-center gap-1.5">
                     <LinearLogo className="w-3.5 h-3.5 text-cc-muted shrink-0" />
-                    <span className="text-[12px] font-semibold text-cc-fg font-mono-code">{MOCK_LINEAR_ISSUE_ACTIVE.identifier}</span>
+                    <span className="text-[12px] font-semibold text-cc-fg font-mono-code">
+                      {MOCK_LINEAR_ISSUE_ACTIVE.identifier}
+                    </span>
                     <span className="text-[9px] font-medium px-1.5 rounded-full leading-[16px] text-blue-400 bg-blue-400/10">
                       {MOCK_LINEAR_ISSUE_ACTIVE.stateName}
                     </span>
-                    <button className="ml-auto flex items-center justify-center w-5 h-5 rounded text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer" title="Unlink">
-                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+                    <button
+                      className="ml-auto flex items-center justify-center w-5 h-5 rounded text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+                      title="Unlink"
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        className="w-3 h-3"
+                      >
+                        <path d="M4 4l8 8M12 4l-8 8" />
+                      </svg>
                     </button>
                   </div>
-                  <p className="text-[11px] text-cc-muted truncate">{MOCK_LINEAR_ISSUE_ACTIVE.title}</p>
+                  <p className="text-[11px] text-cc-muted truncate">
+                    {MOCK_LINEAR_ISSUE_ACTIVE.title}
+                  </p>
                   <div className="flex items-center gap-2 text-[10px] text-cc-muted">
                     <span>{MOCK_LINEAR_ISSUE_ACTIVE.priorityLabel}</span>
                     <span>&middot;</span>
@@ -836,18 +1228,34 @@ export function Playground() {
                     <span>@ Alice</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "#bb87fc20", color: "#bb87fc" }}>feature</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: "#f2994a20", color: "#f2994a" }}>frontend</span>
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded-full"
+                      style={{ backgroundColor: "#bb87fc20", color: "#bb87fc" }}
+                    >
+                      feature
+                    </span>
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded-full"
+                      style={{ backgroundColor: "#f2994a20", color: "#f2994a" }}
+                    >
+                      frontend
+                    </span>
                   </div>
                 </div>
                 {/* Comments */}
                 <div className="px-4 py-2 border-t border-cc-border space-y-1.5 max-h-36 overflow-y-auto">
-                  <span className="text-[10px] text-cc-muted uppercase tracking-wider">Comments</span>
+                  <span className="text-[10px] text-cc-muted uppercase tracking-wider">
+                    Comments
+                  </span>
                   {MOCK_LINEAR_COMMENTS.map((c) => (
                     <div key={c.id} className="text-[11px]">
                       <div className="flex items-center gap-1">
-                        <span className="font-medium text-cc-fg">{c.userName}</span>
-                        <span className="text-[9px] text-cc-muted">just now</span>
+                        <span className="font-medium text-cc-fg">
+                          {c.userName}
+                        </span>
+                        <span className="text-[9px] text-cc-muted">
+                          just now
+                        </span>
                       </div>
                       <p className="text-cc-muted line-clamp-2">{c.body}</p>
                     </div>
@@ -855,9 +1263,19 @@ export function Playground() {
                 </div>
                 {/* Comment input */}
                 <div className="px-4 py-2 border-t border-cc-border flex items-center gap-1.5">
-                  <input type="text" placeholder="Add a comment..." className="flex-1 text-[11px] bg-transparent border border-cc-border rounded-md px-2 py-1.5 text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50" />
+                  <input
+                    type="text"
+                    placeholder="Add a comment..."
+                    className="flex-1 text-[11px] bg-transparent border border-cc-border rounded-md px-2 py-1.5 text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
+                  />
                   <button className="flex items-center justify-center w-6 h-6 rounded text-cc-primary cursor-pointer">
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5"><path d="M1.724 1.053a.5.5 0 0 0-.714.545l1.403 4.85a.5.5 0 0 0 .397.354l5.19.736-5.19.737a.5.5 0 0 0-.397.353L1.01 13.48a.5.5 0 0 0 .714.545l13-6.5a.5.5 0 0 0 0-.894l-13-6.5z" /></svg>
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      className="w-3.5 h-3.5"
+                    >
+                      <path d="M1.724 1.053a.5.5 0 0 0-.714.545l1.403 4.85a.5.5 0 0 0 .397.354l5.19.736-5.19.737a.5.5 0 0 0-.397.353L1.01 13.48a.5.5 0 0 0 .714.545l13-6.5a.5.5 0 0 0 0-.894l-13-6.5z" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -868,12 +1286,16 @@ export function Playground() {
                 <div className="px-4 py-3 space-y-2">
                   <div className="flex items-center gap-1.5">
                     <LinearLogo className="w-3.5 h-3.5 text-cc-muted shrink-0" />
-                    <span className="text-[12px] font-semibold text-cc-fg font-mono-code">{MOCK_LINEAR_ISSUE_DONE.identifier}</span>
+                    <span className="text-[12px] font-semibold text-cc-fg font-mono-code">
+                      {MOCK_LINEAR_ISSUE_DONE.identifier}
+                    </span>
                     <span className="text-[9px] font-medium px-1.5 rounded-full leading-[16px] text-cc-success bg-cc-success/10">
                       {MOCK_LINEAR_ISSUE_DONE.stateName}
                     </span>
                   </div>
-                  <p className="text-[11px] text-cc-muted truncate">{MOCK_LINEAR_ISSUE_DONE.title}</p>
+                  <p className="text-[11px] text-cc-muted truncate">
+                    {MOCK_LINEAR_ISSUE_DONE.title}
+                  </p>
                   <div className="flex items-center gap-2 text-[10px] text-cc-muted">
                     <span>{MOCK_LINEAR_ISSUE_DONE.priorityLabel}</span>
                     <span>&middot;</span>
@@ -883,12 +1305,20 @@ export function Playground() {
                 {/* Done warning */}
                 <div className="px-4 py-2 bg-cc-success/10 border-t border-cc-success/20 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-[11px] text-cc-success font-medium">Issue completed</p>
-                    <p className="text-[10px] text-cc-success/80">Ticket moved to done.</p>
+                    <p className="text-[11px] text-cc-success font-medium">
+                      Issue completed
+                    </p>
+                    <p className="text-[10px] text-cc-success/80">
+                      Ticket moved to done.
+                    </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button className="text-[10px] text-cc-muted hover:text-cc-fg px-1.5 py-0.5 rounded cursor-pointer">Dismiss</button>
-                    <button className="text-[10px] text-cc-success font-medium px-2 py-0.5 rounded bg-cc-success/20 hover:bg-cc-success/30 cursor-pointer">Close session</button>
+                    <button className="text-[10px] text-cc-muted hover:text-cc-fg px-1.5 py-0.5 rounded cursor-pointer">
+                      Dismiss
+                    </button>
+                    <button className="text-[10px] text-cc-success font-medium px-2 py-0.5 rounded bg-cc-success/20 hover:bg-cc-success/30 cursor-pointer">
+                      Close session
+                    </button>
                   </div>
                 </div>
               </div>
@@ -908,22 +1338,42 @@ export function Playground() {
         </Section>
 
         {/* ─── MCP Servers ──────────────────────────────── */}
-        <Section title="MCP Servers" description="MCP server status display with toggle, reconnect, and tool listing">
+        <Section
+          title="MCP Servers"
+          description="MCP server status display with toggle, reconnect, and tool listing"
+        >
           <div className="space-y-4">
             <Card label="All server states (connected, failed, disabled, connecting)">
               <div className="w-[280px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
                 {/* MCP section header */}
                 <div className="shrink-0 px-4 py-2.5 border-b border-cc-border flex items-center justify-between">
                   <span className="text-[12px] font-semibold text-cc-fg flex items-center gap-1.5">
-                    <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-cc-muted">
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                      className="w-3.5 h-3.5 text-cc-muted"
+                    >
                       <path d="M1.5 3A1.5 1.5 0 013 1.5h10A1.5 1.5 0 0114.5 3v1A1.5 1.5 0 0113 5.5H3A1.5 1.5 0 011.5 4V3zm0 5A1.5 1.5 0 013 6.5h10A1.5 1.5 0 0114.5 8v1A1.5 1.5 0 0113 10.5H3A1.5 1.5 0 011.5 9V8zm0 5A1.5 1.5 0 013 11.5h10a1.5 1.5 0 011.5 1.5v1a1.5 1.5 0 01-1.5 1.5H3A1.5 1.5 0 011.5 14v-1z" />
                     </svg>
                     MCP Servers
                   </span>
                   <span className="text-[11px] text-cc-muted">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-                      <path d="M2.5 8a5.5 5.5 0 019.78-3.5M13.5 8a5.5 5.5 0 01-9.78 3.5" strokeLinecap="round" />
-                      <path d="M12.5 2v3h-3M3.5 14v-3h3" strokeLinecap="round" strokeLinejoin="round" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      className="w-3.5 h-3.5"
+                    >
+                      <path
+                        d="M2.5 8a5.5 5.5 0 019.78-3.5M13.5 8a5.5 5.5 0 01-9.78 3.5"
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M12.5 2v3h-3M3.5 14v-3h3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
                     </svg>
                   </span>
                 </div>
@@ -939,15 +1389,26 @@ export function Playground() {
         </Section>
 
         {/* ─── Panel Config View ──────────────────────────── */}
-        <Section title="Panel Config View" description="Inline configuration for the right sidebar — toggle sections on/off and reorder them">
+        <Section
+          title="Panel Config View"
+          description="Inline configuration for the right sidebar — toggle sections on/off and reorder them"
+        >
           <div className="space-y-4">
             <Card label="Config mode with mixed enabled/disabled sections">
               <div className="w-[320px] border border-cc-border rounded-xl overflow-hidden bg-cc-card">
                 {/* Header */}
                 <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-cc-border">
-                  <span className="text-sm font-semibold text-cc-fg tracking-tight">Panel Settings</span>
+                  <span className="text-sm font-semibold text-cc-fg tracking-tight">
+                    Panel Settings
+                  </span>
                   <button className="flex items-center justify-center w-6 h-6 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      className="w-3.5 h-3.5"
+                    >
                       <path d="M4 4l8 8M12 4l-8 8" />
                     </svg>
                   </button>
@@ -955,12 +1416,42 @@ export function Playground() {
                 {/* Section rows */}
                 <div className="px-3 py-3 space-y-1">
                   {[
-                    { id: "git-branch", label: "Git Branch", desc: "Current branch, ahead/behind, and line changes", enabled: true },
-                    { id: "usage-limits", label: "Usage Limits", desc: "API usage and rate limit meters", enabled: true },
-                    { id: "github-pr", label: "GitHub PR", desc: "Pull request status, CI checks, and reviews", enabled: false },
-                    { id: "linear-issue", label: "Linear Issue", desc: "Linked Linear ticket and comments", enabled: true },
-                    { id: "mcp-servers", label: "MCP Servers", desc: "Model Context Protocol server connections", enabled: false },
-                    { id: "tasks", label: "Tasks", desc: "Agent task list and progress", enabled: true },
+                    {
+                      id: "git-branch",
+                      label: "Git Branch",
+                      desc: "Current branch, ahead/behind, and line changes",
+                      enabled: true,
+                    },
+                    {
+                      id: "usage-limits",
+                      label: "Usage Limits",
+                      desc: "API usage and rate limit meters",
+                      enabled: true,
+                    },
+                    {
+                      id: "github-pr",
+                      label: "GitHub PR",
+                      desc: "Pull request status, CI checks, and reviews",
+                      enabled: false,
+                    },
+                    {
+                      id: "linear-issue",
+                      label: "Linear Issue",
+                      desc: "Linked Linear ticket and comments",
+                      enabled: true,
+                    },
+                    {
+                      id: "mcp-servers",
+                      label: "MCP Servers",
+                      desc: "Model Context Protocol server connections",
+                      enabled: false,
+                    },
+                    {
+                      id: "tasks",
+                      label: "Tasks",
+                      desc: "Agent task list and progress",
+                      enabled: true,
+                    },
                   ].map((s, i, arr) => (
                     <div
                       key={s.id}
@@ -969,16 +1460,38 @@ export function Playground() {
                       }`}
                     >
                       <div className="flex flex-col gap-0.5 shrink-0">
-                        <button disabled={i === 0} className="w-5 h-4 flex items-center justify-center text-cc-muted hover:text-cc-fg disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors">
-                          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path d="M8 4l4 4H4l4-4z" /></svg>
+                        <button
+                          disabled={i === 0}
+                          className="w-5 h-4 flex items-center justify-center text-cc-muted hover:text-cc-fg disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                        >
+                          <svg
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            className="w-3 h-3"
+                          >
+                            <path d="M8 4l4 4H4l4-4z" />
+                          </svg>
                         </button>
-                        <button disabled={i === arr.length - 1} className="w-5 h-4 flex items-center justify-center text-cc-muted hover:text-cc-fg disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors">
-                          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path d="M8 12l4-4H4l4 4z" /></svg>
+                        <button
+                          disabled={i === arr.length - 1}
+                          className="w-5 h-4 flex items-center justify-center text-cc-muted hover:text-cc-fg disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                        >
+                          <svg
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            className="w-3 h-3"
+                          >
+                            <path d="M8 12l4-4H4l4 4z" />
+                          </svg>
                         </button>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[12px] font-medium text-cc-fg block">{s.label}</span>
-                        <span className="text-[10px] text-cc-muted block truncate">{s.desc}</span>
+                        <span className="text-[12px] font-medium text-cc-fg block">
+                          {s.label}
+                        </span>
+                        <span className="text-[10px] text-cc-muted block truncate">
+                          {s.desc}
+                        </span>
                       </div>
                       <button
                         className={`shrink-0 w-8 h-[18px] rounded-full transition-colors cursor-pointer relative ${
@@ -987,17 +1500,25 @@ export function Playground() {
                         role="switch"
                         aria-checked={s.enabled}
                       >
-                        <span className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${
-                          s.enabled ? "translate-x-[16px]" : "translate-x-[2px]"
-                        }`} />
+                        <span
+                          className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-transform ${
+                            s.enabled
+                              ? "translate-x-[16px]"
+                              : "translate-x-[2px]"
+                          }`}
+                        />
                       </button>
                     </div>
                   ))}
                 </div>
                 {/* Footer */}
                 <div className="shrink-0 border-t border-cc-border px-3 py-2.5 flex items-center justify-between">
-                  <button className="text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer">Reset to defaults</button>
-                  <button className="text-[11px] font-medium text-cc-primary hover:text-cc-primary-hover transition-colors cursor-pointer">Done</button>
+                  <button className="text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer">
+                    Reset to defaults
+                  </button>
+                  <button className="text-[11px] font-medium text-cc-primary hover:text-cc-primary-hover transition-colors cursor-pointer">
+                    Done
+                  </button>
                 </div>
               </div>
             </Card>
@@ -1005,7 +1526,10 @@ export function Playground() {
         </Section>
 
         {/* ─── Codex Session Details ──────────────────────── */}
-        <Section title="Codex Session Details" description="Rate limits and token details for Codex (OpenAI) sessions — streamed via session_update">
+        <Section
+          title="Codex Session Details"
+          description="Rate limits and token details for Codex (OpenAI) sessions — streamed via session_update"
+        >
           <div className="space-y-4">
             <Card label="Rate limits with token breakdown">
               <CodexPlaygroundDemo />
@@ -1014,7 +1538,10 @@ export function Playground() {
         </Section>
 
         {/* ─── Update Banner ──────────────────────────────── */}
-        <Section title="Update Banner" description="Notification banner for available updates">
+        <Section
+          title="Update Banner"
+          description="Notification banner for available updates"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Service mode (auto-update)">
               <PlaygroundUpdateBanner
@@ -1056,18 +1583,27 @@ export function Playground() {
         </Section>
 
         {/* ─── Status Indicators ──────────────────────────────── */}
-        <Section title="Status Indicators" description="Connection and session status banners">
+        <Section
+          title="Status Indicators"
+          description="Connection and session status banners"
+        >
           <div className="space-y-3 max-w-3xl">
             <Card label="Disconnected warning">
               <div className="px-4 py-2 bg-cc-warning/10 border border-cc-warning/20 rounded-lg text-center">
-                <span className="text-xs text-cc-warning font-medium">Reconnecting to session...</span>
+                <span className="text-xs text-cc-warning font-medium">
+                  Reconnecting to session...
+                </span>
               </div>
             </Card>
             <Card label="Connected">
               <div className="flex items-center gap-2 px-3 py-2 bg-cc-card border border-cc-border rounded-lg">
                 <span className="w-2 h-2 rounded-full bg-cc-success" />
-                <span className="text-xs text-cc-fg font-medium">Connected</span>
-                <span className="text-[11px] text-cc-muted ml-auto">claude-opus-4-6</span>
+                <span className="text-xs text-cc-fg font-medium">
+                  Connected
+                </span>
+                <span className="text-[11px] text-cc-muted ml-auto">
+                  claude-opus-4-6
+                </span>
               </div>
             </Card>
             <Card label="Running / Thinking">
@@ -1078,26 +1614,62 @@ export function Playground() {
             </Card>
             <Card label="Compacting">
               <div className="flex items-center gap-2 px-3 py-2 bg-cc-card border border-cc-border rounded-lg">
-                <svg className="w-3.5 h-3.5 text-cc-muted animate-spin" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
+                <svg
+                  className="w-3.5 h-3.5 text-cc-muted animate-spin"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                >
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeDasharray="28"
+                    strokeDashoffset="8"
+                    strokeLinecap="round"
+                  />
                 </svg>
-                <span className="text-xs text-cc-muted font-medium">Compacting context...</span>
+                <span className="text-xs text-cc-muted font-medium">
+                  Compacting context...
+                </span>
               </div>
             </Card>
           </div>
         </Section>
 
         {/* ─── Composer ──────────────────────────────── */}
-        <Section title="Composer" description="Message input bar with mode toggle, image upload, saved prompts (@), and send/stop buttons">
+        <Section
+          title="Composer"
+          description="Message input bar with mode toggle, image upload, saved prompts (@), and send/stop buttons"
+        >
           <div className="max-w-3xl">
             <Card label="Connected — code mode">
               <div className="border-t border-cc-border bg-cc-card px-4 py-3">
                 <div className="relative bg-cc-input-bg/95 border border-cc-border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
                   <div className="flex items-end gap-2 px-2.5 py-2">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
-                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                        <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="w-3.5 h-3.5"
+                      >
+                        <path
+                          d="M2.5 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                        <path
+                          d="M8.5 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
                       </svg>
                       <span>code</span>
                     </div>
@@ -1110,14 +1682,34 @@ export function Playground() {
                     />
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="w-4 h-4"
+                        >
                           <rect x="2" y="2" width="12" height="12" rx="2" />
-                          <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
-                          <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
+                          <circle
+                            cx="5.5"
+                            cy="5.5"
+                            r="1"
+                            fill="currentColor"
+                            stroke="none"
+                          />
+                          <path
+                            d="M2 11l3-3 2 2 3-4 4 5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
                         </svg>
                       </div>
                       <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-primary text-white shadow-[0_6px_20px_rgba(0,0,0,0.18)]">
-                        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="w-3.5 h-3.5"
+                        >
                           <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
                         </svg>
                       </div>
@@ -1132,12 +1724,21 @@ export function Playground() {
                 <div className="relative bg-cc-input-bg/95 border border-cc-border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
                   <div className="absolute left-2 right-2 bottom-full mb-1 max-h-[180px] overflow-y-auto bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 py-1">
                     <div className="px-3 py-2 flex items-center gap-2.5 bg-cc-hover">
-                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-cc-hover text-cc-muted shrink-0">@</span>
+                      <span className="flex items-center justify-center w-6 h-6 rounded-md bg-cc-hover text-cc-muted shrink-0">
+                        @
+                      </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-[13px] font-medium text-cc-fg truncate">@review-pr</div>
-                        <div className="text-[11px] text-cc-muted truncate">Review this PR and list risks, regressions, and missing tests.</div>
+                        <div className="text-[13px] font-medium text-cc-fg truncate">
+                          @review-pr
+                        </div>
+                        <div className="text-[11px] text-cc-muted truncate">
+                          Review this PR and list risks, regressions, and
+                          missing tests.
+                        </div>
                       </div>
-                      <span className="text-[10px] text-cc-muted shrink-0">project</span>
+                      <span className="text-[10px] text-cc-muted shrink-0">
+                        project
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-end gap-2 px-2.5 py-2">
@@ -1150,7 +1751,13 @@ export function Playground() {
                     />
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="w-4 h-4"
+                        >
                           <path d="M4 2.75h8A1.25 1.25 0 0113.25 4v9.25L8 10.5l-5.25 2.75V4A1.25 1.25 0 014 2.75z" />
                         </svg>
                       </div>
@@ -1165,7 +1772,11 @@ export function Playground() {
                 <div className="relative bg-cc-input-bg/95 border border-cc-primary/40 rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
                   <div className="flex items-end gap-2 px-2.5 py-2">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-primary/40 text-[12px] font-semibold text-cc-primary bg-cc-primary/8">
-                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="w-3.5 h-3.5"
+                      >
                         <rect x="3" y="3" width="3.5" height="10" rx="0.75" />
                         <rect x="9.5" y="3" width="3.5" height="10" rx="0.75" />
                       </svg>
@@ -1181,14 +1792,34 @@ export function Playground() {
                     />
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="w-4 h-4"
+                        >
                           <rect x="2" y="2" width="12" height="12" rx="2" />
-                          <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
-                          <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
+                          <circle
+                            cx="5.5"
+                            cy="5.5"
+                            r="1"
+                            fill="currentColor"
+                            stroke="none"
+                          />
+                          <path
+                            d="M2 11l3-3 2 2 3-4 4 5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
                         </svg>
                       </div>
                       <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cc-hover text-cc-muted">
-                        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="w-3.5 h-3.5"
+                        >
                           <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z" />
                         </svg>
                       </div>
@@ -1203,9 +1834,27 @@ export function Playground() {
                 <div className="relative bg-cc-input-bg/95 border border-cc-border rounded-[14px] shadow-[0_10px_30px_rgba(0,0,0,0.10)] overflow-visible">
                   <div className="flex items-end gap-2 px-2.5 py-2">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-cc-border text-[12px] font-semibold text-cc-muted">
-                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                        <path d="M2.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                        <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="w-3.5 h-3.5"
+                      >
+                        <path
+                          d="M2.5 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                        <path
+                          d="M8.5 4l4 4-4 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
                       </svg>
                       <span>code</span>
                     </div>
@@ -1219,14 +1868,34 @@ export function Playground() {
                     />
                     <div className="mb-0.5 flex items-center gap-1.5">
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg border border-cc-border text-cc-muted">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="w-4 h-4"
+                        >
                           <rect x="2" y="2" width="12" height="12" rx="2" />
-                          <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none" />
-                          <path d="M2 11l3-3 2 2 3-4 4 5" strokeLinecap="round" strokeLinejoin="round" />
+                          <circle
+                            cx="5.5"
+                            cy="5.5"
+                            r="1"
+                            fill="currentColor"
+                            stroke="none"
+                          />
+                          <path
+                            d="M2 11l3-3 2 2 3-4 4 5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
                         </svg>
                       </div>
                       <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-cc-error/10 text-cc-error">
-                        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          className="w-3.5 h-3.5"
+                        >
                           <rect x="3" y="3" width="10" height="10" rx="1" />
                         </svg>
                       </div>
@@ -1239,18 +1908,32 @@ export function Playground() {
         </Section>
 
         {/* ─── Streaming Indicator ──────────────────────────────── */}
-        <Section title="Streaming Indicator" description="Live typing animation shown while the assistant is generating">
+        <Section
+          title="Streaming Indicator"
+          description="Live typing animation shown while the assistant is generating"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Streaming with cursor">
               <div className="flex items-start gap-3">
                 <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 text-cc-primary">
-                    <path d="M8 1v14M1 8h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    className="w-3.5 h-3.5 text-cc-primary"
+                  >
+                    <path
+                      d="M8 1v14M1 8h14"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </div>
                 <div className="flex-1 min-w-0">
                   <pre className="font-serif-assistant text-[15px] text-cc-fg whitespace-pre-wrap break-words leading-relaxed">
-                    I'll start by creating the JWT utility module with sign and verify helpers. Let me first check what dependencies are already installed...
+                    I'll start by creating the JWT utility module with sign and
+                    verify helpers. Let me first check what dependencies are
+                    already installed...
                     <span className="inline-block w-0.5 h-4 bg-cc-primary ml-0.5 align-middle animate-[pulse-dot_0.8s_ease-in-out_infinite]" />
                   </pre>
                 </div>
@@ -1271,19 +1954,37 @@ export function Playground() {
         </Section>
 
         {/* ─── Tool Message Groups ──────────────────────────────── */}
-        <Section title="Tool Message Groups" description="Consecutive same-tool calls collapsed into a single expandable row">
+        <Section
+          title="Tool Message Groups"
+          description="Consecutive same-tool calls collapsed into a single expandable row"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Multi-item group (4 Reads)">
-              <PlaygroundToolGroup toolName="Read" items={MOCK_TOOL_GROUP_ITEMS} />
+              <PlaygroundToolGroup
+                toolName="Read"
+                items={MOCK_TOOL_GROUP_ITEMS}
+              />
             </Card>
             <Card label="Single-item group">
-              <PlaygroundToolGroup toolName="Glob" items={[{ id: "sg-1", name: "Glob", input: { pattern: "src/auth/**/*.ts" } }]} />
+              <PlaygroundToolGroup
+                toolName="Glob"
+                items={[
+                  {
+                    id: "sg-1",
+                    name: "Glob",
+                    input: { pattern: "src/auth/**/*.ts" },
+                  },
+                ]}
+              />
             </Card>
           </div>
         </Section>
 
         {/* ─── Subagent Groups ──────────────────────────────── */}
-        <Section title="Subagent Groups" description="Nested messages from Task tool subagents shown in a collapsible indent">
+        <Section
+          title="Subagent Groups"
+          description="Nested messages from Task tool subagents shown in a collapsible indent"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Subagent with nested tool calls">
               <PlaygroundSubagentGroup
@@ -1296,19 +1997,28 @@ export function Playground() {
         </Section>
 
         {/* ─── Diff Viewer ──────────────────────────────── */}
-        <Section title="Diff Viewer" description="Unified diff rendering with word-level highlighting — used in ToolBlock, PermissionBanner, and DiffPanel">
+        <Section
+          title="Diff Viewer"
+          description="Unified diff rendering with word-level highlighting — used in ToolBlock, PermissionBanner, and DiffPanel"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Edit diff (compact mode)">
               <DiffViewer
-                oldText={'export function formatDate(d: Date) {\n  return d.toISOString();\n}'}
-                newText={'export function formatDate(d: Date, locale = "en-US") {\n  return d.toLocaleDateString(locale, {\n    year: "numeric",\n    month: "short",\n    day: "numeric",\n  });\n}'}
+                oldText={
+                  "export function formatDate(d: Date) {\n  return d.toISOString();\n}"
+                }
+                newText={
+                  'export function formatDate(d: Date, locale = "en-US") {\n  return d.toLocaleDateString(locale, {\n    year: "numeric",\n    month: "short",\n    day: "numeric",\n  });\n}'
+                }
                 fileName="src/utils/format.ts"
                 mode="compact"
               />
             </Card>
             <Card label="New file diff (compact mode)">
               <DiffViewer
-                newText={'export const config = {\n  apiUrl: "https://api.example.com",\n  timeout: 5000,\n  retries: 3,\n  debug: process.env.NODE_ENV !== "production",\n};\n'}
+                newText={
+                  'export const config = {\n  apiUrl: "https://api.example.com",\n  timeout: 5000,\n  retries: 3,\n  debug: process.env.NODE_ENV !== "production",\n};\n'
+                }
                 fileName="src/config.ts"
                 mode="compact"
               />
@@ -1347,81 +2057,205 @@ export function Playground() {
           </div>
         </Section>
         {/* ─── Session Creation Progress ─────────────────────── */}
-        <Section title="Session Creation Progress" description="Step-by-step progress indicator shown during session creation (SSE streaming)">
+        <Section
+          title="Session Creation Progress"
+          description="Step-by-step progress indicator shown during session creation (SSE streaming)"
+        >
           <div className="space-y-4 max-w-md">
             <Card label="In progress (container session)">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "pulling_image", label: "Pulling Docker image...", status: "done" },
-                  { step: "creating_container", label: "Starting container...", status: "in_progress" },
-                  { step: "launching_cli", label: "Launching Claude Code...", status: "in_progress" },
-                ] satisfies CreationProgressEvent[]}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "pulling_image",
+                      label: "Pulling Docker image...",
+                      status: "done",
+                    },
+                    {
+                      step: "creating_container",
+                      label: "Starting container...",
+                      status: "in_progress",
+                    },
+                    {
+                      step: "launching_cli",
+                      label: "Launching Claude Code...",
+                      status: "in_progress",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
               />
             </Card>
             <Card label="Completed (worktree session)">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "fetching_git", label: "Fetching from remote...", status: "done" },
-                  { step: "checkout_branch", label: "Checking out feat/auth...", status: "done" },
-                  { step: "creating_worktree", label: "Creating worktree...", status: "done" },
-                  { step: "launching_cli", label: "Launching Claude Code...", status: "done" },
-                ] satisfies CreationProgressEvent[]}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "fetching_git",
+                      label: "Fetching from remote...",
+                      status: "done",
+                    },
+                    {
+                      step: "checkout_branch",
+                      label: "Checking out feat/auth...",
+                      status: "done",
+                    },
+                    {
+                      step: "creating_worktree",
+                      label: "Creating worktree...",
+                      status: "done",
+                    },
+                    {
+                      step: "launching_cli",
+                      label: "Launching Claude Code...",
+                      status: "done",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
               />
             </Card>
             <Card label="Error during image pull">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "pulling_image", label: "Pulling Docker image...", status: "error" },
-                ] satisfies CreationProgressEvent[]}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "pulling_image",
+                      label: "Pulling Docker image...",
+                      status: "error",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
                 error="Failed to pull docker.io/stangirard/the-companion:latest — connection timed out after 30s"
               />
             </Card>
             <Card label="With streaming init script logs">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "pulling_image", label: "Image ready", status: "done" },
-                  { step: "creating_container", label: "Container running", status: "done" },
-                  { step: "running_init_script", label: "Running init script...", status: "in_progress", detail: "Installing dependencies..." },
-                ] satisfies CreationProgressEvent[]}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "pulling_image",
+                      label: "Image ready",
+                      status: "done",
+                    },
+                    {
+                      step: "creating_container",
+                      label: "Container running",
+                      status: "done",
+                    },
+                    {
+                      step: "running_init_script",
+                      label: "Running init script...",
+                      status: "in_progress",
+                      detail: "Installing dependencies...",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
               />
             </Card>
             <Card label="With streaming image pull logs">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "pulling_image", label: "Pulling Docker image...", status: "in_progress", detail: "Downloading layer 3/7 [=====>    ] 45%" },
-                ] satisfies CreationProgressEvent[]}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "pulling_image",
+                      label: "Pulling Docker image...",
+                      status: "in_progress",
+                      detail: "Downloading layer 3/7 [=====>    ] 45%",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
               />
             </Card>
             <Card label="Error during init script">
               <SessionCreationProgress
-                steps={[
-                  { step: "resolving_env", label: "Resolving environment...", status: "done" },
-                  { step: "pulling_image", label: "Pulling Docker image...", status: "done" },
-                  { step: "creating_container", label: "Starting container...", status: "done" },
-                  { step: "running_init_script", label: "Running init script...", status: "error" },
-                ] satisfies CreationProgressEvent[]}
-                error={"npm ERR! code ENOENT\nnpm ERR! syscall open\nnpm ERR! path /app/package.json"}
+                steps={
+                  [
+                    {
+                      step: "resolving_env",
+                      label: "Resolving environment...",
+                      status: "done",
+                    },
+                    {
+                      step: "pulling_image",
+                      label: "Pulling Docker image...",
+                      status: "done",
+                    },
+                    {
+                      step: "creating_container",
+                      label: "Starting container...",
+                      status: "done",
+                    },
+                    {
+                      step: "running_init_script",
+                      label: "Running init script...",
+                      status: "error",
+                    },
+                  ] satisfies CreationProgressEvent[]
+                }
+                error={
+                  "npm ERR! code ENOENT\nnpm ERR! syscall open\nnpm ERR! path /app/package.json"
+                }
               />
             </Card>
           </div>
         </Section>
         {/* ─── Session Launch Overlay ──────────────────────────── */}
-        <Section title="Session Launch Overlay" description="Full-screen overlay shown during session creation, replacing the inline progress list">
+        <Section
+          title="Session Launch Overlay"
+          description="Full-screen overlay shown during session creation, replacing the inline progress list"
+        >
           <div className="space-y-4">
             <Card label="In progress (container session)">
               <div className="relative h-[360px] bg-cc-bg rounded-lg overflow-hidden border border-cc-border">
                 <SessionLaunchOverlay
-                  steps={[
-                    { step: "resolving_env", label: "Environment resolved", status: "done" },
-                    { step: "pulling_image", label: "Pulling Docker image...", status: "done" },
-                    { step: "creating_container", label: "Starting container...", status: "in_progress" },
-                    { step: "launching_cli", label: "Launching Claude Code...", status: "in_progress" },
-                  ] satisfies CreationProgressEvent[]}
+                  steps={
+                    [
+                      {
+                        step: "resolving_env",
+                        label: "Environment resolved",
+                        status: "done",
+                      },
+                      {
+                        step: "pulling_image",
+                        label: "Pulling Docker image...",
+                        status: "done",
+                      },
+                      {
+                        step: "creating_container",
+                        label: "Starting container...",
+                        status: "in_progress",
+                      },
+                      {
+                        step: "launching_cli",
+                        label: "Launching Claude Code...",
+                        status: "in_progress",
+                      },
+                    ] satisfies CreationProgressEvent[]
+                  }
                   backend="claude"
                   onCancel={() => {}}
                 />
@@ -1430,12 +2264,30 @@ export function Playground() {
             <Card label="All steps done (launching)">
               <div className="relative h-[360px] bg-cc-bg rounded-lg overflow-hidden border border-cc-border">
                 <SessionLaunchOverlay
-                  steps={[
-                    { step: "resolving_env", label: "Environment resolved", status: "done" },
-                    { step: "fetching_git", label: "Fetch complete", status: "done" },
-                    { step: "creating_worktree", label: "Worktree created", status: "done" },
-                    { step: "launching_cli", label: "CLI launched", status: "done" },
-                  ] satisfies CreationProgressEvent[]}
+                  steps={
+                    [
+                      {
+                        step: "resolving_env",
+                        label: "Environment resolved",
+                        status: "done",
+                      },
+                      {
+                        step: "fetching_git",
+                        label: "Fetch complete",
+                        status: "done",
+                      },
+                      {
+                        step: "creating_worktree",
+                        label: "Worktree created",
+                        status: "done",
+                      },
+                      {
+                        step: "launching_cli",
+                        label: "CLI launched",
+                        status: "done",
+                      },
+                    ] satisfies CreationProgressEvent[]
+                  }
                   backend="claude"
                 />
               </div>
@@ -1443,10 +2295,20 @@ export function Playground() {
             <Card label="Error state">
               <div className="relative h-[400px] bg-cc-bg rounded-lg overflow-hidden border border-cc-border">
                 <SessionLaunchOverlay
-                  steps={[
-                    { step: "resolving_env", label: "Environment resolved", status: "done" },
-                    { step: "pulling_image", label: "Pulling Docker image...", status: "error" },
-                  ] satisfies CreationProgressEvent[]}
+                  steps={
+                    [
+                      {
+                        step: "resolving_env",
+                        label: "Environment resolved",
+                        status: "done",
+                      },
+                      {
+                        step: "pulling_image",
+                        label: "Pulling Docker image...",
+                        status: "error",
+                      },
+                    ] satisfies CreationProgressEvent[]
+                  }
                   error="Failed to pull docker.io/stangirard/the-companion:latest — connection timed out after 30s"
                   backend="claude"
                   onCancel={() => {}}
@@ -1456,10 +2318,20 @@ export function Playground() {
             <Card label="Codex backend">
               <div className="relative h-[320px] bg-cc-bg rounded-lg overflow-hidden border border-cc-border">
                 <SessionLaunchOverlay
-                  steps={[
-                    { step: "resolving_env", label: "Environment resolved", status: "done" },
-                    { step: "launching_cli", label: "Launching Codex...", status: "in_progress" },
-                  ] satisfies CreationProgressEvent[]}
+                  steps={
+                    [
+                      {
+                        step: "resolving_env",
+                        label: "Environment resolved",
+                        status: "done",
+                      },
+                      {
+                        step: "launching_cli",
+                        label: "Launching Codex...",
+                        status: "in_progress",
+                      },
+                    ] satisfies CreationProgressEvent[]
+                  }
                   backend="codex"
                   onCancel={() => {}}
                 />
@@ -1468,7 +2340,10 @@ export function Playground() {
           </div>
         </Section>
         {/* ─── Update Overlay ──────────────────────────── */}
-        <Section title="Update Overlay" description="Full-screen overlay shown when auto-update is in progress, polls server and reloads when ready">
+        <Section
+          title="Update Overlay"
+          description="Full-screen overlay shown when auto-update is in progress, polls server and reloads when ready"
+        >
           <div className="space-y-4">
             <Card label="Installing phase">
               <div className="relative h-[360px] bg-cc-bg rounded-lg overflow-hidden border border-cc-border">
@@ -1493,7 +2368,10 @@ export function Playground() {
           </div>
         </Section>
         {/* ─── CLAUDE.md Editor ──────────────────────────────── */}
-        <Section title="CLAUDE.md Editor" description="Modal for viewing and editing project CLAUDE.md instructions">
+        <Section
+          title="CLAUDE.md Editor"
+          description="Modal for viewing and editing project CLAUDE.md instructions"
+        >
           <div className="space-y-4 max-w-3xl">
             <Card label="Open editor button (from TopBar)">
               <PlaygroundClaudeMdButton />
@@ -1660,7 +2538,15 @@ function PlaygroundSessionItems() {
 
 // ─── Shared Layout Helpers ──────────────────────────────────────────────────
 
-function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
     <section>
       <div className="mb-4">
@@ -1672,11 +2558,19 @@ function Section({ title, description, children }: { title: string; description:
   );
 }
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function Card({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="border border-cc-border rounded-xl overflow-hidden bg-cc-card">
       <div className="px-3 py-1.5 bg-cc-hover/50 border-b border-cc-border">
-        <span className="text-[10px] text-cc-muted font-mono-code uppercase tracking-wider">{label}</span>
+        <span className="text-[10px] text-cc-muted font-mono-code uppercase tracking-wider">
+          {label}
+        </span>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -1689,7 +2583,9 @@ function PlaygroundTerminalTabsMock() {
     { id: "docker", label: "Docker", cwd: "/workspace" },
   ];
   const [active, setActive] = useState("host");
-  const [placement, setPlacement] = useState<"top" | "right" | "bottom" | "left">("bottom");
+  const [placement, setPlacement] = useState<
+    "top" | "right" | "bottom" | "left"
+  >("bottom");
 
   return (
     <div className="rounded-xl border border-cc-border bg-cc-card overflow-hidden">
@@ -1703,7 +2599,8 @@ function PlaygroundTerminalTabsMock() {
                 placement === p ? "bg-cc-card text-cc-fg" : "text-cc-muted"
               }`}
             >
-              {p[0]?.toUpperCase()}{p.slice(1)}
+              {p[0]?.toUpperCase()}
+              {p.slice(1)}
             </button>
           ))}
         </div>
@@ -1725,9 +2622,13 @@ function PlaygroundTerminalTabsMock() {
         </span>
       </div>
       <div className="h-32 p-3 bg-cc-bg">
-        <div className={`h-full min-h-0 rounded-lg border border-cc-border bg-cc-card flex ${placement === "left" || placement === "right" ? "flex-row" : "flex-col"}`}>
+        <div
+          className={`h-full min-h-0 rounded-lg border border-cc-border bg-cc-card flex ${placement === "left" || placement === "right" ? "flex-row" : "flex-col"}`}
+        >
           {(placement === "top" || placement === "left") && (
-            <div className={`${placement === "left" ? "w-2/5 border-r" : "h-2/5 border-b"} border-cc-border bg-cc-sidebar/40 flex items-center justify-center text-[10px] text-cc-muted font-mono-code`}>
+            <div
+              className={`${placement === "left" ? "w-2/5 border-r" : "h-2/5 border-b"} border-cc-border bg-cc-sidebar/40 flex items-center justify-center text-[10px] text-cc-muted font-mono-code`}
+            >
               Terminal docked
             </div>
           )}
@@ -1735,7 +2636,9 @@ function PlaygroundTerminalTabsMock() {
             Session content
           </div>
           {(placement === "right" || placement === "bottom") && (
-            <div className={`${placement === "right" ? "w-2/5 border-l" : "h-2/5 border-t"} border-cc-border bg-cc-sidebar/40 flex items-center justify-center text-[10px] text-cc-muted font-mono-code`}>
+            <div
+              className={`${placement === "right" ? "w-2/5 border-l" : "h-2/5 border-t"} border-cc-border bg-cc-sidebar/40 flex items-center justify-center text-[10px] text-cc-muted font-mono-code`}
+            >
               Terminal docked
             </div>
           )}
@@ -1747,9 +2650,19 @@ function PlaygroundTerminalTabsMock() {
 
 // ─── Inline Tool Group (mirrors MessageFeed's ToolMessageGroup) ─────────────
 
-interface ToolItem { id: string; name: string; input: Record<string, unknown> }
+interface ToolItem {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
 
-function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: ToolItem[] }) {
+function PlaygroundToolGroup({
+  toolName,
+  items,
+}: {
+  toolName: string;
+  items: ToolItem[];
+}) {
   const [open, setOpen] = useState(false);
   const iconType = getToolIcon(toolName);
   const label = getToolLabel(toolName);
@@ -1760,7 +2673,13 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
     return (
       <div className="flex items-start gap-3">
         <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary"><circle cx="8" cy="8" r="3" /></svg>
+          <svg
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            className="w-3 h-3 text-cc-primary"
+          >
+            <circle cx="8" cy="8" r="3" />
+          </svg>
         </div>
         <div className="flex-1 min-w-0">
           <div className="border border-cc-border rounded-[10px] overflow-hidden bg-cc-card">
@@ -1768,7 +2687,11 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
               onClick={() => setOpen(!open)}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
             >
-              <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+              <svg
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+              >
                 <path d="M6 4l4 4-4 4" />
               </svg>
               <ToolIcon type={iconType} />
@@ -1793,7 +2716,13 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
   return (
     <div className="flex items-start gap-3">
       <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary"><circle cx="8" cy="8" r="3" /></svg>
+        <svg
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          className="w-3 h-3 text-cc-primary"
+        >
+          <circle cx="8" cy="8" r="3" />
+        </svg>
       </div>
       <div className="flex-1 min-w-0">
         <div className="border border-cc-border rounded-[10px] overflow-hidden bg-cc-card">
@@ -1801,7 +2730,11 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
             onClick={() => setOpen(!open)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
           >
-            <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+            <svg
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+            >
               <path d="M6 4l4 4-4 4" />
             </svg>
             <ToolIcon type={iconType} />
@@ -1815,9 +2748,14 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
               {items.map((item, i) => {
                 const preview = getPreview(item.name, item.input);
                 return (
-                  <div key={item.id || i} className="flex items-center gap-2 py-1 text-xs text-cc-muted font-mono-code truncate">
+                  <div
+                    key={item.id || i}
+                    className="flex items-center gap-2 py-1 text-xs text-cc-muted font-mono-code truncate"
+                  >
                     <span className="w-1 h-1 rounded-full bg-cc-muted/40 shrink-0" />
-                    <span className="truncate">{preview || JSON.stringify(item.input).slice(0, 80)}</span>
+                    <span className="truncate">
+                      {preview || JSON.stringify(item.input).slice(0, 80)}
+                    </span>
                   </div>
                 );
               })}
@@ -1831,7 +2769,15 @@ function PlaygroundToolGroup({ toolName, items }: { toolName: string; items: Too
 
 // ─── Inline Subagent Group (mirrors MessageFeed's SubagentContainer) ────────
 
-function PlaygroundSubagentGroup({ description, agentType, items }: { description: string; agentType: string; items: ToolItem[] }) {
+function PlaygroundSubagentGroup({
+  description,
+  agentType,
+  items,
+}: {
+  description: string;
+  agentType: string;
+  items: ToolItem[];
+}) {
   const [open, setOpen] = useState(true);
 
   return (
@@ -1840,14 +2786,26 @@ function PlaygroundSubagentGroup({ description, agentType, items }: { descriptio
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer mb-1"
       >
-        <svg viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}>
+        <svg
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          className={`w-3 h-3 text-cc-muted transition-transform shrink-0 ${open ? "rotate-90" : ""}`}
+        >
           <path d="M6 4l4 4-4 4" />
         </svg>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 text-cc-primary shrink-0">
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          className="w-3.5 h-3.5 text-cc-primary shrink-0"
+        >
           <circle cx="8" cy="8" r="5" />
           <path d="M8 5v3l2 1" strokeLinecap="round" />
         </svg>
-        <span className="text-xs font-medium text-cc-fg truncate">{description}</span>
+        <span className="text-xs font-medium text-cc-fg truncate">
+          {description}
+        </span>
         {agentType && (
           <span className="text-[10px] text-cc-muted bg-cc-hover rounded-full px-1.5 py-0.5 shrink-0">
             {agentType}
@@ -1859,7 +2817,10 @@ function PlaygroundSubagentGroup({ description, agentType, items }: { descriptio
       </button>
       {open && (
         <div className="space-y-3 pb-2">
-          <PlaygroundToolGroup toolName={items[0]?.name || "Grep"} items={items} />
+          <PlaygroundToolGroup
+            toolName={items[0]?.name || "Grep"}
+            items={items}
+          />
         </div>
       )}
     </div>
@@ -1901,8 +2862,16 @@ function CodexPlaygroundDemo() {
       total_lines_added: 0,
       total_lines_removed: 0,
       codex_rate_limits: {
-        primary: { usedPercent: 62, windowDurationMins: 300, resetsAt: Date.now() + 2 * 3_600_000 },
-        secondary: { usedPercent: 18, windowDurationMins: 10080, resetsAt: Date.now() + 5 * 86_400_000 },
+        primary: {
+          usedPercent: 62,
+          windowDurationMins: 300,
+          resetsAt: Date.now() + 2 * 3_600_000,
+        },
+        secondary: {
+          usedPercent: 18,
+          windowDurationMins: 10080,
+          resetsAt: Date.now() + 5 * 86_400_000,
+        },
       },
       codex_token_details: {
         inputTokens: 84_230,
@@ -1960,7 +2929,10 @@ function PlaygroundClaudeMdButton() {
   const [cwd, setCwd] = useState("/tmp");
 
   useEffect(() => {
-    api.getHome().then((res) => setCwd(res.cwd)).catch(() => {});
+    api
+      .getHome()
+      .then((res) => setCwd(res.cwd))
+      .catch(() => {});
   }, []);
 
   return (
@@ -1969,7 +2941,11 @@ function PlaygroundClaudeMdButton() {
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-cc-hover border border-cc-border hover:bg-cc-active transition-colors cursor-pointer"
       >
-        <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 text-cc-primary">
+        <svg
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          className="w-4 h-4 text-cc-primary"
+        >
           <path d="M4 1.5a.5.5 0 01.5-.5h7a.5.5 0 01.354.146l2 2A.5.5 0 0114 3.5v11a.5.5 0 01-.5.5h-11a.5.5 0 01-.5-.5v-13zm1 .5v12h8V4h-1.5a.5.5 0 01-.5-.5V2H5zm6 0v1h1l-1-1zM6.5 7a.5.5 0 000 1h5a.5.5 0 000-1h-5zm0 2a.5.5 0 000 1h5a.5.5 0 000-1h-5zm0 2a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
         </svg>
         <span className="text-xs font-medium text-cc-fg">Edit CLAUDE.md</span>
@@ -1977,11 +2953,7 @@ function PlaygroundClaudeMdButton() {
       <span className="text-[11px] text-cc-muted">
         Click to open the editor modal (uses server working directory)
       </span>
-      <ClaudeMdEditor
-        cwd={cwd}
-        open={open}
-        onClose={() => setOpen(false)}
-      />
+      <ClaudeMdEditor cwd={cwd} open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
@@ -1990,22 +2962,46 @@ function PlaygroundClaudeMdButton() {
 
 function PlaygroundMcpRow({ server }: { server: McpServerDetail }) {
   const [expanded, setExpanded] = useState(false);
-  const statusMap: Record<string, { label: string; cls: string; dot: string }> = {
-    connected: { label: "Connected", cls: "text-cc-success bg-cc-success/10", dot: "bg-cc-success" },
-    connecting: { label: "Connecting", cls: "text-cc-warning bg-cc-warning/10", dot: "bg-cc-warning animate-pulse" },
-    failed: { label: "Failed", cls: "text-cc-error bg-cc-error/10", dot: "bg-cc-error" },
-    disabled: { label: "Disabled", cls: "text-cc-muted bg-cc-hover", dot: "bg-cc-muted opacity-40" },
-  };
+  const statusMap: Record<string, { label: string; cls: string; dot: string }> =
+    {
+      connected: {
+        label: "Connected",
+        cls: "text-cc-success bg-cc-success/10",
+        dot: "bg-cc-success",
+      },
+      connecting: {
+        label: "Connecting",
+        cls: "text-cc-warning bg-cc-warning/10",
+        dot: "bg-cc-warning animate-pulse",
+      },
+      failed: {
+        label: "Failed",
+        cls: "text-cc-error bg-cc-error/10",
+        dot: "bg-cc-error",
+      },
+      disabled: {
+        label: "Disabled",
+        cls: "text-cc-muted bg-cc-hover",
+        dot: "bg-cc-muted opacity-40",
+      },
+    };
   const badge = statusMap[server.status] || statusMap.disabled;
 
   return (
     <div className="rounded-lg border border-cc-border bg-cc-bg">
       <div className="flex items-center gap-2 px-2.5 py-2">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${badge.dot}`} />
-        <button onClick={() => setExpanded(!expanded)} className="flex-1 min-w-0 text-left cursor-pointer">
-          <span className="text-[12px] font-medium text-cc-fg truncate block">{server.name}</span>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex-1 min-w-0 text-left cursor-pointer"
+        >
+          <span className="text-[12px] font-medium text-cc-fg truncate block">
+            {server.name}
+          </span>
         </button>
-        <span className={`text-[9px] font-medium px-1.5 rounded-full leading-[16px] shrink-0 ${badge.cls}`}>
+        <span
+          className={`text-[9px] font-medium px-1.5 rounded-full leading-[16px] shrink-0 ${badge.cls}`}
+        >
           {badge.label}
         </span>
       </div>
@@ -2020,14 +3016,19 @@ function PlaygroundMcpRow({ server }: { server: McpServerDetail }) {
               <div className="flex items-start gap-1">
                 <span className="text-cc-muted/60 shrink-0">Cmd:</span>
                 <span className="font-mono text-[10px] break-all">
-                  {server.config.command}{server.config.args?.length ? ` ${server.config.args.join(" ")}` : ""}
+                  {server.config.command}
+                  {server.config.args?.length
+                    ? ` ${server.config.args.join(" ")}`
+                    : ""}
                 </span>
               </div>
             )}
             {server.config.url && (
               <div className="flex items-start gap-1">
                 <span className="text-cc-muted/60 shrink-0">URL:</span>
-                <span className="font-mono text-[10px] break-all">{server.config.url}</span>
+                <span className="font-mono text-[10px] break-all">
+                  {server.config.url}
+                </span>
               </div>
             )}
             <div className="flex items-center gap-1">
@@ -2036,14 +3037,21 @@ function PlaygroundMcpRow({ server }: { server: McpServerDetail }) {
             </div>
           </div>
           {server.error && (
-            <div className="text-[11px] text-cc-error bg-cc-error/5 rounded px-2 py-1">{server.error}</div>
+            <div className="text-[11px] text-cc-error bg-cc-error/5 rounded px-2 py-1">
+              {server.error}
+            </div>
           )}
           {server.tools && server.tools.length > 0 && (
             <div className="space-y-1">
-              <span className="text-[10px] text-cc-muted uppercase tracking-wider">Tools ({server.tools.length})</span>
+              <span className="text-[10px] text-cc-muted uppercase tracking-wider">
+                Tools ({server.tools.length})
+              </span>
               <div className="flex flex-wrap gap-1">
                 {server.tools.map((tool) => (
-                  <span key={tool.name} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cc-hover text-cc-fg">
+                  <span
+                    key={tool.name}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cc-hover text-cc-fg"
+                  >
                     {tool.name}
                   </span>
                 ))}
@@ -2063,37 +3071,87 @@ function TaskRow({ task }: { task: TaskItem }) {
   const isInProgress = task.status === "in_progress";
 
   return (
-    <div className={`px-2.5 py-2 rounded-lg ${isCompleted ? "opacity-50" : ""}`}>
+    <div
+      className={`px-2.5 py-2 rounded-lg ${isCompleted ? "opacity-50" : ""}`}
+    >
       <div className="flex items-start gap-2">
         <span className="shrink-0 flex items-center justify-center w-4 h-4 mt-px">
           {isInProgress ? (
-            <svg className="w-4 h-4 text-cc-primary animate-spin" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
+            <svg
+              className="w-4 h-4 text-cc-primary animate-spin"
+              viewBox="0 0 16 16"
+              fill="none"
+            >
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeDasharray="28"
+                strokeDashoffset="8"
+                strokeLinecap="round"
+              />
             </svg>
           ) : isCompleted ? (
-            <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 text-cc-success">
-              <path fillRule="evenodd" d="M8 15A7 7 0 108 1a7 7 0 000 14zm3.354-9.354a.5.5 0 00-.708-.708L7 8.586 5.354 6.94a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4z" clipRule="evenodd" />
+            <svg
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              className="w-4 h-4 text-cc-success"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8 15A7 7 0 108 1a7 7 0 000 14zm3.354-9.354a.5.5 0 00-.708-.708L7 8.586 5.354 6.94a.5.5 0 10-.708.708l2 2a.5.5 0 00.708 0l4-4z"
+                clipRule="evenodd"
+              />
             </svg>
           ) : (
-            <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4 text-cc-muted">
-              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              className="w-4 h-4 text-cc-muted"
+            >
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
             </svg>
           )}
         </span>
-        <span className={`text-[13px] leading-snug flex-1 ${isCompleted ? "text-cc-muted line-through" : "text-cc-fg"}`}>
+        <span
+          className={`text-[13px] leading-snug flex-1 ${isCompleted ? "text-cc-muted line-through" : "text-cc-fg"}`}
+        >
           {task.subject}
         </span>
       </div>
       {isInProgress && task.activeForm && (
-        <p className="mt-1 ml-6 text-[11px] text-cc-muted italic truncate">{task.activeForm}</p>
+        <p className="mt-1 ml-6 text-[11px] text-cc-muted italic truncate">
+          {task.activeForm}
+        </p>
       )}
       {task.blockedBy && task.blockedBy.length > 0 && (
         <p className="mt-1 ml-6 text-[11px] text-cc-muted flex items-center gap-1">
           <svg viewBox="0 0 16 16" fill="none" className="w-3 h-3 shrink-0">
-            <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M5 8h6"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
-          <span>blocked by {task.blockedBy.map((b) => `#${b}`).join(", ")}</span>
+          <span>
+            blocked by {task.blockedBy.map((b) => `#${b}`).join(", ")}
+          </span>
         </p>
       )}
     </div>
