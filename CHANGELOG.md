@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.57.0...the-companion-v0.58.0) (2026-02-20)
+
+
+### Features
+
+* **sidebar:** redesign session items with status-first layout ([#368](https://github.com/The-Vibe-Company/companion/issues/368)) ([7287cfc](https://github.com/The-Vibe-Company/companion/commit/7287cfcb54cadbc35f1dff2ea7f0e42042b89124))
+
 ## [0.57.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.56.1...the-companion-v0.57.0) (2026-02-20)
 
 
