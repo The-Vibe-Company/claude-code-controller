@@ -28,10 +28,18 @@ vi.hoisted(() => {
     Object.defineProperty(globalThis, "localStorage", {
       value: {
         getItem: (key: string) => store.get(key) ?? null,
-        setItem: (key: string, value: string) => { store.set(key, String(value)); },
-        removeItem: (key: string) => { store.delete(key); },
-        clear: () => { store.clear(); },
-        get length() { return store.size; },
+        setItem: (key: string, value: string) => {
+          store.set(key, String(value));
+        },
+        removeItem: (key: string) => {
+          store.delete(key);
+        },
+        clear: () => {
+          store.clear();
+        },
+        get length() {
+          return store.size;
+        },
         key: (index: number) => [...store.keys()][index] ?? null,
       },
       writable: true,
@@ -41,7 +49,13 @@ vi.hoisted(() => {
 });
 
 import { useStore } from "./store.js";
-import type { SessionState, PermissionRequest, ChatMessage, TaskItem, SdkSessionInfo } from "./types.js";
+import type {
+  SessionState,
+  PermissionRequest,
+  ChatMessage,
+  TaskItem,
+  SdkSessionInfo,
+} from "./types.js";
 
 function makeSession(id: string): SessionState {
   return {
@@ -80,7 +94,9 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
-function makePermission(overrides: Partial<PermissionRequest> = {}): PermissionRequest {
+function makePermission(
+  overrides: Partial<PermissionRequest> = {},
+): PermissionRequest {
   return {
     request_id: crypto.randomUUID(),
     tool_name: "Bash",
@@ -134,7 +150,9 @@ describe("Session management", () => {
   it("updateSession: merges partial updates into existing session", () => {
     const session = makeSession("s1");
     useStore.getState().addSession(session);
-    useStore.getState().updateSession("s1", { model: "claude-opus-4-6", num_turns: 5 });
+    useStore
+      .getState()
+      .updateSession("s1", { model: "claude-opus-4-6", num_turns: 5 });
 
     const updated = useStore.getState().sessions.get("s1")!;
     expect(updated.model).toBe("claude-opus-4-6");
@@ -146,7 +164,9 @@ describe("Session management", () => {
 
   it("updateSession: no-op for unknown session", () => {
     const before = new Map(useStore.getState().sessions);
-    useStore.getState().updateSession("nonexistent", { model: "claude-opus-4-6" });
+    useStore
+      .getState()
+      .updateSession("nonexistent", { model: "claude-opus-4-6" });
     const after = useStore.getState().sessions;
     expect(after.size).toBe(before.size);
   });
@@ -157,7 +177,9 @@ describe("Session management", () => {
     useStore.getState().setCurrentSession("s1");
     useStore.getState().appendMessage("s1", makeMessage());
     useStore.getState().setStreaming("s1", "partial text");
-    useStore.getState().setStreamingStats("s1", { startedAt: 100, outputTokens: 50 });
+    useStore
+      .getState()
+      .setStreamingStats("s1", { startedAt: 100, outputTokens: 50 });
     useStore.getState().addPermission("s1", makePermission());
     useStore.getState().addTask("s1", makeTask());
     useStore.getState().setSessionName("s1", "My Session");
@@ -259,6 +281,62 @@ describe("Messages", () => {
     expect(messages[0].content).toBe("first");
   });
 
+  it("appendMessage: merges contentBlocks when same ID arrives multiple times", () => {
+    // The Claude CLI sends multiple assistant messages with the same ID,
+    // one per content block type (thinking, text, tool_use…).
+    // The store must merge their contentBlocks instead of deduplicating.
+    useStore.getState().addSession(makeSession("s1"));
+
+    // First arrival: thinking block
+    const thinkingBlock: import("./types").ContentBlock = {
+      type: "thinking",
+      thinking: "Let me reason...",
+    };
+    const msg1 = makeMessage({
+      id: "msg-1",
+      role: "assistant",
+      contentBlocks: [thinkingBlock],
+    });
+    useStore.getState().appendMessage("s1", msg1);
+
+    // Second arrival: text block (same message ID)
+    const textBlock: import("./types").ContentBlock = {
+      type: "text",
+      text: "Here is my answer.",
+    };
+    const msg2 = makeMessage({
+      id: "msg-1",
+      role: "assistant",
+      contentBlocks: [textBlock],
+    });
+    useStore.getState().appendMessage("s1", msg2);
+
+    const messages = useStore.getState().messages.get("s1")!;
+    // Should still be one message (not two)
+    expect(messages).toHaveLength(1);
+    // Should contain both blocks merged in order
+    expect(messages[0].contentBlocks).toHaveLength(2);
+    expect(messages[0].contentBlocks![0]).toEqual(thinkingBlock);
+    expect(messages[0].contentBlocks![1]).toEqual(textBlock);
+  });
+
+  it("appendMessage: dedup still works for messages without contentBlocks", () => {
+    // Non-contentBlocks messages (user/system) should still be deduplicated by ID
+    // to avoid showing duplicates from reconnects or replays.
+    useStore.getState().addSession(makeSession("s1"));
+    const msg = makeMessage({
+      id: "user-1",
+      content: "hello",
+      contentBlocks: undefined,
+    });
+    useStore.getState().appendMessage("s1", msg);
+    useStore.getState().appendMessage("s1", { ...msg, content: "duplicate" });
+
+    const messages = useStore.getState().messages.get("s1")!;
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe("hello");
+  });
+
   it("appendMessage: allows messages without IDs (no dedup)", () => {
     useStore.getState().addSession(makeSession("s1"));
     const msg1 = makeMessage({ id: "", content: "a" });
@@ -287,9 +365,15 @@ describe("Messages", () => {
 
   it("updateLastAssistantMessage: updates the last assistant message", () => {
     useStore.getState().addSession(makeSession("s1"));
-    useStore.getState().appendMessage("s1", makeMessage({ role: "user", content: "q" }));
-    useStore.getState().appendMessage("s1", makeMessage({ role: "assistant", content: "a1" }));
-    useStore.getState().appendMessage("s1", makeMessage({ role: "assistant", content: "a2" }));
+    useStore
+      .getState()
+      .appendMessage("s1", makeMessage({ role: "user", content: "q" }));
+    useStore
+      .getState()
+      .appendMessage("s1", makeMessage({ role: "assistant", content: "a1" }));
+    useStore
+      .getState()
+      .appendMessage("s1", makeMessage({ role: "assistant", content: "a2" }));
 
     useStore.getState().updateLastAssistantMessage("s1", (msg) => ({
       ...msg,
@@ -303,8 +387,15 @@ describe("Messages", () => {
 
   it("updateLastAssistantMessage: skips non-assistant messages from end", () => {
     useStore.getState().addSession(makeSession("s1"));
-    useStore.getState().appendMessage("s1", makeMessage({ role: "assistant", content: "answer" }));
-    useStore.getState().appendMessage("s1", makeMessage({ role: "user", content: "followup" }));
+    useStore
+      .getState()
+      .appendMessage(
+        "s1",
+        makeMessage({ role: "assistant", content: "answer" }),
+      );
+    useStore
+      .getState()
+      .appendMessage("s1", makeMessage({ role: "user", content: "followup" }));
 
     useStore.getState().updateLastAssistantMessage("s1", (msg) => ({
       ...msg,
@@ -332,7 +423,9 @@ describe("Streaming", () => {
   });
 
   it("setStreamingStats: sets startedAt and outputTokens", () => {
-    useStore.getState().setStreamingStats("s1", { startedAt: 12345, outputTokens: 42 });
+    useStore
+      .getState()
+      .setStreamingStats("s1", { startedAt: 12345, outputTokens: 42 });
     expect(useStore.getState().streamingStartedAt.get("s1")).toBe(12345);
     expect(useStore.getState().streamingOutputTokens.get("s1")).toBe(42);
   });
@@ -344,7 +437,9 @@ describe("Streaming", () => {
   });
 
   it("setStreamingStats(null): clears both fields", () => {
-    useStore.getState().setStreamingStats("s1", { startedAt: 100, outputTokens: 50 });
+    useStore
+      .getState()
+      .setStreamingStats("s1", { startedAt: 100, outputTokens: 50 });
     useStore.getState().setStreamingStats("s1", null);
     expect(useStore.getState().streamingStartedAt.has("s1")).toBe(false);
     expect(useStore.getState().streamingOutputTokens.has("s1")).toBe(false);
@@ -503,7 +598,9 @@ describe("UI state", () => {
     useStore.getState().openQuickTerminal({ target: "host", cwd: "/repo" });
     const firstTabId = useStore.getState().activeQuickTerminalTabId;
 
-    useStore.getState().openQuickTerminal({ target: "host", cwd: "/repo", reuseIfExists: true });
+    useStore
+      .getState()
+      .openQuickTerminal({ target: "host", cwd: "/repo", reuseIfExists: true });
     const state = useStore.getState();
     expect(state.quickTerminalTabs).toHaveLength(1);
     expect(state.activeQuickTerminalTabId).toBe(firstTabId);
@@ -534,7 +631,9 @@ describe("reset", () => {
     useStore.getState().setCurrentSession("s1");
     useStore.getState().appendMessage("s1", makeMessage());
     useStore.getState().setStreaming("s1", "text");
-    useStore.getState().setStreamingStats("s1", { startedAt: 1, outputTokens: 2 });
+    useStore
+      .getState()
+      .setStreamingStats("s1", { startedAt: 1, outputTokens: 2 });
     useStore.getState().addPermission("s1", makePermission());
     useStore.getState().addTask("s1", makeTask());
     useStore.getState().setSessionName("s1", "name");
@@ -543,9 +642,11 @@ describe("reset", () => {
     useStore.getState().setCliConnected("s1", true);
     useStore.getState().setSessionStatus("s1", "running");
     useStore.getState().setPreviousPermissionMode("s1", "default");
-    useStore.getState().setSdkSessions([
-      { sessionId: "s1", state: "connected", cwd: "/", createdAt: 0 },
-    ]);
+    useStore
+      .getState()
+      .setSdkSessions([
+        { sessionId: "s1", state: "connected", cwd: "/", createdAt: 0 },
+      ]);
 
     useStore.getState().reset();
     const state = useStore.getState();
@@ -574,22 +675,48 @@ describe("reset", () => {
 describe("MCP Servers", () => {
   it("setMcpServers: stores servers for a session", () => {
     const servers = [
-      { name: "test-server", status: "connected" as const, config: { type: "stdio" }, scope: "project" },
+      {
+        name: "test-server",
+        status: "connected" as const,
+        config: { type: "stdio" },
+        scope: "project",
+      },
     ];
     useStore.getState().setMcpServers("s1", servers);
     expect(useStore.getState().mcpServers.get("s1")).toEqual(servers);
   });
 
   it("setMcpServers: replaces existing servers", () => {
-    const first = [{ name: "old", status: "connected" as const, config: { type: "stdio" }, scope: "project" }];
-    const second = [{ name: "new", status: "failed" as const, config: { type: "sse" }, scope: "user" }];
+    const first = [
+      {
+        name: "old",
+        status: "connected" as const,
+        config: { type: "stdio" },
+        scope: "project",
+      },
+    ];
+    const second = [
+      {
+        name: "new",
+        status: "failed" as const,
+        config: { type: "sse" },
+        scope: "user",
+      },
+    ];
     useStore.getState().setMcpServers("s1", first);
     useStore.getState().setMcpServers("s1", second);
     expect(useStore.getState().mcpServers.get("s1")).toEqual(second);
   });
 
   it("removeSession: clears mcpServers", () => {
-    const servers = [{ name: "test", status: "connected" as const, config: { type: "stdio" }, scope: "project" }];
+    const servers = [
+      {
+        name: "test",
+        status: "connected" as const,
+        config: { type: "stdio" },
+        scope: "project",
+      },
+    ];
     useStore.getState().addSession(makeSession("s1"));
     useStore.getState().setMcpServers("s1", servers);
     useStore.getState().removeSession("s1");
