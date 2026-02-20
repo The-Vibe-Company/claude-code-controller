@@ -6,11 +6,13 @@ import "@testing-library/jest-dom";
 
 const mockApi = {
   getFileDiff: vi.fn().mockResolvedValue({ path: "/repo/file.ts", diff: "" }),
+  getChangedFiles: vi.fn().mockResolvedValue({ files: [] }),
 };
 
 vi.mock("../api.js", () => ({
   api: {
     getFileDiff: (...args: unknown[]) => mockApi.getFileDiff(...args),
+    getChangedFiles: (...args: unknown[]) => mockApi.getChangedFiles(...args),
   },
 }));
 
@@ -22,6 +24,7 @@ interface MockStoreState {
   diffPanelSelectedFile: Map<string, string>;
   changedFiles: Map<string, Set<string>>;
   setDiffPanelSelectedFile: ReturnType<typeof vi.fn>;
+  setGitChangedFilesCount: ReturnType<typeof vi.fn>;
   diffBase: "last-commit" | "default-branch";
   setDiffBase: ReturnType<typeof vi.fn>;
 }
@@ -35,6 +38,7 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     diffPanelSelectedFile: new Map(),
     changedFiles: new Map(),
     setDiffPanelSelectedFile: vi.fn(),
+    setGitChangedFilesCount: vi.fn(),
     diffBase: "last-commit",
     setDiffBase: vi.fn(),
     ...overrides,
@@ -52,34 +56,48 @@ import { DiffPanel } from "./DiffPanel.js";
 beforeEach(() => {
   vi.clearAllMocks();
   resetStore();
+  // Default: no changed files from git
+  mockApi.getChangedFiles.mockResolvedValue({ files: [] });
 });
 
 describe("DiffPanel", () => {
-  it("shows empty state when no files changed", () => {
-    const { container } = render(<DiffPanel sessionId="s1" />);
-    expect(screen.getByText("No changes yet")).toBeInTheDocument();
+  it("shows empty state when no files changed", async () => {
+    render(<DiffPanel sessionId="s1" />);
+    await waitFor(() => {
+      expect(screen.getByText("No changes yet")).toBeInTheDocument();
+    });
   });
 
-  it("displays changed files in sidebar", () => {
-    resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts", "/repo/src/utils.ts"])]]),
+  it("displays changed files in sidebar", async () => {
+    // Validates that git-reported changed files are shown with correct count and labels.
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [
+        { path: "/repo/src/app.ts", status: "M" },
+        { path: "/repo/src/utils.ts", status: "A" },
+      ],
     });
 
-    const { container } = render(<DiffPanel sessionId="s1" />);
-    expect(screen.getByText("Changed (2)")).toBeInTheDocument();
+    render(<DiffPanel sessionId="s1" />);
+    await waitFor(() => {
+      expect(screen.getByText("Changed (2)")).toBeInTheDocument();
+    });
     expect(screen.getByText("src/app.ts")).toBeInTheDocument();
     expect(screen.getByText("src/utils.ts")).toBeInTheDocument();
   });
 
-  it("hides changed files outside the session cwd", () => {
-    resetStore({
-      changedFiles: new Map([
-        ["s1", new Set(["/repo/src/app.ts", "/Users/stan/.claude/plans/plan.md"])],
-      ]),
+  it("hides changed files outside the session cwd", async () => {
+    // Validates that only files within the session cwd are shown.
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [
+        { path: "/repo/src/app.ts", status: "M" },
+        { path: "/Users/stan/.claude/plans/plan.md", status: "M" },
+      ],
     });
 
-    const { container } = render(<DiffPanel sessionId="s1" />);
-    expect(screen.getByText("Changed (1)")).toBeInTheDocument();
+    render(<DiffPanel sessionId="s1" />);
+    await waitFor(() => {
+      expect(screen.getByText("Changed (1)")).toBeInTheDocument();
+    });
     expect(screen.getByText("src/app.ts")).toBeInTheDocument();
     expect(screen.queryByText("/Users/stan/.claude/plans/plan.md")).not.toBeInTheDocument();
   });
@@ -96,9 +114,11 @@ describe("DiffPanel", () => {
  line3`;
 
     mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/src/app.ts", diff: diffOutput });
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [{ path: "/repo/src/app.ts", status: "M" }],
+    });
 
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts"])]]),
       diffPanelSelectedFile: new Map([["s1", "/repo/src/app.ts"]]),
     });
 
@@ -117,9 +137,11 @@ describe("DiffPanel", () => {
 
   it("shows 'No changes' when diff is empty for selected file", async () => {
     mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/file.ts", diff: "" });
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [{ path: "/repo/file.ts", status: "M" }],
+    });
 
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/file.ts"])]]),
       diffPanelSelectedFile: new Map([["s1", "/repo/file.ts"]]),
     });
 
@@ -151,9 +173,11 @@ describe("DiffPanel", () => {
  line3`;
 
     mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/src/app.ts", diff: diffOutput });
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [{ path: "/repo/src/app.ts", status: "M" }],
+    });
 
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts"])]]),
       diffPanelSelectedFile: new Map([["s1", "/repo/src/app.ts"]]),
       diffBase: "default-branch",
     });
@@ -169,9 +193,11 @@ describe("DiffPanel", () => {
   it("toggles diff base when label button is clicked", async () => {
     // Validates that clicking the diff base toggle calls setDiffBase with the opposite value.
     mockApi.getFileDiff.mockResolvedValueOnce({ path: "/repo/src/app.ts", diff: "some diff" });
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [{ path: "/repo/src/app.ts", status: "M" }],
+    });
 
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/app.ts"])]]),
       diffPanelSelectedFile: new Map([["s1", "/repo/src/app.ts"]]),
       diffBase: "last-commit",
     });
@@ -187,8 +213,12 @@ describe("DiffPanel", () => {
   });
 
   it("reselects when selected file is outside cwd scope", async () => {
+    // Validates that if the selected file is outside the cwd, it reselects to the first in-scope file.
+    mockApi.getChangedFiles.mockResolvedValue({
+      files: [{ path: "/repo/src/inside.ts", status: "M" }],
+    });
+
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/inside.ts"])]]),
       diffPanelSelectedFile: new Map([["s1", "/Users/stan/.claude/plans/plan.md"]]),
     });
 

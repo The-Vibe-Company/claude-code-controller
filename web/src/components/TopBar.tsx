@@ -63,17 +63,9 @@ export function TopBar() {
   const quickTerminalTabs = useStore((s) => s.quickTerminalTabs);
   const openQuickTerminal = useStore((s) => s.openQuickTerminal);
   const resetQuickTerminal = useStore((s) => s.resetQuickTerminal);
-  const changedFilesCount = useStore((s) => {
-    if (!currentSessionId) return 0;
-    const cwd =
-      s.sessions.get(currentSessionId)?.cwd ||
-      s.sdkSessions.find((sdk) => sdk.sessionId === currentSessionId)?.cwd;
-    const files = s.changedFiles.get(currentSessionId);
-    if (!files) return 0;
-    if (!cwd) return files.size;
-    const prefix = `${cwd}/`;
-    return [...files].filter((fp) => fp === cwd || fp.startsWith(prefix)).length;
-  });
+  const changedFilesCount = useStore((s) =>
+    currentSessionId ? (s.gitChangedFilesCount.get(currentSessionId) ?? 0) : 0
+  );
 
   const cwd = useStore((s) => {
     if (!currentSessionId) return null;

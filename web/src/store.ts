@@ -46,8 +46,10 @@ interface AppState {
   // Tasks per session
   sessionTasks: Map<string, TaskItem[]>;
 
-  // Files changed by the agent per session (Edit/Write tool calls)
+  // Files changed by the agent per session (Edit/Write/Delete tool calls)
   changedFiles: Map<string, Set<string>>;
+  // Count of files changed per session as reported by git (set by DiffPanel)
+  gitChangedFilesCount: Map<string, number>;
 
   // Session display names
   sessionNames: Map<string, string>;
@@ -141,6 +143,7 @@ interface AppState {
   // Changed files actions
   addChangedFile: (sessionId: string, filePath: string) => void;
   clearChangedFiles: (sessionId: string) => void;
+  setGitChangedFilesCount: (sessionId: string, count: number) => void;
 
   // Session name actions
   setSessionName: (sessionId: string, name: string) => void;
@@ -298,6 +301,7 @@ export const useStore = create<AppState>((set) => ({
   previousPermissionMode: new Map(),
   sessionTasks: new Map(),
   changedFiles: new Map(),
+  gitChangedFilesCount: new Map(),
   sessionNames: getInitialSessionNames(),
   recentlyRenamed: new Set(),
   prStatus: new Map(),
@@ -474,6 +478,8 @@ export const useStore = create<AppState>((set) => ({
       sessionTasks.delete(sessionId);
       const changedFiles = new Map(s.changedFiles);
       changedFiles.delete(sessionId);
+      const gitChangedFilesCount = new Map(s.gitChangedFilesCount);
+      gitChangedFilesCount.delete(sessionId);
       const sessionNames = new Map(s.sessionNames);
       sessionNames.delete(sessionId);
       const recentlyRenamed = new Set(s.recentlyRenamed);
@@ -505,6 +511,7 @@ export const useStore = create<AppState>((set) => ({
         pendingPermissions,
         sessionTasks,
         changedFiles,
+        gitChangedFilesCount,
         sessionNames,
         recentlyRenamed,
         diffPanelSelectedFile,
@@ -640,6 +647,13 @@ export const useStore = create<AppState>((set) => ({
       const changedFiles = new Map(s.changedFiles);
       changedFiles.delete(sessionId);
       return { changedFiles };
+    }),
+
+  setGitChangedFilesCount: (sessionId, count) =>
+    set((s) => {
+      const gitChangedFilesCount = new Map(s.gitChangedFilesCount);
+      gitChangedFilesCount.set(sessionId, count);
+      return { gitChangedFilesCount };
     }),
 
   setSessionName: (sessionId, name) =>
@@ -879,6 +893,7 @@ export const useStore = create<AppState>((set) => ({
       previousPermissionMode: new Map(),
       sessionTasks: new Map(),
       changedFiles: new Map(),
+      gitChangedFilesCount: new Map(),
       sessionNames: new Map(),
       recentlyRenamed: new Set(),
       mcpServers: new Map(),
