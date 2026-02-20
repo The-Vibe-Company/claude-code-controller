@@ -18,7 +18,6 @@ interface MockStoreState {
   openQuickTerminal: ReturnType<typeof vi.fn>;
   closeQuickTerminalTab: ReturnType<typeof vi.fn>;
   setActiveQuickTerminalTabId: ReturnType<typeof vi.fn>;
-  setQuickTerminalPlacement: ReturnType<typeof vi.fn>;
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
 }
@@ -36,7 +35,6 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     openQuickTerminal: vi.fn(),
     closeQuickTerminalTab: vi.fn(),
     setActiveQuickTerminalTabId: vi.fn(),
-    setQuickTerminalPlacement: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
     ...overrides,

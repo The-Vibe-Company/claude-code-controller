@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useStore } from "../store.js";
-import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState, type LinearIssue, type LinearProject, type LinearProjectMapping } from "../api.js";
+import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState, type LinearIssue } from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -8,29 +8,11 @@ import { getRecentDirs, addRecentDir } from "../utils/recent-dirs.js";
 import { navigateToSession } from "../utils/routing.js";
 import { getModelsForBackend, getModesForBackend, getDefaultModel, getDefaultMode, toModelOptions, type ModelOption } from "../utils/backends.js";
 import type { BackendType } from "../types.js";
-import { resolveLinearBranch } from "../utils/linear-branch.js";
 import { EnvManager } from "./EnvManager.js";
 import { FolderPicker } from "./FolderPicker.js";
-import { LinearLogo } from "./LinearLogo.js";
-
-interface ImageAttachment {
-  name: string;
-  base64: string;
-  mediaType: string;
-}
-
-function readFileAsBase64(file: File): Promise<{ base64: string; mediaType: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      resolve({ base64, mediaType: file.type });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+import { readFileAsBase64, type ImageAttachment } from "../utils/image.js";
+import { LinearSection } from "./home/LinearSection.js";
+import { BranchPicker } from "./home/BranchPicker.js";
 
 let idCounter = 0;
 
@@ -52,26 +34,7 @@ export function HomePage() {
   const [error, setError] = useState("");
   const [dynamicModels, setDynamicModels] = useState<ModelOption[] | null>(null);
   const [linearConfigured, setLinearConfigured] = useState(false);
-  const [linearQuery, setLinearQuery] = useState("");
-  const [linearIssues, setLinearIssues] = useState<LinearIssue[]>([]);
   const [selectedLinearIssue, setSelectedLinearIssue] = useState<LinearIssue | null>(null);
-  const [showLinearDropdown, setShowLinearDropdown] = useState(false);
-  const [linearSearching, setLinearSearching] = useState(false);
-  const [linearSearchError, setLinearSearchError] = useState("");
-  const [showLinearStartWarning, setShowLinearStartWarning] = useState(false);
-
-  // Linear project mapping state
-  const [linearMapping, setLinearMapping] = useState<LinearProjectMapping | null>(null);
-  const [recentIssues, setRecentIssues] = useState<LinearIssue[]>([]);
-  const [recentIssuesLoading, setRecentIssuesLoading] = useState(false);
-  const [recentIssuesError, setRecentIssuesError] = useState("");
-  const [showAttachProjectDropdown, setShowAttachProjectDropdown] = useState(false);
-  const [availableProjects, setAvailableProjects] = useState<LinearProject[]>([]);
-  const [projectsLoading, setProjectsLoading] = useState(false);
-  const [projectSearchQuery, setProjectSearchQuery] = useState("");
-  const [searchAllProjects, setSearchAllProjects] = useState(false);
-  const [globalSearchResults, setGlobalSearchResults] = useState<LinearIssue[]>([]);
-  const [globalSearching, setGlobalSearching] = useState(false);
 
   const MODELS = dynamicModels || getModelsForBackend(backend);
   const MODES = getModesForBackend(backend);
@@ -93,14 +56,12 @@ export function HomePage() {
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
-  // Git branch state
+  // Git branch state (owned here, driven by BranchPicker + LinearSection)
   const [gitRepoInfo, setGitRepoInfo] = useState<GitRepoInfo | null>(null);
   const [useWorktree, setUseWorktree] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState("");
-  const [branches, setBranches] = useState<GitBranchInfo[]>([]);
-  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
-  const [branchFilter, setBranchFilter] = useState("");
   const [isNewBranch, setIsNewBranch] = useState(false);
+  const [branches, setBranches] = useState<GitBranchInfo[]>([]);
 
   // Branch freshness check state
   const [pullPrompt, setPullPrompt] = useState<{ behind: number; branchName: string } | null>(null);
@@ -111,10 +72,7 @@ export function HomePage() {
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const modeDropdownRef = useRef<HTMLDivElement>(null);
   const envDropdownRef = useRef<HTMLDivElement>(null);
-  const branchDropdownRef = useRef<HTMLDivElement>(null);
-  const linearDropdownRef = useRef<HTMLDivElement>(null);
 
-  const setCurrentSession = useStore((s) => s.setCurrentSession);
   const currentSessionId = useStore((s) => s.currentSessionId);
 
   // Auto-focus textarea (desktop only — on mobile it triggers the keyboard immediately)
@@ -225,13 +183,6 @@ export function HomePage() {
       if (envDropdownRef.current && !envDropdownRef.current.contains(e.target as Node)) {
         setShowEnvDropdown(false);
       }
-      if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
-        setShowBranchDropdown(false);
-      }
-      if (linearDropdownRef.current && !linearDropdownRef.current.contains(e.target as Node)) {
-        setShowLinearDropdown(false);
-        setShowAttachProjectDropdown(false);
-      }
     }
     document.addEventListener("pointerdown", handleClick);
     return () => document.removeEventListener("pointerdown", handleClick);
@@ -247,121 +198,10 @@ export function HomePage() {
       setGitRepoInfo(info);
       setSelectedBranch(info.currentBranch);
       setIsNewBranch(false);
-      api.listBranches(info.repoRoot).then(setBranches).catch(() => setBranches([]));
     }).catch(() => {
       setGitRepoInfo(null);
     });
   }, [cwd]);
-
-  // Fetch branches when git repo changes
-  useEffect(() => {
-    if (gitRepoInfo) {
-      api.listBranches(gitRepoInfo.repoRoot).then(setBranches).catch(() => setBranches([]));
-    }
-  }, [gitRepoInfo]);
-
-  // When gitRepoInfo changes, check for Linear project mapping and fetch recent issues
-  useEffect(() => {
-    if (!gitRepoInfo || !linearConfigured) {
-      setLinearMapping(null);
-      setRecentIssues([]);
-      return;
-    }
-
-    let active = true;
-    setRecentIssuesLoading(true);
-    setRecentIssuesError("");
-
-    (async () => {
-      try {
-        const { mapping } = await api.getLinearProjectMapping(gitRepoInfo.repoRoot);
-        if (!active) return;
-        setLinearMapping(mapping);
-        if (mapping) {
-          const { issues } = await api.getLinearProjectIssues(mapping.projectId, 10);
-          if (!active) return;
-          setRecentIssues(issues);
-        } else {
-          setRecentIssues([]);
-        }
-      } catch (e: unknown) {
-        if (!active) return;
-        setRecentIssuesError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (active) setRecentIssuesLoading(false);
-      }
-    })();
-
-    return () => { active = false; };
-  }, [gitRepoInfo, linearConfigured]);
-
-  useEffect(() => {
-    if (!linearConfigured) return;
-    const query = linearQuery.trim();
-    if (query.length < 2) {
-      setLinearIssues([]);
-      setLinearSearchError("");
-      setLinearSearching(false);
-      return;
-    }
-
-    let active = true;
-    setLinearSearching(true);
-    setLinearSearchError("");
-    const timer = setTimeout(() => {
-      api.searchLinearIssues(query, 8).then((res) => {
-        if (!active) return;
-        setLinearIssues(res.issues);
-      }).catch((e: unknown) => {
-        if (!active) return;
-        setLinearIssues([]);
-        setLinearSearchError(e instanceof Error ? e.message : String(e));
-      }).finally(() => {
-        if (!active) return;
-        setLinearSearching(false);
-      });
-    }, 400);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [linearConfigured, linearQuery]);
-
-  // Global search effect — triggers when "Search all projects" is enabled and projectSearchQuery has 2+ chars
-  useEffect(() => {
-    if (!linearConfigured || !searchAllProjects) {
-      setGlobalSearchResults([]);
-      setGlobalSearching(false);
-      return;
-    }
-    const query = projectSearchQuery.trim();
-    if (query.length < 2) {
-      setGlobalSearchResults([]);
-      setGlobalSearching(false);
-      return;
-    }
-
-    let active = true;
-    setGlobalSearching(true);
-    const timer = setTimeout(() => {
-      api.searchLinearIssues(query, 10).then((res) => {
-        if (!active) return;
-        setGlobalSearchResults(res.issues);
-      }).catch(() => {
-        if (!active) return;
-        setGlobalSearchResults([]);
-      }).finally(() => {
-        if (!active) return;
-        setGlobalSearching(false);
-      });
-    }, 400);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [linearConfigured, searchAllProjects, projectSearchQuery]);
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
@@ -443,23 +283,9 @@ export function HomePage() {
     return `${context}\n\nUser request:\n${msg}`;
   }
 
-  function handleSelectLinearIssue(issue: LinearIssue, closeDropdown = false) {
-    setSelectedLinearIssue(issue);
-    setLinearQuery(`${issue.identifier} - ${issue.title}`);
-    // Keep branch in sync with selected Linear issue for session creation.
-    const branch = resolveLinearBranch(issue);
-    setSelectedBranch(branch);
-    // Session creation can create the branch when it does not exist yet.
-    setIsNewBranch(true);
-    if (closeDropdown) {
-      setShowLinearDropdown(false);
-    }
-  }
-
   async function handleSend() {
     const msg = text.trim();
     if (!msg || sending) return;
-
 
     setSending(true);
     setError("");
@@ -480,65 +306,6 @@ export function HomePage() {
     }
 
     await doCreateSession(msg);
-  }
-
-  async function handleContinueWithoutLinear() {
-    const msg = text.trim();
-    if (!msg || sending) return;
-    setShowLinearStartWarning(false);
-    setSending(true);
-    setError("");
-    setPullError("");
-    await doCreateSession(msg);
-  }
-
-  async function handleAttachProject(project: LinearProject) {
-    if (!gitRepoInfo) return;
-    try {
-      const { mapping } = await api.upsertLinearProjectMapping({
-        repoRoot: gitRepoInfo.repoRoot,
-        projectId: project.id,
-        projectName: project.name,
-      });
-      setLinearMapping(mapping);
-      setShowAttachProjectDropdown(false);
-      setRecentIssuesLoading(true);
-      setRecentIssuesError("");
-      const { issues } = await api.getLinearProjectIssues(project.id, 10);
-      setRecentIssues(issues);
-    } catch (e: unknown) {
-      setRecentIssuesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRecentIssuesLoading(false);
-    }
-  }
-
-  async function handleDetachProject() {
-    if (!gitRepoInfo) return;
-    try {
-      await api.removeLinearProjectMapping(gitRepoInfo.repoRoot);
-    } catch {
-      // ignore
-    }
-    setLinearMapping(null);
-    setRecentIssues([]);
-    setSelectedLinearIssue(null);
-    setLinearQuery("");
-  }
-
-  function handleOpenAttachDropdown() {
-    if (!linearConfigured) {
-      window.location.hash = "#/integrations/linear";
-      return;
-    }
-    setShowAttachProjectDropdown(true);
-    if (availableProjects.length === 0) {
-      setProjectsLoading(true);
-      api.listLinearProjects()
-        .then(({ projects }) => setAvailableProjects(projects))
-        .catch(() => {})
-        .finally(() => setProjectsLoading(false));
-    }
   }
 
   async function doCreateSession(msg: string) {
@@ -620,10 +387,10 @@ export function HomePage() {
       if (selectedLinearIssue) {
         api.linkLinearIssue(sessionId, selectedLinearIssue)
           .then(() => useStore.getState().setLinkedLinearIssue(sessionId, selectedLinearIssue))
-          .catch(() => console.warn("[HomePage] Failed to link Linear issue"));
+          .catch(() => { /* fire-and-forget: linking is best-effort */ });
         // Fire-and-forget: transition Linear issue to configured status
-        api.transitionLinearIssue(selectedLinearIssue.id).catch((err) => {
-          console.warn("[Linear] Failed to transition issue:", err);
+        api.transitionLinearIssue(selectedLinearIssue.id).catch(() => {
+          /* fire-and-forget: status transition is best-effort */
         });
       }
 
@@ -656,11 +423,6 @@ export function HomePage() {
         return;
       }
 
-      // Refresh branch data after successful pull
-      if (gitRepoInfo) {
-        api.listBranches(gitRepoInfo.repoRoot).then(setBranches).catch(() => {});
-      }
-
       setPullPrompt(null);
       setPulling(false);
       await doCreateSession(text.trim());
@@ -682,6 +444,29 @@ export function HomePage() {
     setPullError("");
     setSending(false);
   }
+
+  const handleBranchChange = useCallback((branch: string, isNew: boolean) => {
+    setSelectedBranch(branch);
+    setIsNewBranch(isNew);
+  }, []);
+
+  const handleBranchFromIssue = useCallback((branch: string, isNew: boolean) => {
+    setSelectedBranch(branch);
+    setIsNewBranch(isNew);
+  }, []);
+
+  const handleBranchesLoaded = useCallback((loadedBranches: GitBranchInfo[]) => {
+    setBranches(loadedBranches);
+  }, []);
+
+  const handleIssueSelect = useCallback((issue: LinearIssue | null) => {
+    setSelectedLinearIssue(issue);
+    if (!issue && gitRepoInfo) {
+      // Revert branch to current when clearing Linear issue
+      setSelectedBranch(gitRepoInfo.currentBranch);
+      setIsNewBranch(false);
+    }
+  }, [gitRepoInfo]);
 
   const canSend = text.trim().length > 0 && !sending;
 
@@ -741,17 +526,7 @@ export function HomePage() {
                     <span className="truncate">{selectedLinearIssue.title}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSelectedLinearIssue(null);
-                        setLinearQuery("");
-                        setLinearIssues([]);
-                        setLinearSearchError("");
-                        // Revert branch to current when clearing Linear issue
-                        if (gitRepoInfo) {
-                          setSelectedBranch(gitRepoInfo.currentBranch);
-                          setIsNewBranch(false);
-                        }
-                      }}
+                      onClick={() => handleIssueSelect(null)}
                       className="shrink-0 rounded px-1 text-cc-muted hover:text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
                       title="Remove Linear issue"
                     >
@@ -893,167 +668,17 @@ export function HomePage() {
             )}
           </div>
 
-          {/* Branch picker (always visible when cwd is a git repo) */}
-          {gitRepoInfo && (
-            <div className="relative" ref={branchDropdownRef}>
-              <button
-                onClick={() => {
-                  if (!showBranchDropdown && gitRepoInfo) {
-                    api.gitFetch(gitRepoInfo.repoRoot)
-                      .catch(() => {})
-                      .finally(() => {
-                        api.listBranches(gitRepoInfo.repoRoot).then(setBranches).catch(() => setBranches([]));
-                      });
-                  }
-                  setShowBranchDropdown(!showBranchDropdown);
-                  setBranchFilter("");
-                }}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
-              >
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-60">
-                  <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.378A2.5 2.5 0 007.5 8h1a1 1 0 010 2h-1A2.5 2.5 0 005 12.5v.128a2.25 2.25 0 101.5 0V12.5a1 1 0 011-1h1a2.5 2.5 0 000-5h-1a1 1 0 01-1-1V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5z" />
-                </svg>
-                <span className="max-w-[100px] sm:max-w-[160px] truncate font-mono-code">
-                  {selectedBranch || gitRepoInfo.currentBranch}
-                </span>
-                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 opacity-50">
-                  <path d="M4 6l4 4 4-4" />
-                </svg>
-              </button>
-              {showBranchDropdown && (
-                <div className="absolute left-0 bottom-full mb-1 w-72 max-w-[calc(100vw-2rem)] bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 overflow-hidden">
-                  {/* Search/filter input */}
-                  <div className="px-2 py-2 border-b border-cc-border">
-                    <input
-                      type="text"
-                      value={branchFilter}
-                      onChange={(e) => setBranchFilter(e.target.value)}
-                      placeholder="Filter or create branch..."
-                      className="w-full px-2 py-1 text-base sm:text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg font-mono-code placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") {
-                          setShowBranchDropdown(false);
-                        }
-                      }}
-                    />
-                  </div>
-                  {/* Branch list */}
-                  <div className="max-h-[240px] overflow-y-auto py-1">
-                    {(() => {
-                      const filter = branchFilter.toLowerCase().trim();
-                      const localBranches = branches.filter((b) => !b.isRemote && (!filter || b.name.toLowerCase().includes(filter)));
-                      const remoteBranches = branches.filter((b) => b.isRemote && (!filter || b.name.toLowerCase().includes(filter)));
-                      const exactMatch = branches.some((b) => b.name.toLowerCase() === filter);
-                      const hasResults = localBranches.length > 0 || remoteBranches.length > 0;
-
-                      return (
-                        <>
-                          {/* Local branches */}
-                          {localBranches.length > 0 && (
-                            <>
-                              <div className="px-3 py-1 text-[10px] text-cc-muted uppercase tracking-wider">Local</div>
-                              {localBranches.map((b) => (
-                                <button
-                                  key={b.name}
-                                  onClick={() => {
-                                    setSelectedBranch(b.name);
-                                    setIsNewBranch(false);
-                                    setShowBranchDropdown(false);
-                                  }}
-                                  className={`w-full px-3 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 ${
-                                    b.name === selectedBranch ? "text-cc-primary font-medium" : "text-cc-fg"
-                                  }`}
-                                >
-                                  <span className="truncate font-mono-code">{b.name}</span>
-                                  <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                                    {b.ahead > 0 && (
-                                      <span className="text-[9px] text-green-500">{b.ahead}&#8593;</span>
-                                    )}
-                                    {b.behind > 0 && (
-                                      <span className="text-[9px] text-amber-500">{b.behind}&#8595;</span>
-                                    )}
-                                    {b.worktreePath && (
-                                      <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-600 dark:text-blue-400">wt</span>
-                                    )}
-                                    {b.isCurrent && (
-                                      <span className="text-[9px] px-1 py-0.5 rounded bg-green-500/15 text-green-600 dark:text-green-400">current</span>
-                                    )}
-                                  </span>
-                                </button>
-                              ))}
-                            </>
-                          )}
-                          {/* Remote branches */}
-                          {remoteBranches.length > 0 && (
-                            <>
-                              <div className="px-3 py-1 text-[10px] text-cc-muted uppercase tracking-wider mt-1">Remote</div>
-                              {remoteBranches.map((b) => (
-                                <button
-                                  key={`remote-${b.name}`}
-                                  onClick={() => {
-                                    setSelectedBranch(b.name);
-                                    setIsNewBranch(false);
-                                    setShowBranchDropdown(false);
-                                  }}
-                                  className={`w-full px-3 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 ${
-                                    b.name === selectedBranch ? "text-cc-primary font-medium" : "text-cc-fg"
-                                  }`}
-                                >
-                                  <span className="truncate font-mono-code">{b.name}</span>
-                                  <span className="text-[9px] px-1 py-0.5 rounded bg-cc-hover text-cc-muted ml-auto shrink-0">remote</span>
-                                </button>
-                              ))}
-                            </>
-                          )}
-                          {/* No results */}
-                          {!hasResults && filter && (
-                            <div className="px-3 py-2 text-xs text-cc-muted text-center">No matching branches</div>
-                          )}
-                          {/* Create new branch option */}
-                          {filter && !exactMatch && (
-                            <div className="border-t border-cc-border mt-1 pt-1">
-                              <button
-                                onClick={() => {
-                                  setSelectedBranch(branchFilter.trim());
-                                  setIsNewBranch(true);
-                                  setShowBranchDropdown(false);
-                                }}
-                                className="w-full px-3 py-1.5 text-xs text-left hover:bg-cc-hover transition-colors cursor-pointer flex items-center gap-2 text-cc-primary"
-                              >
-                                <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 shrink-0">
-                                  <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
-                                </svg>
-                                <span>Create <span className="font-mono-code font-medium">{branchFilter.trim()}</span></span>
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Worktree toggle (only when cwd is a git repo) */}
-          {gitRepoInfo && (
-            <button
-              onClick={() => setUseWorktree(!useWorktree)}
-              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
-                useWorktree
-                  ? "bg-cc-primary/15 text-cc-primary font-medium"
-                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
-              }`}
-              title="Create an isolated worktree for this session"
-            >
-              <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-70">
-                <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v5.256a2.25 2.25 0 101.5 0V5.372zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zm7.5-9.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V7A2.5 2.5 0 0110 9.5H6a1 1 0 000 2h4a2.5 2.5 0 012.5 2.5v.628a2.25 2.25 0 11-1.5 0V14a1 1 0 00-1-1H6a2.5 2.5 0 01-2.5-2.5V10a2.5 2.5 0 012.5-2.5h4a1 1 0 001-1V5.372a2.25 2.25 0 01-1.5-2.122z" />
-              </svg>
-              <span>Worktree</span>
-            </button>
-          )}
+          {/* Branch picker + worktree toggle */}
+          <BranchPicker
+            cwd={cwd}
+            gitRepoInfo={gitRepoInfo}
+            selectedBranch={selectedBranch}
+            isNewBranch={isNewBranch}
+            useWorktree={useWorktree}
+            onBranchChange={handleBranchChange}
+            onWorktreeChange={setUseWorktree}
+            onBranchesLoaded={handleBranchesLoaded}
+          />
 
           {/* Environment selector */}
           <div className="relative" ref={envDropdownRef}>
@@ -1174,324 +799,14 @@ export function HomePage() {
             </div>
           </div>
 
-          {linearConfigured && <aside className="space-y-2 mt-0.5" ref={linearDropdownRef}>
-            <div className="relative rounded-[12px] border border-cc-border bg-cc-card/90 px-2.5 py-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] uppercase tracking-wide text-cc-muted">Context</span>
-
-                {/* When a project is attached, show project badge */}
-                {linearMapping ? (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border border-cc-primary/35 bg-cc-primary/10 text-cc-primary">
-                    <LinearLogo className="w-3.5 h-3.5" />
-                    <span>{linearMapping.projectName}</span>
-                    <button
-                      type="button"
-                      onClick={handleDetachProject}
-                      className="ml-0.5 hover:text-cc-error transition-colors cursor-pointer"
-                      title="Detach Linear project"
-                    >
-                      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                        <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
-                      </svg>
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {/* Linear button — search or configure */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!linearConfigured) {
-                          window.location.hash = "#/integrations/linear";
-                          return;
-                        }
-                        setShowLinearDropdown(!showLinearDropdown);
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors cursor-pointer ${
-                        selectedLinearIssue
-                          ? "border-cc-primary/35 bg-cc-primary/10 text-cc-primary"
-                          : linearConfigured
-                            ? "border-cc-border bg-cc-hover/70 text-cc-fg hover:bg-cc-hover"
-                            : "border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-                      }`}
-                    >
-                      <LinearLogo className="w-3.5 h-3.5" />
-                      <span>Linear</span>
-                    </button>
-
-                    {/* Attach project button (only when Linear is configured and in a git repo) */}
-                    {linearConfigured && gitRepoInfo && (
-                      <button
-                        type="button"
-                        onClick={handleOpenAttachDropdown}
-                        className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] border border-dashed border-cc-border text-cc-muted hover:text-cc-fg hover:border-cc-primary/40 transition-colors cursor-pointer"
-                      >
-                        <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                          <path d="M8 2a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 2z" />
-                        </svg>
-                        <span>Attach project</span>
-                      </button>
-                    )}
-
-                    {!linearConfigured && (
-                      <span className="text-[11px] text-amber-600 dark:text-amber-300">
-                        Configure Linear to attach an issue.
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Issue browser with inline search (when project is attached) */}
-              {linearMapping && (() => {
-                const query = projectSearchQuery.trim().toLowerCase();
-                const filteredIssues = !searchAllProjects && query
-                  ? recentIssues.filter((i) =>
-                      i.identifier.toLowerCase().includes(query) ||
-                      i.title.toLowerCase().includes(query))
-                  : searchAllProjects ? [] : recentIssues;
-                const displayIssues = searchAllProjects ? globalSearchResults : filteredIssues;
-
-                return (
-                  <div className="mt-2">
-                    {/* Selected issue badge */}
-                    {selectedLinearIssue && (
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="flex-1 min-w-0 text-xs text-cc-primary truncate">
-                          <span className="font-mono-code">{selectedLinearIssue.identifier}</span> - {selectedLinearIssue.title}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedLinearIssue(null);
-                            setLinearQuery("");
-                          }}
-                          className="text-cc-muted hover:text-cc-fg transition-colors cursor-pointer shrink-0"
-                          title="Remove issue"
-                        >
-                          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-                            <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Inline search input */}
-                    <input
-                      type="text"
-                      value={projectSearchQuery}
-                      onChange={(e) => setProjectSearchQuery(e.target.value)}
-                      placeholder={searchAllProjects ? "Search all projects..." : "Filter issues..."}
-                      className="w-full px-2 py-1.5 text-xs bg-cc-input-bg border border-cc-border rounded-md text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/60"
-                    />
-
-                    {/* Issue list */}
-                    {recentIssuesLoading ? (
-                      <div className="px-1 py-1.5 text-xs text-cc-muted">Loading recent issues...</div>
-                    ) : recentIssuesError ? (
-                      <div className="px-1 py-1.5 text-xs text-cc-error">{recentIssuesError}</div>
-                    ) : globalSearching ? (
-                      <div className="px-1 py-1.5 text-xs text-cc-muted">Searching...</div>
-                    ) : searchAllProjects && query.length < 2 ? (
-                      <div className="px-1 py-1.5 text-xs text-cc-muted">Type at least 2 characters to search all projects...</div>
-                    ) : displayIssues.length === 0 ? (
-                      <div className="px-1 py-1.5 text-xs text-cc-muted">
-                        {query ? "No matching issues" : "No active issues found"}
-                      </div>
-                    ) : (
-                      <div className="max-h-56 overflow-y-auto -mx-0.5 mt-1">
-                        {displayIssues.map((issue) => (
-                          <button
-                            key={issue.id}
-                            type="button"
-                            onClick={() => handleSelectLinearIssue(issue)}
-                            className={`w-full px-2 py-1.5 text-left rounded-md transition-colors cursor-pointer ${
-                              selectedLinearIssue?.id === issue.id
-                                ? "bg-cc-primary/10 border border-cc-primary/30"
-                                : "hover:bg-cc-hover"
-                            }`}
-                          >
-                            <div className="text-xs text-cc-fg truncate">
-                              <span className="font-mono-code">{issue.identifier}</span> {issue.title}
-                            </div>
-                            <div className="text-[10px] text-cc-muted truncate">
-                              {[issue.stateName, issue.priorityLabel].filter(Boolean).join(" - ")}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Search all projects toggle */}
-                    <label className="mt-1.5 flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={searchAllProjects}
-                        onChange={(e) => {
-                          setSearchAllProjects(e.target.checked);
-                          if (!e.target.checked) {
-                            setGlobalSearchResults([]);
-                          }
-                        }}
-                        className="rounded border-cc-border text-cc-primary focus:ring-cc-primary/30 cursor-pointer"
-                      />
-                      <span className="text-[11px] text-cc-muted">Search all projects</span>
-                    </label>
-                  </div>
-                );
-              })()}
-
-              {/* Attach project dropdown */}
-              {showAttachProjectDropdown && (
-                <div className="absolute left-2.5 right-2.5 top-[44px] bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 overflow-hidden">
-                  <div className="p-2 border-b border-cc-border">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-cc-fg font-medium">Attach a Linear project to this repo</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAttachProjectDropdown(false)}
-                        className="px-2 py-1 rounded-md text-xs bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                  {projectsLoading ? (
-                    <div className="px-3 py-2 text-xs text-cc-muted">Loading projects...</div>
-                  ) : availableProjects.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-cc-muted">No projects found</div>
-                  ) : (
-                    <div className="max-h-48 overflow-y-auto">
-                      {availableProjects.map((project) => (
-                        <button
-                          key={project.id}
-                          type="button"
-                          onClick={() => handleAttachProject(project)}
-                          className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
-                        >
-                          <div className="text-xs text-cc-fg">{project.name}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Search dropdown (used as fallback when mapping exists, or primary when no mapping) */}
-              {showLinearDropdown && linearConfigured && (
-                <div className="absolute left-2.5 right-2.5 top-[44px] bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-20 overflow-hidden">
-                  <div className="p-2 border-b border-cc-border">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={linearQuery}
-                        onChange={(e) => {
-                          setLinearQuery(e.target.value);
-                        }}
-                        onFocus={() => setShowLinearDropdown(true)}
-                        autoFocus
-                        placeholder="ENG-123 or issue title"
-                        className="w-full px-2.5 py-2 text-sm bg-cc-input-bg border border-cc-border rounded-md text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/60"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowLinearDropdown(false);
-                        }}
-                        className="px-2 py-2 rounded-md text-xs bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
-                      >
-                        Close
-                      </button>
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between text-[11px] text-cc-muted">
-                      <span>Attach an issue to this draft</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.location.hash = "#/integrations/linear";
-                        }}
-                        className="hover:text-cc-fg underline underline-offset-2 cursor-pointer"
-                      >
-                        Settings
-                      </button>
-                    </div>
-                  </div>
-
-                  {linearQuery.trim().length < 2 && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">Type at least 2 characters…</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && linearSearching && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">Searching Linear...</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && linearSearchError && (
-                    <div className="px-3 py-2 text-xs text-cc-error">{linearSearchError}</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && !linearSearchError && linearIssues.length === 0 && (
-                    <div className="px-3 py-2 text-xs text-cc-muted">No matching issues</div>
-                  )}
-                  {linearQuery.trim().length >= 2 && !linearSearching && !linearSearchError && (
-                    <div className="max-h-56 overflow-y-auto">
-                      {linearIssues.map((issue) => (
-                        <button
-                          key={issue.id}
-                          type="button"
-                          onClick={() => handleSelectLinearIssue(issue, true)}
-                          className="w-full px-3 py-2 text-left hover:bg-cc-hover transition-colors cursor-pointer"
-                        >
-                          <div className="text-xs text-cc-fg truncate">
-                            <span className="font-mono-code">{issue.identifier}</span> - {issue.title}
-                          </div>
-                          <div className="text-[10px] text-cc-muted truncate">
-                            {[issue.stateName, issue.teamName].filter(Boolean).join(" • ")}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.hash = "#/integrations/linear";
-                }}
-                className="absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
-                title="Linear settings"
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.35-.8-2.92.77-2.12 2.12.54.9.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98 1.02.25 1.49 1.39.95 2.29-.8 1.35.77 2.92 2.12 2.12.9-.54 2.04-.07 2.29.95.38 1.56 2.6 1.56 2.98 0 .25-1.02 1.39-1.49 2.29-.95 1.35.8 2.92-.77 2.12-2.12-.54-.9-.07-2.04.95-2.29 1.56-.38 1.56-2.6 0-2.98-1.02-.25-1.49-1.39-.95-2.29.8-1.35-.77-2.92-2.12-2.12-.9.54-2.04.07-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-
-            {showLinearStartWarning && (
-              <div className="p-3 rounded-[10px] bg-amber-500/10 border border-amber-500/20">
-                <p className="text-xs text-amber-700 dark:text-amber-300 leading-snug">
-                  Warning: Linear is not configured. Continue anyway?
-                </p>
-                <div className="flex gap-2 mt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLinearStartWarning(false);
-                      window.location.hash = "#/integrations/linear";
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-cc-hover text-cc-fg hover:bg-cc-active transition-colors cursor-pointer"
-                  >
-                    Configurer Linear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleContinueWithoutLinear}
-                    className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 transition-colors cursor-pointer"
-                  >
-                    Continuer sans Linear
-                  </button>
-                </div>
-              </div>
-            )}
-          </aside>}
+          <LinearSection
+            cwd={cwd}
+            gitRepoInfo={gitRepoInfo}
+            linearConfigured={linearConfigured}
+            selectedLinearIssue={selectedLinearIssue}
+            onIssueSelect={handleIssueSelect}
+            onBranchFromIssue={handleBranchFromIssue}
+          />
         </div>
 
         {/* Branch behind remote warning */}

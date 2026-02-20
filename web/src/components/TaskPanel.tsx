@@ -5,27 +5,13 @@ import type { TaskItem } from "../types.js";
 import { McpSection } from "./McpPanel.js";
 import { LinearLogo } from "./LinearLogo.js";
 import { SECTION_DEFINITIONS } from "./task-panel-sections.js";
+import { formatResetTime, formatCodexResetTime, formatWindowDuration, formatTokenCount } from "../utils/format.js";
+import { timeAgo } from "../utils/time-ago.js";
+import { captureException } from "../analytics.js";
+import { SectionErrorBoundary } from "./SectionErrorBoundary.js";
 
 const EMPTY_TASKS: TaskItem[] = [];
-const POLL_INTERVAL = 60_000;
-
-// Module-level cache — survives session switches so limits don't flash empty
-const limitsCache = new Map<string, UsageLimits>();
-
-function formatResetTime(resetsAt: string): string {
-  try {
-    const diffMs = new Date(resetsAt).getTime() - Date.now();
-    if (diffMs <= 0) return "now";
-    const days = Math.floor(diffMs / 86_400_000);
-    const hours = Math.floor((diffMs % 86_400_000) / 3_600_000);
-    const minutes = Math.floor((diffMs % 3_600_000) / 60_000);
-    if (days > 0) return `${days}d ${hours}h${minutes}m`;
-    if (hours > 0) return `${hours}h${minutes}m`;
-    return `${minutes}m`;
-  } catch {
-    return "N/A";
-  }
-}
+const COUNTDOWN_REFRESH_MS = 30_000;
 
 function barColor(pct: number): string {
   if (pct > 80) return "bg-cc-error";
@@ -34,37 +20,32 @@ function barColor(pct: number): string {
 }
 
 function UsageLimitsSection({ sessionId }: { sessionId: string }) {
-  const [limits, setLimits] = useState<UsageLimits | null>(
-    limitsCache.get(sessionId) ?? null,
-  );
+  const [limits, setLimits] = useState<UsageLimits | null>(null);
 
   const fetchLimits = useCallback(async () => {
     try {
       const data = await api.getSessionUsageLimits(sessionId);
-      limitsCache.set(sessionId, data);
       setLimits(data);
     } catch {
       // silent
     }
   }, [sessionId]);
 
-  // When sessionId changes, show cached value immediately
-  useEffect(() => {
-    setLimits(limitsCache.get(sessionId) ?? null);
-  }, [sessionId]);
-
+  // Single interval: fetch every 60s, tick every 30s for countdown refresh
+  const fetchTickRef = useRef(0);
   useEffect(() => {
     fetchLimits();
-    const id = setInterval(fetchLimits, POLL_INTERVAL);
+    const id = setInterval(() => {
+      fetchTickRef.current += 1;
+      if (fetchTickRef.current % 2 === 0) {
+        fetchLimits();
+      } else {
+        // Force re-render to refresh "resets in" countdown display
+        setLimits((prev) => (prev ? { ...prev } : null));
+      }
+    }, COUNTDOWN_REFRESH_MS);
     return () => clearInterval(id);
   }, [fetchLimits]);
-
-  // Also tick every 30s to refresh the "resets in" countdown
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
 
   if (!limits) return null;
 
@@ -160,23 +141,6 @@ function UsageLimitsSection({ sessionId }: { sessionId: string }) {
 
 // ─── Codex Rate Limits ───────────────────────────────────────────────────────
 
-function formatCodexResetTime(resetsAtMs: number): string {
-  const diffMs = resetsAtMs - Date.now();
-  if (diffMs <= 0) return "now";
-  const days = Math.floor(diffMs / 86_400_000);
-  const hours = Math.floor((diffMs % 86_400_000) / 3_600_000);
-  const minutes = Math.floor((diffMs % 3_600_000) / 60_000);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h${minutes}m`;
-  return `${minutes}m`;
-}
-
-function formatWindowDuration(mins: number): string {
-  if (mins >= 1440) return `${Math.round(mins / 1440)}d`;
-  if (mins >= 60) return `${Math.round(mins / 60)}h`;
-  return `${mins}m`;
-}
-
 function CodexRateLimitsSection({ sessionId }: { sessionId: string }) {
   const rateLimits = useStore((s) => s.sessions.get(sessionId)?.codex_rate_limits);
 
@@ -184,7 +148,7 @@ function CodexRateLimitsSection({ sessionId }: { sessionId: string }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!rateLimits) return;
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    const id = setInterval(() => setTick((t) => t + 1), COUNTDOWN_REFRESH_MS);
     return () => clearInterval(id);
   }, [rateLimits]);
 
@@ -245,12 +209,6 @@ function CodexRateLimitsSection({ sessionId }: { sessionId: string }) {
 }
 
 // ─── Codex Token Details ─────────────────────────────────────────────────────
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
 
 function CodexTokenDetailsSection({ sessionId }: { sessionId: string }) {
   const details = useStore((s) => s.sessions.get(sessionId)?.codex_token_details);
@@ -466,24 +424,6 @@ function linearStatePill(stateType: string, stateName: string) {
       return { label: stateName || "Backlog", cls: "text-cc-muted bg-cc-hover" };
     default:
       return { label: stateName || stateType || "Unknown", cls: "text-cc-muted bg-cc-hover" };
-  }
-}
-
-function formatCommentDate(dateStr: string): string {
-  try {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMins = Math.floor(diffMs / 60_000);
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString();
-  } catch {
-    return "";
   }
 }
 
@@ -775,7 +715,7 @@ function LinearIssueSection({ sessionId }: { sessionId: string }) {
             <div key={comment.id} className="text-[11px]">
               <div className="flex items-center gap-1">
                 <span className="font-medium text-cc-fg">{comment.userName}</span>
-                <span className="text-[9px] text-cc-muted">{formatCommentDate(comment.createdAt)}</span>
+                <span className="text-[9px] text-cc-muted">{timeAgo(new Date(comment.createdAt).getTime())}</span>
               </div>
               <p className="text-cc-muted line-clamp-2">{comment.body}</p>
             </div>
@@ -872,8 +812,8 @@ function GitBranchSection({ sessionId }: { sessionId: string }) {
                     git_ahead: r.git_ahead,
                     git_behind: r.git_behind,
                   });
-                  if (!r.success) console.warn("[git pull]", r.output);
-                }).catch((e) => console.error("[git pull]", e));
+                  if (!r.success) captureException(new Error(`git pull failed: ${r.output}`));
+                }).catch((e) => captureException(e));
               }}
               title="Pull latest changes"
             >
@@ -1116,7 +1056,12 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
               .map((sectionId) => {
                 const Component = SECTION_COMPONENTS[sectionId];
                 if (!Component) return null;
-                return <Component key={sectionId} sessionId={sessionId} />;
+                const label = SECTION_DEFINITIONS.find((d) => d.id === sectionId)?.label;
+                return (
+                  <SectionErrorBoundary key={sectionId} label={label}>
+                    <Component sessionId={sessionId} />
+                  </SectionErrorBoundary>
+                );
               })}
           </div>
 
