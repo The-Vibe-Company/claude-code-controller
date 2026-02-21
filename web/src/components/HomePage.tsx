@@ -780,7 +780,7 @@ export function HomePage() {
               </svg>
             </button>
             {showModelDropdown && (
-              <div className="absolute left-0 bottom-full mb-1 w-48 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1">
+              <div className="absolute left-0 bottom-full mb-1 w-48 bg-cc-card border border-cc-border rounded-[10px] shadow-lg z-10 py-1 max-h-64 overflow-y-auto">
                 {MODELS.map((m) => (
                   <button
                     key={m.value}
