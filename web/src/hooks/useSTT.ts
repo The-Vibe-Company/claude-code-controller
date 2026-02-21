@@ -42,6 +42,8 @@ export function useSTT(): UseSTTReturn {
   const modelLoadedRef = useRef(false);
   // Whether audio capture is currently active (used in worker message handler)
   const isCapturingRef = useRef(false);
+  // Timeout ID for auto-clearing error state; tracked to cancel on unmount
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Initialize worker on mount
   useEffect(() => {
@@ -64,8 +66,12 @@ export function useSTT(): UseSTTReturn {
       } else if (type === "error") {
         setError(message ?? "Unknown error");
         setStatus("error");
-        // Reset to idle/ready after 3 seconds so button becomes usable again
-        setTimeout(() => setStatus(modelLoadedRef.current ? "ready" : "idle"), 3000);
+        // Reset to idle/ready after 3 seconds; cancel any pending reset first
+        if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = setTimeout(() => {
+          errorTimeoutRef.current = null;
+          setStatus(modelLoadedRef.current ? "ready" : "idle");
+        }, 3000);
       }
     };
 
@@ -83,6 +89,7 @@ export function useSTT(): UseSTTReturn {
       streamRef.current = null;
       audioContextRef.current = null;
       isCapturingRef.current = false;
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       worker.terminate();
       workerRef.current = null;
     };
@@ -142,7 +149,12 @@ export function useSTT(): UseSTTReturn {
           : `Could not access microphone: ${msg}`,
       );
       setStatus("error");
-      setTimeout(() => setStatus(modelLoadedRef.current ? "ready" : "idle"), 3000);
+      // Reset to idle/ready after 3 seconds; cancel any pending reset first
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        errorTimeoutRef.current = null;
+        setStatus(modelLoadedRef.current ? "ready" : "idle");
+      }, 3000);
     }
   }, []);
 

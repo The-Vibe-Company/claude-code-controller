@@ -40,7 +40,15 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
     }
   }
 
-  if (type === "transcribe" && transcriber && audio) {
+  if (type === "transcribe") {
+    if (!transcriber) {
+      self.postMessage({ type: "error", message: "Model not loaded yet — please wait and try again" });
+      return;
+    }
+    if (!audio) {
+      self.postMessage({ type: "error", message: "No audio data received" });
+      return;
+    }
     try {
       const result = await transcriber(audio, {
         // No language specified — model auto-detects the spoken language

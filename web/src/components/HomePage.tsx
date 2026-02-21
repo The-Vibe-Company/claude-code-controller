@@ -634,7 +634,9 @@ export function HomePage() {
                           ? "Recording… click to stop"
                           : stt.status === "transcribing"
                             ? "Transcribing…"
-                            : "Voice input"
+                            : stt.error
+                              ? stt.error
+                              : "Voice input"
                     }
                     className={`relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
                       stt.status === "recording"
