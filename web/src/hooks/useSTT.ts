@@ -98,8 +98,6 @@ export function useSTT(): UseSTTReturn {
   const startRecording = useCallback(async () => {
     if (!workerRef.current || isCapturingRef.current) return;
 
-    // Set flag immediately (before async gap) to prevent double-invocation race
-    isCapturingRef.current = true;
     setTranscript("");
     setError(null);
 
@@ -108,10 +106,35 @@ export function useSTT(): UseSTTReturn {
       workerRef.current.postMessage({ type: "load", model: STT_MODEL });
     }
 
+    // Acquire mic first — then set the flag so stopRecording never acts on null refs
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isDenied =
+        msg.toLowerCase().includes("denied") ||
+        msg.toLowerCase().includes("notallowed") ||
+        msg.toLowerCase().includes("permission");
+      setError(
+        isDenied
+          ? "Microphone access denied. Please allow mic access in your browser."
+          : `Could not access microphone: ${msg}`,
+      );
+      setStatus("error");
+      if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = setTimeout(() => {
+        errorTimeoutRef.current = null;
+        setStatus(modelLoadedRef.current ? "ready" : "idle");
+      }, 3000);
+      return;
+    }
 
+    // Stream obtained — now mark as capturing so stopRecording can safely clean up
+    isCapturingRef.current = true;
+    streamRef.current = stream;
+
+    try {
       const audioCtx = new AudioContext(); // use browser's native sample rate; Transformers.js resamples to 16kHz
       audioContextRef.current = audioCtx;
 
@@ -127,29 +150,21 @@ export function useSTT(): UseSTTReturn {
       };
 
       source.connect(processor);
-      processor.connect(audioCtx.destination);
+      // Connect to a silent destination so onaudioprocess fires without routing
+      // mic audio to speakers (which would cause feedback/echo)
+      processor.connect(audioCtx.createMediaStreamDestination());
 
       // If model is already ready, go straight to recording; otherwise wait for ready message
       setStatus(modelLoadedRef.current ? "recording" : "loading-model");
     } catch (err) {
-      // Clean up any resources that were partially created before the error
+      // Clean up stream and AudioContext if audio graph setup failed
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       void audioContextRef.current?.close();
       audioContextRef.current = null;
       isCapturingRef.current = false;
-      const msg = err instanceof Error ? err.message : String(err);
-      const isDenied =
-        msg.toLowerCase().includes("denied") ||
-        msg.toLowerCase().includes("notallowed") ||
-        msg.toLowerCase().includes("permission");
-      setError(
-        isDenied
-          ? "Microphone access denied. Please allow mic access in your browser."
-          : `Could not access microphone: ${msg}`,
-      );
+      setError(`Could not start recording: ${err instanceof Error ? err.message : String(err)}`);
       setStatus("error");
-      // Reset to idle/ready after 3 seconds; cancel any pending reset first
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       errorTimeoutRef.current = setTimeout(() => {
         errorTimeoutRef.current = null;

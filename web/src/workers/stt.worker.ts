@@ -22,6 +22,11 @@ self.onmessage = async (e: MessageEvent<WorkerInMessage>) => {
   const { type, audio, model, sampling_rate } = e.data;
 
   if (type === "load") {
+    // Already loaded — skip expensive re-initialization
+    if (transcriber) {
+      self.postMessage({ type: "ready" });
+      return;
+    }
     self.postMessage({ type: "loading" });
     try {
       // Cast via unknown to avoid TS2590 "Expression produces a union type that is too complex"
