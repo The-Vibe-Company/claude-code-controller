@@ -291,7 +291,7 @@ export function Sidebar() {
   const cronSessions = allSessionList.filter((s) => !s.archived && !!s.cronJobId);
   const archivedSessions = allSessionList.filter((s) => s.archived);
   const currentSession = currentSessionId ? allSessionList.find((s) => s.id === currentSessionId) : null;
-  const logoSrc = currentSession?.backendType === "codex" ? "/logo-codex.svg" : "/logo.svg";
+  const logoSrc = currentSession?.backendType === "codex" ? "/logo-codex.svg" : currentSession?.backendType === "copilot" ? "/logo-copilot.svg" : "/logo.svg";
   const [showCronSessions, setShowCronSessions] = useState(true);
 
   // Group active sessions by project

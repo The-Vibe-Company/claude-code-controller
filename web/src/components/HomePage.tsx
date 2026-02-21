@@ -108,7 +108,7 @@ export function HomePage() {
 
   // Fetch dynamic models for the selected backend
   useEffect(() => {
-    if (backend !== "codex") {
+    if (backend !== "codex" && backend !== "copilot") {
       setDynamicModels(null);
       return;
     }
@@ -205,7 +205,7 @@ export function HomePage() {
 
   const selectedModel = MODELS.find((m) => m.value === model) || MODELS[0];
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
-  const logoSrc = backend === "codex" ? "/logo-codex.svg" : "/logo.svg";
+  const logoSrc = backend === "codex" ? "/logo-codex.svg" : backend === "copilot" ? "/logo-copilot.svg" : "/logo.svg";
   const dirLabel = cwd ? cwd.split("/").pop() || cwd : "Select folder";
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -316,7 +316,7 @@ export function HomePage() {
 
     const store = useStore.getState();
     store.clearCreation();
-    store.setSessionCreating(true, backend as "claude" | "codex");
+    store.setSessionCreating(true, backend as "claude" | "codex" | "copilot");
 
     try {
       // Disconnect current session if any

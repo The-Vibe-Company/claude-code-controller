@@ -195,7 +195,7 @@ export interface CreateSessionOpts {
   branch?: string;
   createBranch?: boolean;
   useWorktree?: boolean;
-  backend?: "claude" | "codex";
+  backend?: "claude" | "codex" | "copilot";
   container?: ContainerCreateOpts;
 }
 
@@ -417,7 +417,7 @@ export interface CronJobInfo {
   prompt: string;
   schedule: string;
   recurring: boolean;
-  backendType: "claude" | "codex";
+  backendType: "claude" | "codex" | "copilot";
   model: string;
   cwd: string;
   envSlug?: string;
