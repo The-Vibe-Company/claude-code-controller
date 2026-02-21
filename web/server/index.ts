@@ -119,6 +119,14 @@ if (recorder.isGloballyEnabled()) {
 
 const app = new Hono();
 
+// Cross-origin isolation headers required for SharedArrayBuffer (Whisper WASM threading).
+// Must come before all other middleware so the headers are set on every response.
+app.use("/*", async (c, next) => {
+  await next();
+  c.header("Cross-Origin-Opener-Policy", "same-origin");
+  c.header("Cross-Origin-Embedder-Policy", "require-corp");
+});
+
 app.use("/api/*", cors());
 app.route("/api", createRoutes(launcher, wsBridge, sessionStore, worktreeTracker, terminalManager, prPoller, recorder, cronScheduler));
 
