@@ -116,7 +116,30 @@ export default function App() {
     // For other pages (settings, terminal, etc.), preserve currentSessionId
   }, [route]);
 
-  // Poll for updates
+  // Keep git changed-files count in sync for the badge regardless of which tab is active.
+  // DiffPanel does the same when mounted; this covers the case where the diff tab is closed.
+  const changedFilesTick = useStore((s) => currentSessionId ? s.changedFilesTick.get(currentSessionId) ?? 0 : 0);
+  const diffBase = useStore((s) => s.diffBase);
+  const setGitChangedFilesCount = useStore((s) => s.setGitChangedFilesCount);
+  const sessionCwd = useStore((s) => {
+    if (!currentSessionId) return null;
+    return s.sessions.get(currentSessionId)?.cwd
+      || s.sdkSessions.find((sdk) => sdk.sessionId === currentSessionId)?.cwd
+      || null;
+  });
+  useEffect(() => {
+    if (!currentSessionId || !sessionCwd) return;
+    let cancelled = false;
+    api.getChangedFiles(sessionCwd, diffBase).then(({ files }) => {
+      if (cancelled) return;
+      const prefix = `${sessionCwd}/`;
+      const count = files.filter((f) => f.path === sessionCwd || f.path.startsWith(prefix)).length;
+      setGitChangedFilesCount(currentSessionId, count);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentSessionId, sessionCwd, diffBase, changedFilesTick, setGitChangedFilesCount]);
+
+
   useEffect(() => {
     const check = () => {
       api.checkForUpdate().then((info) => {
