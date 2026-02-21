@@ -3,6 +3,30 @@ import { useStore } from "../store.js";
 import { api } from "../api.js";
 import { DiffViewer } from "./DiffViewer.js";
 
+type FileChangeStatus = "created" | "updated" | "deleted";
+
+function FileStatusIcon({ status }: { status: FileChangeStatus }) {
+  if (status === "created") {
+    return (
+      <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center rounded-sm text-[10px] font-bold leading-none bg-green-500/20 text-green-400">
+        A
+      </span>
+    );
+  }
+  if (status === "deleted") {
+    return (
+      <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center rounded-sm text-[10px] font-bold leading-none bg-red-500/20 text-red-400">
+        D
+      </span>
+    );
+  }
+  return (
+    <span className="w-3.5 h-3.5 shrink-0 flex items-center justify-center rounded-sm text-[10px] font-bold leading-none bg-cc-warning/20 text-cc-warning">
+      M
+    </span>
+  );
+}
+
 export function DiffPanel({ sessionId }: { sessionId: string }) {
   const session = useStore((s) => s.sessions.get(sessionId));
   const sdkSession = useStore((s) => s.sdkSessions.find((sdk) => sdk.sessionId === sessionId));
@@ -10,7 +34,8 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
   const setSelectedFile = useStore((s) => s.setDiffPanelSelectedFile);
   const diffBase = useStore((s) => s.diffBase);
   const setDiffBase = useStore((s) => s.setDiffBase);
-  const changedFilesSet = useStore((s) => s.changedFiles.get(sessionId));
+  // changedFilesTick used only as a refresh trigger (bumped when agent edits files)
+  const changedFilesTick = useStore((s) => s.changedFilesTick.get(sessionId) ?? 0);
 
   const cwd = session?.cwd || sdkSession?.cwd;
 
@@ -19,17 +44,32 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth >= 640 : true,
   );
+  const [gitFiles, setGitFiles] = useState<Array<{ abs: string; rel: string; status: FileChangeStatus }>>([]);
 
-  const changedFiles = useMemo(() => changedFilesSet ?? new Set<string>(), [changedFilesSet]);
+  const setGitChangedFilesCount = useStore((s) => s.setGitChangedFilesCount);
 
-  const relativeChangedFiles = useMemo(() => {
-    if (!changedFiles.size || !cwd) return [];
-    const cwdPrefix = `${cwd}/`;
-    return [...changedFiles]
-      .filter((fp) => fp === cwd || fp.startsWith(cwdPrefix))
-      .map((fp) => ({ abs: fp, rel: fp.startsWith(cwd + "/") ? fp.slice(cwd.length + 1) : fp }))
-      .sort((a, b) => a.rel.localeCompare(b.rel));
-  }, [changedFiles, cwd]);
+  // Fetch changed file list from git whenever cwd, base, or agent edits change
+  useEffect(() => {
+    if (!cwd) return;
+    let cancelled = false;
+    api.getChangedFiles(cwd, diffBase).then(({ files }) => {
+      if (cancelled) return;
+      const cwdPrefix = `${cwd}/`;
+      const result = files
+        .filter((f) => f.path === cwd || f.path.startsWith(cwdPrefix))
+        .map((f) => ({
+          abs: f.path,
+          rel: f.path.startsWith(cwdPrefix) ? f.path.slice(cwdPrefix.length) : f.path,
+          status: (f.status === "A" || f.status === "?" ? "created" : f.status === "D" ? "deleted" : "updated") as FileChangeStatus,
+        }))
+        .sort((a, b) => a.rel.localeCompare(b.rel));
+      setGitFiles(result);
+      setGitChangedFilesCount(sessionId, result.length);
+    }).catch(() => { if (!cancelled) { setGitFiles([]); setGitChangedFilesCount(sessionId, 0); } });
+    return () => { cancelled = true; };
+  }, [cwd, diffBase, changedFilesTick, sessionId, setGitChangedFilesCount]);
+
+  const relativeChangedFiles = gitFiles;
 
   // Auto-select first changed file if none selected
   useEffect(() => {
@@ -104,7 +144,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
         <div className="text-center">
           <p className="text-sm text-cc-fg font-medium mb-1">No changes yet</p>
           <p className="text-xs text-cc-muted leading-relaxed">
-            File changes from Edit and Write tool calls will appear here.
+            File changes compared to the base will appear here once the agent edits files.
           </p>
         </div>
       </div>
@@ -146,7 +186,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
-          {relativeChangedFiles.map(({ abs, rel }) => (
+          {relativeChangedFiles.map(({ abs, rel, status }) => (
             <button
               key={abs}
               onClick={() => handleFileSelect(abs)}
@@ -155,13 +195,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
               }`}
               style={{ width: "calc(100% - 8px)" }}
             >
-              <svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-cc-warning shrink-0">
-                <path
-                  fillRule="evenodd"
-                  d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-                  clipRule="evenodd"
-                />
-              </svg>
+              <FileStatusIcon status={status} />
               <span className="truncate leading-snug">{rel}</span>
             </button>
           ))}
