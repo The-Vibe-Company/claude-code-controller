@@ -71,6 +71,18 @@ export function useSTT(): UseSTTReturn {
 
     workerRef.current = worker;
     return () => {
+      // Clean up any active recording resources if unmounting while recording
+      if (processorRef.current) {
+        processorRef.current.disconnect();
+        // eslint-disable-next-line @typescript-eslint/no-deprecated
+        processorRef.current.onaudioprocess = null;
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      void audioContextRef.current?.close();
+      processorRef.current = null;
+      streamRef.current = null;
+      audioContextRef.current = null;
+      isCapturingRef.current = false;
       worker.terminate();
       workerRef.current = null;
     };
@@ -79,6 +91,8 @@ export function useSTT(): UseSTTReturn {
   const startRecording = useCallback(async () => {
     if (!workerRef.current || isCapturingRef.current) return;
 
+    // Set flag immediately (before async gap) to prevent double-invocation race
+    isCapturingRef.current = true;
     setTranscript("");
     setError(null);
 
@@ -90,7 +104,6 @@ export function useSTT(): UseSTTReturn {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      isCapturingRef.current = true;
 
       const audioCtx = new AudioContext(); // use browser's native sample rate; Transformers.js resamples to 16kHz
       audioContextRef.current = audioCtx;
@@ -112,6 +125,11 @@ export function useSTT(): UseSTTReturn {
       // If model is already ready, go straight to recording; otherwise wait for ready message
       setStatus(modelLoadedRef.current ? "recording" : "loading-model");
     } catch (err) {
+      // Clean up any resources that were partially created before the error
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
       isCapturingRef.current = false;
       const msg = err instanceof Error ? err.message : String(err);
       const isDenied =
