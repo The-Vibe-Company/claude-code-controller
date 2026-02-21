@@ -63,8 +63,10 @@ interface AppState {
   // Tasks per session
   sessionTasks: Map<string, TaskItem[]>;
 
-  // Files changed by the agent per session (Edit/Write tool calls)
-  changedFiles: Map<string, Set<string>>;
+  // Tick incremented when agent edits an in-scope file — used to trigger DiffPanel re-fetch
+  changedFilesTick: Map<string, number>;
+  // Count of files changed per session as reported by git (set by DiffPanel)
+  gitChangedFilesCount: Map<string, number>;
 
   // Session display names
   sessionNames: Map<string, string>;
@@ -155,8 +157,8 @@ interface AppState {
   updateTask: (sessionId: string, taskId: string, updates: Partial<TaskItem>) => void;
 
   // Changed files actions
-  addChangedFile: (sessionId: string, filePath: string) => void;
-  clearChangedFiles: (sessionId: string) => void;
+  bumpChangedFilesTick: (sessionId: string) => void;
+  setGitChangedFilesCount: (sessionId: string, count: number) => void;
 
   // Session name actions
   setSessionName: (sessionId: string, name: string) => void;
@@ -311,7 +313,8 @@ export const useStore = create<AppState>((set) => ({
   sessionStatus: new Map(),
   previousPermissionMode: new Map(),
   sessionTasks: new Map(),
-  changedFiles: new Map(),
+  changedFilesTick: new Map(),
+  gitChangedFilesCount: new Map(),
   sessionNames: getInitialSessionNames(),
   recentlyRenamed: new Set(),
   prStatus: new Map(),
@@ -480,7 +483,8 @@ export const useStore = create<AppState>((set) => ({
         previousPermissionMode: deleteFromMap(s.previousPermissionMode, sessionId),
         pendingPermissions: deleteFromMap(s.pendingPermissions, sessionId),
         sessionTasks: deleteFromMap(s.sessionTasks, sessionId),
-        changedFiles: deleteFromMap(s.changedFiles, sessionId),
+        changedFilesTick: deleteFromMap(s.changedFilesTick, sessionId),
+        gitChangedFilesCount: deleteFromMap(s.gitChangedFilesCount, sessionId),
         sessionNames,
         recentlyRenamed: deleteFromSet(s.recentlyRenamed, sessionId),
         diffPanelSelectedFile: deleteFromMap(s.diffPanelSelectedFile, sessionId),
@@ -603,20 +607,18 @@ export const useStore = create<AppState>((set) => ({
       return { sessionTasks };
     }),
 
-  addChangedFile: (sessionId, filePath) =>
+  bumpChangedFilesTick: (sessionId) =>
     set((s) => {
-      const changedFiles = new Map(s.changedFiles);
-      const files = new Set(changedFiles.get(sessionId) || []);
-      files.add(filePath);
-      changedFiles.set(sessionId, files);
-      return { changedFiles };
+      const changedFilesTick = new Map(s.changedFilesTick);
+      changedFilesTick.set(sessionId, (changedFilesTick.get(sessionId) ?? 0) + 1);
+      return { changedFilesTick };
     }),
 
-  clearChangedFiles: (sessionId) =>
+  setGitChangedFilesCount: (sessionId, count) =>
     set((s) => {
-      const changedFiles = new Map(s.changedFiles);
-      changedFiles.delete(sessionId);
-      return { changedFiles };
+      const gitChangedFilesCount = new Map(s.gitChangedFilesCount);
+      gitChangedFilesCount.set(sessionId, count);
+      return { gitChangedFilesCount };
     }),
 
   setSessionName: (sessionId, name) =>
@@ -843,7 +845,8 @@ export const useStore = create<AppState>((set) => ({
       sessionStatus: new Map(),
       previousPermissionMode: new Map(),
       sessionTasks: new Map(),
-      changedFiles: new Map(),
+      changedFilesTick: new Map(),
+      gitChangedFilesCount: new Map(),
       sessionNames: new Map(),
       recentlyRenamed: new Set(),
       mcpServers: new Map(),

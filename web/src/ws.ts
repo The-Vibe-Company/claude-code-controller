@@ -114,16 +114,18 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
   const sessionCwd =
     store.sessions.get(sessionId)?.cwd ||
     store.sdkSessions.find((sdk) => sdk.sessionId === sessionId)?.cwd;
+  let dirty = false;
   for (const block of blocks) {
     if (block.type !== "tool_use") continue;
     const { name, input } = block;
     if ((name === "Edit" || name === "Write") && typeof input.file_path === "string") {
       const resolvedPath = resolveSessionFilePath(input.file_path, sessionCwd);
       if (isPathInSessionScope(resolvedPath, sessionCwd)) {
-        store.addChangedFile(sessionId, resolvedPath);
+        dirty = true;
       }
     }
   }
+  if (dirty) store.bumpChangedFilesTick(sessionId);
 }
 
 function sendBrowserNotification(title: string, body: string, tag: string) {

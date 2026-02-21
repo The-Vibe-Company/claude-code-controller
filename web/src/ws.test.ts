@@ -326,7 +326,7 @@ describe("handleMessage: assistant", () => {
     expect(state.sessionStatus.get("s1")).toBe("running");
   });
 
-  it("tracks changed files using session cwd for relative tool paths", () => {
+  it("bumps changedFilesTick for in-scope relative tool paths", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
@@ -351,11 +351,10 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed?.has("/home/user/web/server/index.ts")).toBe(true);
+    expect(useStore.getState().changedFilesTick.get("s1")).toBe(1);
   });
 
-  it("ignores changed files outside the session cwd", () => {
+  it("does not bump changedFilesTick for files outside session cwd", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
@@ -380,11 +379,10 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed).toBeUndefined();
+    expect(useStore.getState().changedFilesTick.get("s1")).toBeUndefined();
   });
 
-  it("tracks changed files with absolute paths when inside cwd", () => {
+  it("bumps changedFilesTick for absolute paths when inside cwd", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
@@ -409,8 +407,7 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed?.has("/home/user/README.md")).toBe(true);
+    expect(useStore.getState().changedFilesTick.get("s1")).toBe(1);
   });
 });
 
