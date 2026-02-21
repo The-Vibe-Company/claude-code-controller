@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store.js";
 import { api } from "../api.js";
+import { captureException } from "../analytics.js";
 
 export function UpdateBanner() {
   const updateInfo = useStore((s) => s.updateInfo);
@@ -18,7 +19,7 @@ export function UpdateBanner() {
       // Show the full-screen updating overlay
       useStore.getState().setUpdateOverlayActive(true);
     } catch (err) {
-      console.error("Update failed:", err);
+      captureException(err);
       setUpdating(false);
     }
   };

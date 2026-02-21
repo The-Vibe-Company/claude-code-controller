@@ -53,7 +53,7 @@ function useServerPoll(active: boolean) {
           setPhase("ready");
           // Brief pause to show the success state, then reload
           setTimeout(() => {
-            window.location.reload();
+            if (mountedRef.current) window.location.reload();
           }, 800);
         })
         .catch(() => {

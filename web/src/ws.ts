@@ -3,6 +3,7 @@ import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, Chat
 import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
+const WS_RECONNECT_DELAY_MS = 2000;
 const sockets = new Map<string, WebSocket>();
 const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastSeqBySession = new Map<string, number>();
@@ -210,6 +211,12 @@ function handleMessage(sessionId: string, event: MessageEvent) {
     return;
   }
 
+  // Promote to "connected" on first valid message (proves subscription succeeded)
+  const store = useStore.getState();
+  if (store.connectionStatus.get(sessionId) === "connecting") {
+    store.setConnectionStatus(sessionId, "connected");
+  }
+
   handleParsedMessage(sessionId, data);
 }
 
@@ -340,6 +347,10 @@ function handleParsedMessage(
     }
 
     case "result": {
+      // Flush processed tool IDs at end of turn — deduplication only needed
+      // within a single turn. Preserves memory in long-running sessions.
+      processedToolUseIds.delete(sessionId);
+
       const r = data.data;
       const sessionUpdates: Partial<{ total_cost_usd: number; num_turns: number; context_used_percent: number; total_lines_added: number; total_lines_removed: number }> = {
         total_cost_usd: r.total_cost_usd,
@@ -591,7 +602,8 @@ export function connectSession(sessionId: string) {
   sockets.set(sessionId, ws);
 
   ws.onopen = () => {
-    useStore.getState().setConnectionStatus(sessionId, "connected");
+    // Stay in "connecting" until we receive the first message from the server,
+    // proving the subscription succeeded. handleMessage promotes to "connected".
     const lastSeq = getLastSeq(sessionId);
     ws.send(JSON.stringify({ type: "session_subscribe", last_seq: lastSeq }));
     // Clear any reconnect timer
@@ -625,7 +637,7 @@ function scheduleReconnect(sessionId: string) {
     if (sdkSession && !sdkSession.archived) {
       connectSession(sessionId);
     }
-  }, 2000);
+  }, WS_RECONNECT_DELAY_MS);
   reconnectTimers.set(sessionId, timer);
 }
 
@@ -643,6 +655,7 @@ export function disconnectSession(sessionId: string) {
   processedToolUseIds.delete(sessionId);
   taskCounters.delete(sessionId);
   streamingPhaseBySession.delete(sessionId);
+  lastSeqBySession.delete(sessionId);
 }
 
 export function disconnectAll() {

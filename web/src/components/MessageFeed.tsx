@@ -3,21 +3,10 @@ import { useStore } from "../store.js";
 import { MessageBubble } from "./MessageBubble.js";
 import { getToolIcon, getToolLabel, getPreview, ToolIcon } from "./ToolBlock.js";
 import type { ChatMessage, ContentBlock } from "../types.js";
+import { formatElapsed, formatTokenCount } from "../utils/format.js";
 
 const FEED_PAGE_SIZE = 100;
 const savedDistanceFromBottomBySession = new Map<string, number>();
-
-function formatElapsed(ms: number): string {
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  return `${mins}m ${secs % 60}s`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -561,7 +550,7 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
               {(streamingOutputTokens ?? 0) > 0 && (
                 <>
                   <span className="text-cc-muted/40">·</span>
-                  <span>↓ {formatTokens(streamingOutputTokens!)}</span>
+                  <span>↓ {formatTokenCount(streamingOutputTokens!)}</span>
                 </>
               )}
               <span className="text-cc-muted/60">)</span>

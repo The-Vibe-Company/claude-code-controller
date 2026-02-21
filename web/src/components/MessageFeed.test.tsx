@@ -90,9 +90,9 @@ beforeEach(() => {
 });
 
 // ─── Pure functions tested through component output ──────────────────────────
-// Since formatElapsed, formatTokens, getToolOnlyName, extractToolItems,
-// groupToolMessages, groupMessages are not exported, we test them through the
-// component's rendered output.
+// Since getToolOnlyName, extractToolItems, groupToolMessages, groupMessages
+// are not exported, we test them through the component's rendered output.
+// (formatElapsed and formatTokenCount are now in utils/format.ts with their own tests.)
 
 // ─── formatElapsed (tested via generation stats bar) ─────────────────────────
 

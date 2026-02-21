@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useStore } from "./store.js";
 import { connectSession } from "./ws.js";
 import { api } from "./api.js";
@@ -10,19 +10,29 @@ import { TopBar } from "./components/TopBar.js";
 import { HomePage } from "./components/HomePage.js";
 import { TaskPanel } from "./components/TaskPanel.js";
 import { DiffPanel } from "./components/DiffPanel.js";
-import { Playground } from "./components/Playground.js";
 import { UpdateBanner } from "./components/UpdateBanner.js";
-import { SettingsPage } from "./components/SettingsPage.js";
-import { IntegrationsPage } from "./components/IntegrationsPage.js";
-import { LinearSettingsPage } from "./components/LinearSettingsPage.js";
-import { PromptsPage } from "./components/PromptsPage.js";
-import { EnvManager } from "./components/EnvManager.js";
-import { CronManager } from "./components/CronManager.js";
-import { TerminalPage } from "./components/TerminalPage.js";
 import { SessionLaunchOverlay } from "./components/SessionLaunchOverlay.js";
 import { SessionTerminalDock } from "./components/SessionTerminalDock.js";
 import { SessionEditorPane } from "./components/SessionEditorPane.js";
 import { UpdateOverlay } from "./components/UpdateOverlay.js";
+
+// Lazy-loaded route-level pages (not needed for initial render)
+const Playground = lazy(() => import("./components/Playground.js").then((m) => ({ default: m.Playground })));
+const SettingsPage = lazy(() => import("./components/SettingsPage.js").then((m) => ({ default: m.SettingsPage })));
+const IntegrationsPage = lazy(() => import("./components/IntegrationsPage.js").then((m) => ({ default: m.IntegrationsPage })));
+const LinearSettingsPage = lazy(() => import("./components/LinearSettingsPage.js").then((m) => ({ default: m.LinearSettingsPage })));
+const PromptsPage = lazy(() => import("./components/PromptsPage.js").then((m) => ({ default: m.PromptsPage })));
+const EnvManager = lazy(() => import("./components/EnvManager.js").then((m) => ({ default: m.EnvManager })));
+const CronManager = lazy(() => import("./components/CronManager.js").then((m) => ({ default: m.CronManager })));
+const TerminalPage = lazy(() => import("./components/TerminalPage.js").then((m) => ({ default: m.TerminalPage })));
+
+function LazyFallback() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-sm text-cc-muted">Loading...</div>
+    </div>
+  );
+}
 
 function useHash() {
   return useSyncExternalStore(
@@ -119,7 +129,7 @@ export default function App() {
   }, []);
 
   if (route.page === "playground") {
-    return <Playground />;
+    return <Suspense fallback={<LazyFallback />}><Playground /></Suspense>;
   }
 
   return (
@@ -151,43 +161,43 @@ export default function App() {
         <div className="flex-1 overflow-hidden relative">
           {isSettingsPage && (
             <div className="absolute inset-0">
-              <SettingsPage embedded />
+              <Suspense fallback={<LazyFallback />}><SettingsPage embedded /></Suspense>
             </div>
           )}
 
           {isPromptsPage && (
             <div className="absolute inset-0">
-              <PromptsPage embedded />
+              <Suspense fallback={<LazyFallback />}><PromptsPage embedded /></Suspense>
             </div>
           )}
 
           {isIntegrationsPage && (
             <div className="absolute inset-0">
-              <IntegrationsPage embedded />
+              <Suspense fallback={<LazyFallback />}><IntegrationsPage embedded /></Suspense>
             </div>
           )}
 
           {isLinearIntegrationPage && (
             <div className="absolute inset-0">
-              <LinearSettingsPage embedded />
+              <Suspense fallback={<LazyFallback />}><LinearSettingsPage embedded /></Suspense>
             </div>
           )}
 
           {isTerminalPage && (
             <div className="absolute inset-0">
-              <TerminalPage />
+              <Suspense fallback={<LazyFallback />}><TerminalPage /></Suspense>
             </div>
           )}
 
           {isEnvironmentsPage && (
             <div className="absolute inset-0">
-              <EnvManager embedded />
+              <Suspense fallback={<LazyFallback />}><EnvManager embedded /></Suspense>
             </div>
           )}
 
           {isScheduledPage && (
             <div className="absolute inset-0">
-              <CronManager embedded />
+              <Suspense fallback={<LazyFallback />}><CronManager embedded /></Suspense>
             </div>
           )}
 
