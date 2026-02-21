@@ -70,6 +70,7 @@ export function useSTT(): UseSTTReturn {
         if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
         errorTimeoutRef.current = setTimeout(() => {
           errorTimeoutRef.current = null;
+          setError(null);
           setStatus(modelLoadedRef.current ? "ready" : "idle");
         }, 3000);
       }
@@ -125,6 +126,7 @@ export function useSTT(): UseSTTReturn {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       errorTimeoutRef.current = setTimeout(() => {
         errorTimeoutRef.current = null;
+        setError(null);
         setStatus(modelLoadedRef.current ? "ready" : "idle");
       }, 3000);
       return;
@@ -168,6 +170,7 @@ export function useSTT(): UseSTTReturn {
       if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
       errorTimeoutRef.current = setTimeout(() => {
         errorTimeoutRef.current = null;
+        setError(null);
         setStatus(modelLoadedRef.current ? "ready" : "idle");
       }, 3000);
     }
