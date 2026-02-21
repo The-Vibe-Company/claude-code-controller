@@ -443,6 +443,106 @@ describe("Composer @ prompts menu", () => {
   });
 });
 
+// ─── Keyboard navigation ────────────────────────────────────────────────────
+
+describe("Composer keyboard navigation", () => {
+  it("Escape in the slash menu does not send a message", () => {
+    // Verifies pressing Escape while the slash menu is open does not trigger
+    // a message send — the key event should be consumed by the menu handler.
+    setupMockStore({
+      session: {
+        slash_commands: ["help", "clear"],
+        skills: [],
+      },
+    });
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "/" } });
+    expect(screen.getByText("/help")).toBeTruthy();
+
+    fireEvent.keyDown(textarea, { key: "Escape" });
+
+    // Escape should NOT send any message
+    expect(mockSendToSession).not.toHaveBeenCalled();
+    // The text should still be "/" (not cleared)
+    expect((textarea as HTMLTextAreaElement).value).toBe("/");
+  });
+
+  it("ArrowDown/ArrowUp cycles through slash menu items", () => {
+    // Verifies keyboard arrow navigation within the slash command menu.
+    setupMockStore({
+      session: {
+        slash_commands: ["help", "clear"],
+        skills: [],
+      },
+    });
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "/" } });
+    // First item should be highlighted by default (index 0)
+    const items = screen.getAllByRole("button").filter(
+      (btn) => btn.textContent?.startsWith("/"),
+    );
+    expect(items.length).toBeGreaterThanOrEqual(2);
+
+    // Arrow down should move selection — pressing Enter selects the item
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+
+    // The selected command should replace the textarea content
+    expect((textarea as HTMLTextAreaElement).value).toContain("/clear");
+  });
+
+  it("Enter selects the highlighted slash command", () => {
+    // Verifies that pressing Enter in the slash menu selects the command
+    // without sending it as a message.
+    setupMockStore({
+      session: {
+        slash_commands: ["help"],
+        skills: [],
+      },
+    });
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+
+    fireEvent.change(textarea, { target: { value: "/" } });
+    expect(screen.getByText("/help")).toBeTruthy();
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    // Should NOT send a WebSocket message — it should just fill the command
+    expect(mockSendToSession).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Layout & overflow ──────────────────────────────────────────────────────
+
+describe("Composer layout", () => {
+  it("textarea has overflow-y-auto to handle long content", () => {
+    // Verifies the textarea scrolls vertically rather than expanding infinitely.
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+    expect(textarea.className).toContain("overflow-y-auto");
+  });
+
+  it("send button has consistent dimensions", () => {
+    // Verifies the send button has explicit sizing classes for consistent layout.
+    render(<Composer sessionId="s1" />);
+    const sendBtn = screen.getByTitle("Send message");
+    expect(sendBtn.className).toContain("w-9");
+    expect(sendBtn.className).toContain("h-9");
+  });
+
+  it("textarea uses min-w-0 to prevent flex overflow", () => {
+    // Verifies the textarea container uses min-w-0 to prevent content from
+    // overflowing its flex parent.
+    const { container } = render(<Composer sessionId="s1" />);
+    const textarea = container.querySelector("textarea")!;
+    expect(textarea.className).toContain("min-w-0");
+  });
+});
+
 describe("Composer save prompt", () => {
   it("shows save error when create prompt fails", async () => {
     // Validates API failures are visible to the user instead of being silently ignored.
@@ -457,5 +557,13 @@ describe("Composer save prompt", () => {
     fireEvent.click(screen.getByText("Save"));
 
     expect(await screen.findByText("Could not save prompt right now")).toBeTruthy();
+  });
+
+  it("passes axe accessibility checks", async () => {
+    const { axe } = await import("vitest-axe");
+    setupMockStore({ isConnected: true });
+    const { container } = render(<Composer sessionId="s1" />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

@@ -39,6 +39,7 @@ cd web && bun run test:watch
 ```
 
 - All new backend (`web/server/`) and frontend (`web/src/`) code **must** include tests when possible.
+- **Every new or modified frontend component** (`web/src/components/`) **must** have an accompanying `.test.tsx` file with at minimum: a render test, an axe accessibility scan (`toHaveNoViolations()`), and tests for any interactive behavior (clicks, keyboard shortcuts, state changes).
 - Tests use Vitest. Server tests live alongside source files (e.g. `routes.test.ts` next to `routes.ts`).
 - A husky pre-commit hook runs typecheck and tests automatically before each commit.
 - **Never remove or delete existing tests.** If a test is failing, fix the code or the test. If you believe a test should be removed, you must first explain to the user why and get explicit approval before removing it.

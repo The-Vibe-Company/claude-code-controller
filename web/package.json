@@ -71,6 +71,7 @@
     "typescript": "^5.9.3",
     "vite": "^6.3.0",
     "vitest": "^4.0.18",
+    "vitest-axe": "^0.1.0",
     "zustand": "^5.0.0"
   }
 }

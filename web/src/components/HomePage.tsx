@@ -512,6 +512,7 @@ export function HomePage() {
           multiple
           onChange={handleFileSelect}
           className="hidden"
+          aria-label="Attach images"
         />
 
         <div className="grid grid-cols-1 gap-3 sm:gap-4 items-start">
@@ -541,7 +542,8 @@ export function HomePage() {
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder="Fix a bug, build a feature, refactor code..."
+                aria-label="Task description"
+              placeholder="Fix a bug, build a feature, refactor code..."
                 rows={4}
                 className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
                 style={{ minHeight: "100px", maxHeight: "200px" }}
@@ -553,6 +555,7 @@ export function HomePage() {
                 <div className="relative" ref={modeDropdownRef}>
                   <button
                     onClick={() => setShowModeDropdown(!showModeDropdown)}
+                    aria-expanded={showModeDropdown}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cc-muted hover:text-cc-fg rounded-lg hover:bg-cc-hover transition-colors cursor-pointer"
                   >
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
@@ -689,6 +692,7 @@ export function HomePage() {
                 }
                 setShowEnvDropdown(!showEnvDropdown);
               }}
+              aria-expanded={showEnvDropdown}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-cc-muted hover:text-cc-fg rounded-md hover:bg-cc-hover transition-colors cursor-pointer"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-60">
@@ -771,6 +775,7 @@ export function HomePage() {
           <div className="relative" ref={modelDropdownRef}>
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
+              aria-expanded={showModelDropdown}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-cc-muted hover:text-cc-fg rounded-md hover:bg-cc-hover transition-colors cursor-pointer"
             >
               <span>{selectedModel.icon}</span>

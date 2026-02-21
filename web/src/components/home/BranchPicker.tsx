@@ -63,6 +63,7 @@ export function BranchPicker({
       {/* Branch picker */}
       <div className="relative" ref={branchDropdownRef}>
         <button
+          aria-expanded={showBranchDropdown}
           onClick={() => {
             if (!showBranchDropdown && gitRepoInfo) {
               api.gitFetch(gitRepoInfo.repoRoot)

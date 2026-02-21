@@ -159,6 +159,23 @@
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* Global focus-visible ring — ensures keyboard users always see focus */
+:focus-visible {
+  outline: 2px solid var(--color-cc-primary);
+  outline-offset: 2px;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Eliminate 300ms tap delay on interactive elements */
 button,
 [role="button"],

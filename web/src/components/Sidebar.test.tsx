@@ -20,6 +20,7 @@ const mockApi = {
   deleteSession: vi.fn().mockResolvedValue({}),
   archiveSession: vi.fn().mockResolvedValue({}),
   unarchiveSession: vi.fn().mockResolvedValue({}),
+  renameSession: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("../api.js", () => ({
@@ -28,6 +29,7 @@ vi.mock("../api.js", () => ({
     deleteSession: (...args: unknown[]) => mockApi.deleteSession(...args),
     archiveSession: (...args: unknown[]) => mockApi.archiveSession(...args),
     unarchiveSession: (...args: unknown[]) => mockApi.unarchiveSession(...args),
+    renameSession: (...args: unknown[]) => mockApi.renameSession(...args),
   },
 }));
 
@@ -748,5 +750,86 @@ describe("Sidebar", () => {
     const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button");
     // The button should have min-h-[44px] class for touch accessibility
     expect(sessionButton).toHaveClass("min-h-[44px]");
+  });
+
+  it("Enter confirms rename in edit mode", () => {
+    // Verifies that pressing Enter in the rename input commits the name change
+    // via the store's setSessionName action.
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+
+    render(<Sidebar />);
+    const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button")!;
+    fireEvent.doubleClick(sessionButton);
+
+    const input = screen.getByDisplayValue("claude-sonnet-4-6") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "My Session" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // After Enter, the rename should be confirmed via the store action
+    expect(mockState.setSessionName).toHaveBeenCalledWith("s1", "My Session");
+  });
+
+  it("Escape cancels rename in edit mode", () => {
+    // Verifies that pressing Escape reverts the rename without saving.
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+
+    render(<Sidebar />);
+    const sessionButton = screen.getByText("claude-sonnet-4-6").closest("button")!;
+    fireEvent.doubleClick(sessionButton);
+
+    const input = screen.getByDisplayValue("claude-sonnet-4-6") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Should Not Save" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    // After Escape, setSessionName should not be called — the rename was cancelled
+    expect(mockState.setSessionName).not.toHaveBeenCalled();
+  });
+
+  it("long session names are truncated with the truncate class", () => {
+    // Verifies that a very long session name does not cause horizontal overflow.
+    const longName = "A".repeat(200);
+    const session = makeSession("s1", { model: longName });
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+
+    render(<Sidebar />);
+    const nameEl = screen.getByText(longName);
+    // The name should use the truncate utility class to prevent overflow
+    expect(nameEl).toHaveClass("truncate");
+  });
+
+  it("footer nav buttons have title attributes for accessibility", () => {
+    // Verifies footer nav buttons have title attributes for tooltip/screen reader support.
+    render(<Sidebar />);
+    // Footer nav items should have descriptive titles from NAV_ITEMS
+    expect(screen.getByTitle("Prompts")).toBeInTheDocument();
+    expect(screen.getByTitle("Integrations")).toBeInTheDocument();
+    expect(screen.getByTitle("Settings")).toBeInTheDocument();
+  });
+
+  it("passes axe accessibility checks", async () => {
+    const { axe } = await import("vitest-axe");
+    const session = makeSession("s1");
+    const sdk = makeSdkSession("s1");
+    mockState = createMockState({
+      sessions: new Map([["s1", session]]),
+      sdkSessions: [sdk],
+    });
+    const { container } = render(<Sidebar />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });

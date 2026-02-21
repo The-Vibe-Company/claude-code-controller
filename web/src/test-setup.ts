@@ -1,6 +1,15 @@
 // Setup file for jsdom-based tests
 // Polyfills that must be available before any module import
 
+// Register vitest-axe matchers (toHaveNoViolations) in jsdom environments.
+// The vitest-axe/extend-expect entry is an empty file in some builds, so we
+// manually import the matcher and extend expect ourselves.
+if (typeof window !== "undefined") {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const matchers = await import("vitest-axe/matchers") as any;
+  expect.extend({ toHaveNoViolations: matchers.toHaveNoViolations });
+}
+
 if (typeof window !== "undefined") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -39,3 +48,5 @@ if (typeof window !== "undefined") {
     });
   }
 }
+
+export {};

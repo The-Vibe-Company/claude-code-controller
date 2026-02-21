@@ -239,4 +239,20 @@ describe("TopBar", () => {
     }
     underlay.remove();
   });
+
+  it("tab buttons have accessible names", () => {
+    // Verifies all workspace tabs are identifiable by assistive technology.
+    render(<TopBar />);
+    expect(screen.getByRole("button", { name: "Session tab" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Diffs tab" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Shell tab" })).toBeInTheDocument();
+  });
+
+  it("passes axe accessibility checks", async () => {
+    const { axe } = await import("vitest-axe");
+    resetStore();
+    const { container } = render(<TopBar />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

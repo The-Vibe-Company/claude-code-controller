@@ -110,4 +110,15 @@ describe("HomePage", () => {
       expect(screen.getByText("the-147-associer-un-ticket-linear")).toBeInTheDocument();
     });
   });
+
+  it("passes axe accessibility checks", async () => {
+    const { axe } = await import("vitest-axe");
+    const { container } = render(<HomePage />);
+    // Wait for async effects to settle (backends, settings, etc.)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Fix a bug, build a feature, refactor code...")).toBeInTheDocument();
+    });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
 });

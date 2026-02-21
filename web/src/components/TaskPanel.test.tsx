@@ -373,3 +373,13 @@ describe("CodexTokenDetailsSection", () => {
     expect(screen.queryByText("Context")).not.toBeInTheDocument();
   });
 });
+
+describe("TaskPanel accessibility", () => {
+  it("passes axe accessibility checks", async () => {
+    const { axe } = await import("vitest-axe");
+    resetStore();
+    const { container } = render(<TaskPanel sessionId="s1" />);
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+});

@@ -255,6 +255,7 @@ export function LinearSection({
               {/* Linear button — search or configure */}
               <button
                 type="button"
+                aria-expanded={showLinearDropdown}
                 onClick={() => {
                   if (!linearConfigured) {
                     window.location.hash = "#/integrations/linear";

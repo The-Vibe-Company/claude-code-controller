@@ -404,6 +404,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                 />
                 <button
                   onClick={() => removeImage(i)}
+                  aria-label="Remove image"
                   className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-cc-error text-white flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                 >
                   <svg viewBox="0 0 16 16" fill="currentColor" className="w-2.5 h-2.5">
@@ -423,6 +424,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
           multiple
           onChange={handleFileSelect}
           className="hidden"
+          aria-label="Attach images"
         />
 
         {/* Unified input card */}
@@ -521,6 +523,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   if (savePromptError) setSavePromptError(null);
                 }}
                 placeholder="Prompt title"
+                aria-label="Prompt title"
                 className="w-full px-2 py-1.5 text-sm bg-cc-input-bg border border-cc-border rounded-md text-cc-fg focus:outline-none focus:border-cc-primary/40"
               />
               <div className="text-[11px] text-cc-muted">Scope: global • stored locally</div>
@@ -587,6 +590,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
               onClick={syncCaret}
               onKeyUp={syncCaret}
               onPaste={handlePaste}
+              aria-label="Message input"
               placeholder={isConnected
                 ? "Type a message... (/ + @)"
                 : "Waiting for CLI connection..."}
