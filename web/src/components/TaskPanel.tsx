@@ -1,11 +1,10 @@
 import { useEffect, useState, useCallback, useRef, type ComponentType } from "react";
-import { createPortal } from "react-dom";
 import { useStore } from "../store.js";
 import { api, type UsageLimits, type GitHubPRInfo, type LinearIssue, type LinearComment } from "../api.js";
 import type { TaskItem } from "../types.js";
 import { McpSection } from "./McpPanel.js";
 import { LinearLogo } from "./LinearLogo.js";
-import { ClaudeMdEditor } from "./ClaudeMdEditor.js";
+import { ClaudeConfigBrowser } from "./ClaudeConfigBrowser.js";
 import { SECTION_DEFINITIONS } from "./task-panel-sections.js";
 import { formatResetTime, formatCodexResetTime, formatWindowDuration, formatTokenCount } from "../utils/format.js";
 import { timeAgo } from "../utils/time-ago.js";
@@ -996,62 +995,6 @@ function TaskPanelConfigView({ isCodex }: { isCodex: boolean }) {
   );
 }
 
-// ─── CLAUDE.md Section ────────────────────────────────────────────────────────
-
-function ClaudeMdSection({ sessionId }: { sessionId: string }) {
-  const session = useStore((s) => s.sessions.get(sessionId));
-  const sdk = useStore((s) => s.sdkSessions.find((x) => x.sessionId === sessionId));
-  // Prefer repo_root since CLAUDE.md typically lives at the repository root,
-  // not necessarily the session's working directory.
-  const cwd = session?.repo_root || session?.cwd || sdk?.cwd;
-  const [fileCount, setFileCount] = useState<number | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-
-  useEffect(() => {
-    if (!cwd) return;
-    let active = true;
-    api.getClaudeMdFiles(cwd).then((res) => {
-      if (active) setFileCount(res.files.length);
-    }).catch(() => {
-      if (active) setFileCount(0);
-    });
-    return () => { active = false; };
-  }, [cwd]);
-
-  if (!cwd) return null;
-
-  const hasFiles = fileCount !== null && fileCount > 0;
-
-  return (
-    <>
-      <button
-        onClick={() => setEditorOpen(true)}
-        className="shrink-0 w-full flex items-center gap-2.5 px-4 py-2.5 border-b border-cc-border hover:bg-cc-hover/50 transition-colors cursor-pointer text-left"
-        aria-label="Edit CLAUDE.md"
-      >
-        <div className="w-5 h-5 rounded bg-cc-primary/10 flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary">
-            <path d="M4 1.5a.5.5 0 01.5-.5h7a.5.5 0 01.354.146l2 2A.5.5 0 0114 3.5v11a.5.5 0 01-.5.5h-11a.5.5 0 01-.5-.5v-13zm1 .5v12h8V4h-1.5a.5.5 0 01-.5-.5V2H5zm6 0v1h1l-1-1z" />
-          </svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <span className="text-[12px] font-medium text-cc-fg block leading-tight">CLAUDE.md</span>
-          <span className="text-[10px] text-cc-muted block leading-tight">
-            {fileCount === null ? "Checking..." : hasFiles ? "Project instructions loaded" : "Create project instructions"}
-          </span>
-        </div>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3 h-3 text-cc-muted shrink-0">
-          <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {editorOpen && createPortal(
-        <ClaudeMdEditor cwd={cwd} open={editorOpen} onClose={() => setEditorOpen(false)} />,
-        document.body,
-      )}
-    </>
-  );
-}
-
 // ─── Task Panel ──────────────────────────────────────────────────────────────
 
 export { CodexRateLimitsSection, CodexTokenDetailsSection };
@@ -1112,7 +1055,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
       ) : (
         <>
           <div data-testid="task-panel-content" className="min-h-0 flex-1 overflow-y-auto">
-            <ClaudeMdSection sessionId={sessionId} />
+            <ClaudeConfigBrowser sessionId={sessionId} />
             {applicableSections
               .filter((id) => config.enabled[id] !== false)
               .map((sectionId) => {

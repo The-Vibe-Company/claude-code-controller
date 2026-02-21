@@ -483,6 +483,26 @@ export interface SavedPrompt {
   updatedAt: number;
 }
 
+// ─── Claude Config Browser ──────────────────────────────────────────────────
+
+export interface ClaudeConfigResponse {
+  project: {
+    root: string;
+    claudeMd: { path: string; content: string }[];
+    settings: { path: string; content: string } | null;
+    settingsLocal: { path: string; content: string } | null;
+    commands: { name: string; path: string }[];
+  };
+  user: {
+    root: string;
+    claudeMd: { path: string; content: string } | null;
+    skills: { slug: string; name: string; description: string; path: string }[];
+    agents: { name: string; path: string }[];
+    settings: { path: string; content: string } | null;
+    commands: { name: string; path: string }[];
+  };
+}
+
 // ─── SSE Session Creation ────────────────────────────────────────────────────
 
 export interface CreationProgressEvent {
@@ -789,6 +809,8 @@ export const api = {
     ),
   saveClaudeMd: (path: string, content: string) =>
     put<{ ok: boolean; path: string }>("/fs/claude-md", { path, content }),
+  getClaudeConfig: (cwd: string) =>
+    get<ClaudeConfigResponse>(`/fs/claude-config?cwd=${encodeURIComponent(cwd)}`),
 
   // Usage limits
   getUsageLimits: () => get<UsageLimits>("/usage-limits"),
