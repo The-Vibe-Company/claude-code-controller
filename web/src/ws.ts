@@ -121,7 +121,7 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
     if ((name === "Edit" || name === "Write") && typeof input.file_path === "string") {
       const resolvedPath = resolveSessionFilePath(input.file_path, sessionCwd);
       if (isPathInSessionScope(resolvedPath, sessionCwd)) {
-        store.addChangedFile(sessionId, resolvedPath);
+        store.bumpChangedFilesTick(sessionId);
       }
     }
   }

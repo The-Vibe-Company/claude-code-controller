@@ -22,7 +22,7 @@ interface MockStoreState {
   sessions: Map<string, { cwd?: string }>;
   sdkSessions: { sessionId: string; cwd?: string }[];
   diffPanelSelectedFile: Map<string, string>;
-  changedFiles: Map<string, Set<string>>;
+  changedFilesTick: Map<string, number>;
   setDiffPanelSelectedFile: ReturnType<typeof vi.fn>;
   setGitChangedFilesCount: ReturnType<typeof vi.fn>;
   diffBase: "last-commit" | "default-branch";
@@ -36,7 +36,7 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
     diffPanelSelectedFile: new Map(),
-    changedFiles: new Map(),
+    changedFilesTick: new Map(),
     setDiffPanelSelectedFile: vi.fn(),
     setGitChangedFilesCount: vi.fn(),
     diffBase: "last-commit",

@@ -34,8 +34,8 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
   const setSelectedFile = useStore((s) => s.setDiffPanelSelectedFile);
   const diffBase = useStore((s) => s.diffBase);
   const setDiffBase = useStore((s) => s.setDiffBase);
-  // changedFiles used only as a refresh trigger (size changes when agent edits files)
-  const changedFilesSize = useStore((s) => s.changedFiles.get(sessionId)?.size ?? 0);
+  // changedFilesTick used only as a refresh trigger (bumped when agent edits files)
+  const changedFilesTick = useStore((s) => s.changedFilesTick.get(sessionId) ?? 0);
 
   const cwd = session?.cwd || sdkSession?.cwd;
 
@@ -67,7 +67,7 @@ export function DiffPanel({ sessionId }: { sessionId: string }) {
       setGitChangedFilesCount(sessionId, result.length);
     }).catch(() => { if (!cancelled) { setGitFiles([]); setGitChangedFilesCount(sessionId, 0); } });
     return () => { cancelled = true; };
-  }, [cwd, diffBase, changedFilesSize, sessionId, setGitChangedFilesCount]);
+  }, [cwd, diffBase, changedFilesTick, sessionId, setGitChangedFilesCount]);
 
   const relativeChangedFiles = gitFiles;
 
