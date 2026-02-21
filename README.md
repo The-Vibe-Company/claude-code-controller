@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">The Companion</h1>
-<p align="center"><strong>Web UI for Claude Code and Codex sessions.</strong></p>
+<p align="center"><strong>Web UI for Claude Code, Codex, and GitHub Copilot sessions.</strong></p>
 <p align="center">Run multiple agents, inspect every tool call, and gate risky actions with explicit approvals.</p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 ## Quick start
 
-**Requirements:** [Bun](https://bun.sh) + [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) CLI.
+**Requirements:** [Bun](https://bun.sh) + [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) and/or [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/install-copilot-cli).
 
 ### Try it instantly
 
@@ -99,6 +99,31 @@ bun run test
 ## Docs
 - Protocol reverse engineering: [`WEBSOCKET_PROTOCOL_REVERSED.md`](WEBSOCKET_PROTOCOL_REVERSED.md)
 - Contributor and architecture guide: [`CLAUDE.md`](CLAUDE.md)
+
+## GitHub Copilot CLI
+
+The Companion supports [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/install-copilot-cli) as a third backend alongside Claude Code and Codex.
+
+**Prerequisites**
+- Node.js 22+
+- Active GitHub Copilot subscription
+
+**Install**
+```bash
+npm install -g @github/copilot
+```
+
+**Authentication**
+- On first launch, run `copilot /login` to authenticate interactively.
+- Or set `GH_TOKEN` / `GITHUB_TOKEN` to a fine-grained PAT with the "Copilot Requests" permission.
+
+**Environment variables**
+
+| Variable | Description |
+|---|---|
+| `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token for authentication |
+| `COPILOT_MODEL` | Pre-select a model (e.g. `gpt-4.1`) — overridden by the session model picker |
+
 
 ## License
 MIT

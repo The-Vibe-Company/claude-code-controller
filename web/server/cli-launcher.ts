@@ -753,8 +753,9 @@ export class CliLauncher {
     if (options.cwd) {
       args.push("--add-dir", options.cwd);
     }
-    if (options.model) {
-      args.push("--model", options.model);
+    const copilotModel = options.model || process.env.COPILOT_MODEL;
+    if (copilotModel) {
+      args.push("--model", copilotModel);
     }
 
     const spawnEnv: Record<string, string | undefined> = {
@@ -787,7 +788,7 @@ export class CliLauncher {
     }
 
     const adapter = new CopilotAdapter(proc, sessionId, {
-      model: options.model,
+      model: copilotModel,
       cwd: info.cwd,
       acpSessionId: options.acpSessionId,
       recorder: this.recorder ?? undefined,
