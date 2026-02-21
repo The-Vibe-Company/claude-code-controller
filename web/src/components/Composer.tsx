@@ -664,7 +664,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                     void stt.startRecording();
                   }
                 }}
-                disabled={stt.status === "loading-model" || stt.status === "transcribing"}
+                disabled={stt.status === "loading-model" || stt.status === "transcribing" || stt.status === "error"}
                 title={
                   stt.status === "loading-model"
                     ? "Loading model…"
@@ -679,7 +679,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                 className={`relative flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
                   stt.status === "recording"
                     ? "text-cc-error border-cc-error/40 bg-cc-error/10 cursor-pointer"
-                    : stt.status === "loading-model" || stt.status === "transcribing"
+                    : stt.status === "loading-model" || stt.status === "transcribing" || stt.status === "error"
                       ? "text-cc-muted border-cc-border opacity-60 cursor-not-allowed"
                       : "text-cc-muted border-cc-border hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
                 }`}

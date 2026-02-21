@@ -625,7 +625,8 @@ export function HomePage() {
                     }}
                     disabled={
                       stt.status === "loading-model" ||
-                      stt.status === "transcribing"
+                      stt.status === "transcribing" ||
+                      stt.status === "error"
                     }
                     title={
                       stt.status === "loading-model"
@@ -641,7 +642,7 @@ export function HomePage() {
                     className={`relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
                       stt.status === "recording"
                         ? "text-cc-error bg-cc-error/10 cursor-pointer"
-                        : stt.status === "loading-model" || stt.status === "transcribing"
+                        : stt.status === "loading-model" || stt.status === "transcribing" || stt.status === "error"
                           ? "text-cc-muted opacity-60 cursor-not-allowed"
                           : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover cursor-pointer"
                     }`}
