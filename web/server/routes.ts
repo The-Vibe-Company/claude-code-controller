@@ -1292,6 +1292,7 @@ export function createRoutes(
     }
   });
 
+  /** Find CLAUDE.md files for a project (root + .claude/) */
   api.get("/fs/claude-md", async (c) => {
     const cwd = c.req.query("cwd");
     if (!cwd) return c.json({ error: "cwd required" }, 400);
