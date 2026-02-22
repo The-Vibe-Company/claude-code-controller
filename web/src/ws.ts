@@ -1,5 +1,5 @@
 import { useStore } from "./store.js";
-import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, SdkSessionInfo, McpServerConfig } from "./types.js";
+import type { BrowserIncomingMessage, BrowserOutgoingMessage, ContentBlock, ChatMessage, TaskItem, ProcessItem, ProcessStatus, SdkSessionInfo, McpServerConfig } from "./types.js";
 import { generateUniqueSessionName } from "./utils/names.js";
 import { playNotificationSound } from "./utils/notification-sound.js";
 
@@ -127,6 +127,67 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
     }
   }
   if (dirty) store.bumpChangedFilesTick(sessionId);
+}
+
+/** Pending background Bash calls awaiting their tool_result (keyed by sessionId → toolUseId) */
+const pendingBackgroundBash = new Map<string, Map<string, { command: string; description: string; startedAt: number }>>();
+
+const BG_RESULT_REGEX = /Command running in background with ID:\s*(\S+)\.\s*Output is being written to:\s*(\S+)/;
+
+function extractProcessesFromBlocks(sessionId: string, blocks: ContentBlock[]) {
+  const store = useStore.getState();
+
+  for (const block of blocks) {
+    // Phase 1: Detect Bash tool_use with run_in_background
+    if (block.type === "tool_use" && block.name === "Bash") {
+      const input = block.input as Record<string, unknown>;
+      if (input.run_in_background === true) {
+        let sessionPending = pendingBackgroundBash.get(sessionId);
+        if (!sessionPending) {
+          sessionPending = new Map();
+          pendingBackgroundBash.set(sessionId, sessionPending);
+        }
+        sessionPending.set(block.id, {
+          command: (input.command as string) || "",
+          description: (input.description as string) || "",
+          startedAt: Date.now(),
+        });
+      }
+    }
+
+    // Phase 2: Match tool_result to a pending background Bash
+    if (block.type === "tool_result") {
+      const toolUseId = block.tool_use_id;
+      const sessionPending = pendingBackgroundBash.get(sessionId);
+      const pending = sessionPending?.get(toolUseId);
+      if (sessionPending && pending) {
+        const content = typeof block.content === "string"
+          ? block.content
+          : Array.isArray(block.content)
+            ? block.content.map((b) => ("text" in b ? (b as { text: string }).text : "")).join("")
+            : "";
+
+        const match = content.match(BG_RESULT_REGEX);
+        if (match) {
+          const processItem: ProcessItem = {
+            taskId: match[1],
+            toolUseId,
+            command: pending.command,
+            description: pending.description,
+            outputFile: match[2],
+            status: "running",
+            startedAt: pending.startedAt,
+          };
+          store.addProcess(sessionId, processItem);
+        }
+
+        sessionPending.delete(toolUseId);
+        if (sessionPending.size === 0) {
+          pendingBackgroundBash.delete(sessionId);
+        }
+      }
+    }
+  }
 }
 
 function sendBrowserNotification(title: string, body: string, tag: string) {
@@ -263,7 +324,8 @@ const IDEMPOTENT_OUTGOING_TYPES = new Set<BrowserOutgoingMessage["type"]>([
 
 function getWsUrl(sessionId: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws/browser/${sessionId}`;
+  const token = localStorage.getItem("companion_auth_token") || "";
+  return `${proto}//${location.host}/ws/browser/${sessionId}?token=${encodeURIComponent(token)}`;
 }
 
 function getLastSeqStorageKey(sessionId: string): string {
@@ -455,6 +517,7 @@ function handleParsedMessage(
       if (msg.content?.length) {
         extractTasksFromBlocks(sessionId, msg.content);
         extractChangedFilesFromBlocks(sessionId, msg.content);
+        extractProcessesFromBlocks(sessionId, msg.content);
       }
 
       break;
@@ -586,6 +649,7 @@ function handleParsedMessage(
         }];
         extractTasksFromBlocks(sessionId, permBlocks);
         extractChangedFilesFromBlocks(sessionId, permBlocks);
+        extractProcessesFromBlocks(sessionId, permBlocks);
       }
       break;
     }
@@ -614,6 +678,18 @@ function handleParsedMessage(
     }
 
     case "system_event": {
+      // Update structured process state from task_notification
+      if (data.event?.subtype === "task_notification") {
+        const { task_id, status, summary: taskSummary } = data.event;
+        if (task_id && status) {
+          store.updateProcess(sessionId, task_id, {
+            status: status as ProcessStatus,
+            completedAt: Date.now(),
+            summary: taskSummary || undefined,
+          });
+        }
+      }
+
       const summary = summarizeSystemEvent(data.event);
       if (!summary) break;
       store.appendMessage(sessionId, {
@@ -854,6 +930,7 @@ export function disconnectSession(sessionId: string) {
     sockets.delete(sessionId);
   }
   processedToolUseIds.delete(sessionId);
+  pendingBackgroundBash.delete(sessionId);
   taskCounters.delete(sessionId);
   streamingPhaseBySession.delete(sessionId);
   streamingDraftMessageIdBySession.delete(sessionId);

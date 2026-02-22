@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { parseHash } from "../utils/routing.js";
 
-type WorkspaceTab = "chat" | "diff" | "terminal" | "editor";
+type WorkspaceTab = "chat" | "diff" | "terminal" | "processes" | "editor";
 
 export function TopBar() {
   const hash = useSyncExternalStore(
@@ -34,6 +34,13 @@ export function TopBar() {
   const changedFilesCount = useStore((s) =>
     currentSessionId ? (s.gitChangedFilesCount.get(currentSessionId) ?? 0) : 0
   );
+
+  const runningProcessCount = useStore((s) => {
+    if (!currentSessionId) return 0;
+    const processes = s.sessionProcesses.get(currentSessionId);
+    if (!processes) return 0;
+    return processes.filter((p) => p.status === "running").length;
+  });
 
   const cwd = useStore((s) => {
     if (!currentSessionId) return null;
@@ -72,7 +79,7 @@ export function TopBar() {
   const showWorkspaceControls = !!(currentSessionId && isSessionView);
   const showContextToggle = route.page === "session" && !!currentSessionId;
   const workspaceTabs = useMemo(() => {
-    const tabs: WorkspaceTab[] = ["chat", "diff", "terminal"];
+    const tabs: WorkspaceTab[] = ["chat", "diff", "terminal", "processes"];
     if (editorTabEnabled) tabs.push("editor");
     return tabs;
   }, [editorTabEnabled]);
@@ -190,6 +197,22 @@ export function TopBar() {
                 aria-label="Shell tab"
               >
                 Shell
+              </button>
+              <button
+                onClick={() => activateWorkspaceTab("processes")}
+                className={`h-full px-3 text-[12px] font-medium transition-colors cursor-pointer flex items-center gap-1.5 border-b-[1.5px] ${
+                  activeTab === "processes"
+                    ? "text-cc-fg border-cc-primary"
+                    : "text-cc-muted hover:text-cc-fg border-transparent"
+                }`}
+                aria-label="Processes tab"
+              >
+                Processes
+                {runningProcessCount > 0 && (
+                  <span className="text-[9px] rounded-full min-w-[15px] h-[15px] px-1 flex items-center justify-center font-semibold leading-none bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                    {runningProcessCount}
+                  </span>
+                )}
               </button>
               {editorTabEnabled && (
                 <button
