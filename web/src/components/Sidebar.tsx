@@ -317,20 +317,31 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-[260px] h-full flex flex-col bg-cc-sidebar border-r border-cc-border">
+    <aside className="w-full md:w-[260px] h-full flex flex-col bg-cc-sidebar border-r border-cc-border">
       {/* Header */}
       <div className="p-3.5 pb-2">
         <div className="flex items-center gap-2.5">
           <img src={logoSrc} alt="" className="w-6 h-6" />
           <span className="text-[13px] font-semibold text-cc-fg tracking-tight">The Companion</span>
+          {/* New Session — desktop only (mobile uses FAB near thumb zone) */}
           <button
             onClick={handleNewSession}
             title="New Session"
             aria-label="New Session"
-            className="ml-auto w-7 h-7 rounded-lg bg-cc-primary hover:bg-cc-primary-hover text-white flex items-center justify-center transition-colors duration-150 cursor-pointer"
+            className="ml-auto hidden md:flex w-8 h-8 rounded-lg bg-cc-primary hover:bg-cc-primary-hover text-white items-center justify-center transition-colors duration-150 cursor-pointer"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
               <path d="M8 3v10M3 8h10" />
+            </svg>
+          </button>
+          {/* Close sidebar — mobile only (full-width sidebar hides the backdrop) */}
+          <button
+            onClick={() => useStore.getState().setSidebarOpen(false)}
+            aria-label="Close sidebar"
+            className="md:hidden ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+              <path d="M3.72 3.72a.75.75 0 011.06 0L8 6.94l3.22-3.22a.75.75 0 111.06 1.06L9.06 8l3.22 3.22a.75.75 0 11-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 01-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 010-1.06z" />
             </svg>
           </button>
         </div>
@@ -454,8 +465,22 @@ export function Sidebar() {
         )}
       </div>
 
+      {/* Mobile FAB — New Session button in thumb zone */}
+      <div className="md:hidden flex justify-end px-4 pb-2">
+        <button
+          onClick={handleNewSession}
+          title="New Session"
+          aria-label="New Session"
+          className="w-12 h-12 rounded-full bg-cc-primary hover:bg-cc-primary-hover text-white flex items-center justify-center shadow-lg transition-colors duration-150 cursor-pointer"
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
+      </div>
+
       {/* Footer */}
-      <div className="p-2 border-t border-cc-border bg-cc-sidebar-footer">
+      <div className="p-2 pb-safe border-t border-cc-border bg-cc-sidebar-footer">
         <div className="grid grid-cols-3 gap-1">
           {NAV_ITEMS.map((item) => {
             const isActive = item.activePages
@@ -469,12 +494,13 @@ export function Sidebar() {
                     useStore.getState().closeTerminal();
                   }
                   window.location.hash = item.hash;
-                  if (item.id === "terminal" && window.innerWidth < 768) {
+                  // Close sidebar on mobile so the navigated page is visible
+                  if (window.innerWidth < 768) {
                     useStore.getState().setSidebarOpen(false);
                   }
                 }}
                 title={item.label}
-                className={`flex flex-col items-center justify-center gap-0.5 py-2 px-1 rounded-lg transition-colors cursor-pointer ${
+                className={`flex flex-col items-center justify-center gap-0.5 py-2.5 px-1.5 min-h-[44px] rounded-lg transition-colors cursor-pointer ${
                   isActive
                     ? "bg-cc-active text-cc-fg"
                     : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"

@@ -171,7 +171,7 @@ export default function App() {
         className={`
           fixed md:relative z-40 md:z-auto
           h-full shrink-0 transition-all duration-200
-          ${sidebarOpen ? "w-[260px] translate-x-0" : "w-0 -translate-x-full md:w-0 md:-translate-x-full"}
+          ${sidebarOpen ? "w-full md:w-[260px] translate-x-0" : "w-0 -translate-x-full md:w-0 md:-translate-x-full"}
           overflow-hidden
         `}
       >
@@ -296,7 +296,7 @@ export default function App() {
             className={`
               fixed lg:relative z-40 lg:z-auto right-0 top-0
               h-full shrink-0 transition-all duration-200
-              ${taskPanelOpen ? "w-[320px] translate-x-0" : "w-0 translate-x-full lg:w-0 lg:translate-x-full"}
+              ${taskPanelOpen ? "w-full lg:w-[320px] translate-x-0" : "w-0 translate-x-full lg:w-0 lg:translate-x-full"}
               overflow-hidden
             `}
           >
