@@ -242,7 +242,7 @@ export function SessionEditorPane({ sessionId }: SessionEditorPaneProps) {
           ) : selectedPath ? (
             <CodeMirror
               value={content}
-              onChange={(value) => setContent(value)}
+              onChange={(value: string) => setContent(value)}
               extensions={[EditorView.lineWrapping]}
               theme={darkMode ? "dark" : "light"}
               basicSetup={{

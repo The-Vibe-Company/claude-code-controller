@@ -9,6 +9,7 @@ const reconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const lastSeqBySession = new Map<string, number>();
 const taskCounters = new Map<string, number>();
 const streamingPhaseBySession = new Map<string, "thinking" | "text">();
+const streamingDraftMessageIdBySession = new Map<string, string>();
 /** Track processed tool_use IDs to prevent duplicate task creation */
 const processedToolUseIds = new Map<string, Set<string>>();
 
@@ -114,16 +115,18 @@ function extractChangedFilesFromBlocks(sessionId: string, blocks: ContentBlock[]
   const sessionCwd =
     store.sessions.get(sessionId)?.cwd ||
     store.sdkSessions.find((sdk) => sdk.sessionId === sessionId)?.cwd;
+  let dirty = false;
   for (const block of blocks) {
     if (block.type !== "tool_use") continue;
     const { name, input } = block;
     if ((name === "Edit" || name === "Write") && typeof input.file_path === "string") {
       const resolvedPath = resolveSessionFilePath(input.file_path, sessionCwd);
       if (isPathInSessionScope(resolvedPath, sessionCwd)) {
-        store.addChangedFile(sessionId, resolvedPath);
+        dirty = true;
       }
     }
   }
+  if (dirty) store.bumpChangedFilesTick(sessionId);
 }
 
 function sendBrowserNotification(title: string, body: string, tag: string) {
@@ -132,10 +135,114 @@ function sendBrowserNotification(title: string, body: string, tag: string) {
   new Notification(title, { body, tag });
 }
 
+function summarizeSystemEvent(
+  event: Extract<BrowserIncomingMessage, { type: "system_event" }>["event"],
+): string | null {
+  if (event.subtype === "compact_boundary") {
+    return `Context compacted (${event.compact_metadata.trigger}, pre-tokens: ${event.compact_metadata.pre_tokens}).`;
+  }
+
+  if (event.subtype === "task_notification") {
+    const summary = event.summary ? ` ${event.summary}` : "";
+    return `Task ${event.status}: ${event.task_id}.${summary}`;
+  }
+
+  if (event.subtype === "files_persisted") {
+    const persisted = event.files.length;
+    const failed = event.failed.length;
+    if (failed > 0) {
+      return `Persisted ${persisted} file(s), ${failed} failed.`;
+    }
+    return `Persisted ${persisted} file(s).`;
+  }
+
+  if (event.subtype === "hook_started") {
+    return `Hook started: ${event.hook_name} (${event.hook_event}).`;
+  }
+
+  if (event.subtype === "hook_response") {
+    const exitCode = typeof event.exit_code === "number" ? ` (exit ${event.exit_code})` : "";
+    return `Hook ${event.outcome}: ${event.hook_name} (${event.hook_event})${exitCode}.`;
+  }
+
+  // hook_progress can be high-volume; keep it out of chat by default.
+  return null;
+}
+
 let idCounter = 0;
 let clientMsgCounter = 0;
 function nextId(): string {
   return `msg-${Date.now()}-${++idCounter}`;
+}
+
+function setStreamingDraftMessage(sessionId: string, content: string) {
+  const store = useStore.getState();
+  const existing = store.messages.get(sessionId) || [];
+  const messages = [...existing];
+  const existingDraftId = streamingDraftMessageIdBySession.get(sessionId);
+  let draftIndex = -1;
+
+  if (existingDraftId) {
+    draftIndex = messages.findIndex((m) => m.id === existingDraftId);
+    if (draftIndex === -1) {
+      streamingDraftMessageIdBySession.delete(sessionId);
+    }
+  }
+
+  if (draftIndex === -1) {
+    const id = `stream-${sessionId}-${nextId()}`;
+    streamingDraftMessageIdBySession.set(sessionId, id);
+    messages.push({
+      id,
+      role: "assistant",
+      content,
+      timestamp: Date.now(),
+      isStreaming: true,
+    });
+  } else {
+    const prev = messages[draftIndex];
+    messages[draftIndex] = {
+      ...prev,
+      role: "assistant",
+      content,
+      isStreaming: true,
+    };
+  }
+
+  store.setMessages(sessionId, messages);
+}
+
+function finalizeStreamingDraftMessage(sessionId: string, finalMessage: ChatMessage): boolean {
+  const draftId = streamingDraftMessageIdBySession.get(sessionId);
+  if (!draftId) return false;
+
+  const store = useStore.getState();
+  const existing = store.messages.get(sessionId) || [];
+  const draftIndex = existing.findIndex((m) => m.id === draftId);
+  if (draftIndex === -1) {
+    streamingDraftMessageIdBySession.delete(sessionId);
+    return false;
+  }
+
+  const messages = [...existing];
+  messages[draftIndex] = finalMessage;
+  store.setMessages(sessionId, messages);
+  streamingDraftMessageIdBySession.delete(sessionId);
+  return true;
+}
+
+function clearStreamingDraftMessage(sessionId: string) {
+  const draftId = streamingDraftMessageIdBySession.get(sessionId);
+  if (!draftId) return;
+
+  const store = useStore.getState();
+  const existing = store.messages.get(sessionId) || [];
+  const next = existing.filter((m) => m.id !== draftId);
+  if (next.length !== existing.length) {
+    store.setMessages(sessionId, next);
+  }
+
+  streamingDraftMessageIdBySession.delete(sessionId);
 }
 
 function nextClientMsgId(): string {
@@ -200,6 +307,58 @@ function extractTextFromBlocks(blocks: ContentBlock[]): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function mergeContentBlocks(prev?: ContentBlock[], next?: ContentBlock[]): ContentBlock[] | undefined {
+  const prevBlocks = prev || [];
+  const nextBlocks = next || [];
+  if (prevBlocks.length === 0 && nextBlocks.length === 0) return undefined;
+
+  const merged: ContentBlock[] = [];
+  const seen = new Set<string>();
+
+  const pushUnique = (block: ContentBlock) => {
+    const key = JSON.stringify(block);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(block);
+  };
+
+  for (const block of prevBlocks) pushUnique(block);
+  for (const block of nextBlocks) pushUnique(block);
+  return merged;
+}
+
+function mergeAssistantMessage(previous: ChatMessage, incoming: ChatMessage): ChatMessage {
+  const mergedBlocks = mergeContentBlocks(previous.contentBlocks, incoming.contentBlocks);
+  const mergedContent = mergedBlocks && mergedBlocks.length > 0
+    ? extractTextFromBlocks(mergedBlocks)
+    : (incoming.content || previous.content);
+
+  return {
+    ...previous,
+    ...incoming,
+    content: mergedContent,
+    contentBlocks: mergedBlocks,
+    // Keep the original timestamp position when this is an in-place assistant update.
+    timestamp: previous.timestamp ?? incoming.timestamp,
+    // Explicitly clear stale streaming marker when incoming is final.
+    isStreaming: incoming.isStreaming,
+  };
+}
+
+function upsertAssistantMessage(sessionId: string, incoming: ChatMessage) {
+  const store = useStore.getState();
+  const existing = store.messages.get(sessionId) || [];
+  const index = existing.findIndex((m) => m.role === "assistant" && m.id === incoming.id);
+  if (index === -1) {
+    store.appendMessage(sessionId, incoming);
+    return;
+  }
+
+  const messages = [...existing];
+  messages[index] = mergeAssistantMessage(messages[index], incoming);
+  store.setMessages(sessionId, messages);
 }
 
 function handleMessage(sessionId: string, event: MessageEvent) {
@@ -270,7 +429,10 @@ function handleParsedMessage(
         model: msg.model,
         stopReason: msg.stop_reason,
       };
-      store.appendMessage(sessionId, chatMsg);
+      const replacedDraft = finalizeStreamingDraftMessage(sessionId, chatMsg);
+      if (!replacedDraft) {
+        upsertAssistantMessage(sessionId, chatMsg);
+      }
       store.setStreaming(sessionId, null);
       streamingPhaseBySession.delete(sessionId);
       // Clear progress only for completed tools (tool_result blocks), not all tools.
@@ -304,6 +466,7 @@ function handleParsedMessage(
         // message_start → mark generation start time
         if (evt.type === "message_start") {
           streamingPhaseBySession.delete(sessionId);
+          clearStreamingDraftMessage(sessionId);
           if (!store.streamingStartedAt.has(sessionId)) {
             store.setStreamingStats(sessionId, { startedAt: Date.now(), outputTokens: 0 });
           }
@@ -320,7 +483,9 @@ function handleParsedMessage(
               current += responsePrefix;
             }
             streamingPhaseBySession.set(sessionId, "text");
-            store.setStreaming(sessionId, current + delta.text);
+            const nextText = current + delta.text;
+            store.setStreaming(sessionId, nextText);
+            setStreamingDraftMessage(sessionId, nextText);
           }
           if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
             const current = store.streaming.get(sessionId) || "";
@@ -330,7 +495,9 @@ function handleParsedMessage(
               ? (current.startsWith(prefix) ? current : prefix)
               : prefix;
             streamingPhaseBySession.set(sessionId, "thinking");
-            store.setStreaming(sessionId, base + delta.thinking);
+            const nextText = base + delta.thinking;
+            store.setStreaming(sessionId, nextText);
+            setStreamingDraftMessage(sessionId, nextText);
           }
         }
 
@@ -374,6 +541,7 @@ function handleParsedMessage(
         }
       }
       store.updateSession(sessionId, sessionUpdates);
+      clearStreamingDraftMessage(sessionId);
       store.setStreaming(sessionId, null);
       streamingPhaseBySession.delete(sessionId);
       store.setStreamingStats(sessionId, null);
@@ -441,6 +609,18 @@ function handleParsedMessage(
         role: "system",
         content: data.summary,
         timestamp: Date.now(),
+      });
+      break;
+    }
+
+    case "system_event": {
+      const summary = summarizeSystemEvent(data.event);
+      if (!summary) break;
+      store.appendMessage(sessionId, {
+        id: nextId(),
+        role: "system",
+        content: summary,
+        timestamp: data.timestamp || Date.now(),
       });
       break;
     }
@@ -522,7 +702,7 @@ function handleParsedMessage(
         } else if (histMsg.type === "assistant") {
           const msg = histMsg.message;
           const textContent = extractTextFromBlocks(msg.content);
-          chatMessages.push({
+          const assistantMsg: ChatMessage = {
             id: msg.id,
             role: "assistant",
             content: textContent,
@@ -531,7 +711,13 @@ function handleParsedMessage(
             parentToolUseId: histMsg.parent_tool_use_id,
             model: msg.model,
             stopReason: msg.stop_reason,
-          });
+          };
+          const existingIndex = chatMessages.findIndex((m) => m.role === "assistant" && m.id === assistantMsg.id);
+          if (existingIndex === -1) {
+            chatMessages.push(assistantMsg);
+          } else {
+            chatMessages[existingIndex] = mergeAssistantMessage(chatMessages[existingIndex], assistantMsg);
+          }
           // Also extract tasks and changed files from history
           if (msg.content?.length) {
             extractTasksFromBlocks(sessionId, msg.content);
@@ -547,6 +733,15 @@ function handleParsedMessage(
               timestamp: Date.now(),
             });
           }
+        } else if (histMsg.type === "system_event") {
+          const summary = summarizeSystemEvent(histMsg.event);
+          if (!summary) continue;
+          chatMessages.push({
+            id: `hist-system-event-${i}`,
+            role: "system",
+            content: summary,
+            timestamp: histMsg.timestamp || Date.now(),
+          });
         }
       }
       if (chatMessages.length > 0) {
@@ -555,16 +750,23 @@ function handleParsedMessage(
           // Initial connect: history is the full truth
           store.setMessages(sessionId, chatMessages);
         } else {
-          // Reconnect: merge history with live messages, dedup by ID
-          const existingIds = new Set(existing.map((m) => m.id));
-          const newFromHistory = chatMessages.filter((m) => !existingIds.has(m.id));
-          if (newFromHistory.length > 0) {
-            // Merge and sort by timestamp to maintain chronological order
-            const merged = [...newFromHistory, ...existing].sort(
-              (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0),
-            );
-            store.setMessages(sessionId, merged);
+          // Reconnect: merge history with live messages, upserting duplicate assistant IDs.
+          const merged = [...existing];
+          for (const incoming of chatMessages) {
+            const idx = merged.findIndex((m) => m.id === incoming.id);
+            if (idx === -1) {
+              merged.push(incoming);
+              continue;
+            }
+            const current = merged[idx];
+            if (current.role === "assistant" && incoming.role === "assistant") {
+              merged[idx] = mergeAssistantMessage(current, incoming);
+            } else {
+              merged[idx] = incoming;
+            }
           }
+          merged.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+          store.setMessages(sessionId, merged);
         }
       }
       break;
@@ -654,6 +856,7 @@ export function disconnectSession(sessionId: string) {
   processedToolUseIds.delete(sessionId);
   taskCounters.delete(sessionId);
   streamingPhaseBySession.delete(sessionId);
+  streamingDraftMessageIdBySession.delete(sessionId);
   lastSeqBySession.delete(sessionId);
 }
 

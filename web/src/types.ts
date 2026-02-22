@@ -37,6 +37,7 @@ export interface TaskItem {
 
 export interface SdkSessionInfo {
   sessionId: string;
+  cliSessionId?: string;
   pid?: number;
   state: "starting" | "connected" | "running" | "exited";
   exitCode?: number | null;
@@ -55,6 +56,8 @@ export interface SdkSessionInfo {
   gitBehind?: number;
   totalLinesAdded?: number;
   totalLinesRemoved?: number;
+  resumeSessionAt?: string;
+  forkSession?: boolean;
   /** If this session was spawned by a cron job */
   cronJobId?: string;
   /** Human-readable name of the cron job that spawned this session */

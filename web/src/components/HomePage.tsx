@@ -1,6 +1,16 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useStore } from "../store.js";
-import { api, createSessionStream, type CompanionEnv, type GitRepoInfo, type GitBranchInfo, type BackendInfo, type ImagePullState, type LinearIssue } from "../api.js";
+import {
+  api,
+  createSessionStream,
+  type ClaudeDiscoveredSession,
+  type CompanionEnv,
+  type GitRepoInfo,
+  type GitBranchInfo,
+  type BackendInfo,
+  type ImagePullState,
+  type LinearIssue,
+} from "../api.js";
 import { connectSession, waitForConnection, sendToSession } from "../ws.js";
 import { disconnectSession } from "../ws.js";
 import { generateUniqueSessionName } from "../utils/names.js";
@@ -13,8 +23,70 @@ import { FolderPicker } from "./FolderPicker.js";
 import { readFileAsBase64, type ImageAttachment } from "../utils/image.js";
 import { LinearSection } from "./home/LinearSection.js";
 import { BranchPicker } from "./home/BranchPicker.js";
+import type { SdkSessionInfo } from "../types.js";
 
 let idCounter = 0;
+
+type ResumeCandidate = {
+  resumeSessionId: string;
+  sessionId: string;
+  name?: string;
+  slug?: string;
+  model?: string;
+  createdAt: number;
+  cwd: string;
+  gitBranch?: string;
+  source: "companion" | "claude_disk";
+};
+
+type SessionLaunchOverride = {
+  resumeSessionAt: string;
+  forkSession: boolean;
+  cwd?: string;
+  branch?: string;
+  useWorktree?: boolean;
+  createBranch?: boolean;
+};
+
+const RECENT_SESSIONS_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const INITIAL_VISIBLE_SESSION_ROWS = 12;
+const LOAD_MORE_SESSION_ROWS = 24;
+
+function getResumeCandidateProject(cwd: string): string {
+  return cwd.split("/").filter(Boolean).pop() || cwd;
+}
+
+function getResumeCandidateTitle(candidate: ResumeCandidate): string {
+  return candidate.name?.trim()
+    || candidate.slug?.trim()
+    || getResumeCandidateProject(candidate.cwd);
+}
+
+function shortSessionId(sessionId: string): string {
+  return sessionId.length > 8 ? sessionId.slice(0, 8) : sessionId;
+}
+
+function formatPathTail(path: string, segments = 2): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= segments) return path;
+  return `.../${parts.slice(-segments).join("/")}`;
+}
+
+function formatTimeAgo(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "Unknown";
+  const deltaMs = Date.now() - timestamp;
+  if (deltaMs < 60_000) return "Just now";
+  const minutes = Math.floor(deltaMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return `${weeks}w ago`;
+  const months = Math.floor(days / 30);
+  return `${Math.max(1, months)}mo ago`;
+}
 
 export function HomePage() {
   const [text, setText] = useState("");
@@ -55,6 +127,15 @@ export function HomePage() {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showBranchingControls, setShowBranchingControls] = useState(false);
+  const [resumeSessionAt, setResumeSessionAt] = useState("");
+  const [forkSession, setForkSession] = useState(true);
+  const [resumeCandidates, setResumeCandidates] = useState<ResumeCandidate[]>([]);
+  const [resumeCandidatesLoading, setResumeCandidatesLoading] = useState(false);
+  const [resumeCandidatesError, setResumeCandidatesError] = useState("");
+  const [showOlderResumeCandidates, setShowOlderResumeCandidates] = useState(false);
+  const [visibleResumeCandidateRows, setVisibleResumeCandidateRows] = useState(INITIAL_VISIBLE_SESSION_ROWS);
+  const [resumeSearchQuery, setResumeSearchQuery] = useState("");
 
   // Git branch state (owned here, driven by BranchPicker + LinearSection)
   const [gitRepoInfo, setGitRepoInfo] = useState<GitRepoInfo | null>(null);
@@ -104,6 +185,15 @@ export function HomePage() {
     setDynamicModels(null);
     setModel(getDefaultModel(newBackend));
     setMode(getDefaultMode(newBackend));
+    if (newBackend !== "claude") {
+      setShowBranchingControls(false);
+      setResumeCandidates([]);
+      setResumeCandidatesError("");
+      setResumeCandidatesLoading(false);
+      setShowOlderResumeCandidates(false);
+      setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+      setResumeSearchQuery("");
+    }
   }
 
   // Fetch dynamic models for the selected backend
@@ -207,6 +297,119 @@ export function HomePage() {
   const selectedMode = MODES.find((m) => m.value === mode) || MODES[0];
   const logoSrc = backend === "codex" ? "/logo-codex.svg" : backend === "copilot" ? "/logo-copilot.svg" : "/logo.svg";
   const dirLabel = cwd ? cwd.split("/").pop() || cwd : "Select folder";
+  const trimmedResumeSessionAt = useMemo(() => resumeSessionAt.trim(), [resumeSessionAt]);
+  const branchFromSessionEnabled = backend === "claude"
+    && showBranchingControls
+    && trimmedResumeSessionAt.length > 0;
+  const recentResumeCandidates = useMemo(() => {
+    const cutoff = Date.now() - RECENT_SESSIONS_WINDOW_MS;
+    return resumeCandidates.filter((candidate) => candidate.createdAt >= cutoff);
+  }, [resumeCandidates]);
+  const activeResumeCandidates = useMemo(() => {
+    if (showOlderResumeCandidates) return resumeCandidates;
+    return recentResumeCandidates.length > 0 ? recentResumeCandidates : resumeCandidates;
+  }, [showOlderResumeCandidates, recentResumeCandidates, resumeCandidates]);
+  const normalizedResumeSearchQuery = useMemo(
+    () => resumeSearchQuery.trim().toLowerCase(),
+    [resumeSearchQuery],
+  );
+  const filteredActiveResumeCandidates = useMemo(() => {
+    if (!normalizedResumeSearchQuery) return activeResumeCandidates;
+    return activeResumeCandidates.filter((candidate) => {
+      const title = getResumeCandidateTitle(candidate).toLowerCase();
+      const project = getResumeCandidateProject(candidate.cwd).toLowerCase();
+      const branch = (candidate.gitBranch || "").toLowerCase();
+      const cwdText = candidate.cwd.toLowerCase();
+      const sessionId = candidate.resumeSessionId.toLowerCase();
+      return title.includes(normalizedResumeSearchQuery)
+        || project.includes(normalizedResumeSearchQuery)
+        || branch.includes(normalizedResumeSearchQuery)
+        || cwdText.includes(normalizedResumeSearchQuery)
+        || sessionId.includes(normalizedResumeSearchQuery);
+    });
+  }, [activeResumeCandidates, normalizedResumeSearchQuery]);
+  const visibleResumeCandidates = useMemo(
+    () => filteredActiveResumeCandidates.slice(0, visibleResumeCandidateRows),
+    [filteredActiveResumeCandidates, visibleResumeCandidateRows],
+  );
+  const hasMoreResumeCandidates = visibleResumeCandidateRows < filteredActiveResumeCandidates.length;
+  const hiddenOlderResumeCount = Math.max(0, resumeCandidates.length - recentResumeCandidates.length);
+  const showingRecentOnly = !showOlderResumeCandidates && recentResumeCandidates.length > 0;
+
+  const loadResumeCandidates = useCallback(async () => {
+    if (backend !== "claude") return;
+    setResumeCandidatesLoading(true);
+    setResumeCandidatesError("");
+    try {
+      const [companionSessions, discovered] = await Promise.all([
+        api.listSessions(),
+        api.discoverClaudeSessions(400).then((result) => result.sessions),
+      ]);
+
+      const uniqueByResumeSession = new Map<string, ResumeCandidate>();
+      const upsertCandidate = (candidate: ResumeCandidate) => {
+        const prev = uniqueByResumeSession.get(candidate.resumeSessionId);
+        if (!prev || candidate.createdAt > prev.createdAt) {
+          uniqueByResumeSession.set(candidate.resumeSessionId, candidate);
+        }
+      };
+
+      for (const session of companionSessions as SdkSessionInfo[]) {
+        if (session.backendType === "codex") continue;
+        if (!session.cliSessionId) continue;
+        upsertCandidate({
+          resumeSessionId: session.cliSessionId,
+          sessionId: session.sessionId,
+          name: session.name,
+          model: session.model,
+          createdAt: session.createdAt,
+          cwd: session.cwd,
+          gitBranch: session.gitBranch,
+          source: "companion",
+        });
+      }
+
+      for (const diskSession of discovered as ClaudeDiscoveredSession[]) {
+        upsertCandidate({
+          resumeSessionId: diskSession.sessionId,
+          sessionId: diskSession.sessionId,
+          slug: diskSession.slug,
+          createdAt: diskSession.lastActivityAt,
+          cwd: diskSession.cwd,
+          gitBranch: diskSession.gitBranch,
+          source: "claude_disk",
+        });
+      }
+
+      const next = Array.from(uniqueByResumeSession.values())
+        .sort((a, b) => {
+          const aCwdMatch = cwd && a.cwd === cwd ? 0 : 1;
+          const bCwdMatch = cwd && b.cwd === cwd ? 0 : 1;
+          if (aCwdMatch !== bCwdMatch) return aCwdMatch - bCwdMatch;
+          return b.createdAt - a.createdAt;
+        });
+      setResumeCandidates(next);
+      setShowOlderResumeCandidates(false);
+      setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setResumeCandidatesError(msg || "Failed to load existing sessions");
+      setResumeCandidates([]);
+      setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+    } finally {
+      setResumeCandidatesLoading(false);
+    }
+  }, [backend, cwd]);
+
+  useEffect(() => {
+    if (backend === "claude" && showBranchingControls) {
+      void loadResumeCandidates();
+    }
+  }, [backend, showBranchingControls, loadResumeCandidates]);
+
+  useEffect(() => {
+    setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+  }, [normalizedResumeSearchQuery, showOlderResumeCandidates]);
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -308,12 +511,10 @@ export function HomePage() {
     await doCreateSession(msg);
   }
 
-  async function doCreateSession(msg: string) {
-    if (!msg) {
-      setSending(false);
-      return;
-    }
-
+  async function doCreateSession(
+    msg: string,
+    launchOverride?: SessionLaunchOverride,
+  ) {
     const store = useStore.getState();
     store.clearCreation();
     store.setSessionCreating(true, backend as "claude" | "codex" | "copilot");
@@ -324,19 +525,36 @@ export function HomePage() {
         disconnectSession(currentSessionId);
       }
 
+      const effectiveResumeSessionAt = launchOverride?.resumeSessionAt
+        || (branchFromSessionEnabled ? trimmedResumeSessionAt : undefined);
+      const effectiveForkSession = effectiveResumeSessionAt
+        ? (launchOverride?.forkSession ?? (branchFromSessionEnabled ? forkSession : undefined))
+        : undefined;
+      const effectiveCwd = launchOverride?.cwd || cwd;
+      const effectiveBranch = launchOverride?.branch !== undefined
+        ? (launchOverride.branch.trim() || undefined)
+        : (selectedBranch.trim() || undefined);
+      const effectiveUseWorktree = launchOverride?.useWorktree !== undefined
+        ? launchOverride.useWorktree
+        : useWorktree;
+      const effectiveCreateBranch = launchOverride?.createBranch !== undefined
+        ? launchOverride.createBranch
+        : Boolean(effectiveBranch && isNewBranch);
+
       // Create session with progress streaming
-      const branchName = selectedBranch.trim() || undefined;
       const result = await createSessionStream(
         {
           model,
           permissionMode: mode,
-          cwd: cwd || undefined,
+          cwd: effectiveCwd || undefined,
           envSlug: selectedEnv || undefined,
-          branch: branchName,
-          createBranch: branchName && isNewBranch ? true : undefined,
-          useWorktree: useWorktree || undefined,
+          branch: effectiveBranch,
+          createBranch: effectiveCreateBranch ? true : undefined,
+          useWorktree: effectiveUseWorktree ? true : undefined,
           backend,
           codexInternetAccess: backend === "codex" ? true : undefined,
+          resumeSessionAt: effectiveResumeSessionAt,
+          forkSession: effectiveForkSession,
         },
         (progress) => {
           useStore.getState().addCreationProgress(progress);
@@ -344,13 +562,32 @@ export function HomePage() {
       );
       const sessionId = result.sessionId;
 
+      // Seed sdk session metadata immediately so chat can render resume/fork context
+      // before the sidebar poller refreshes /api/sessions.
+      const sessionStore = useStore.getState();
+      const existingSdkSessions = sessionStore.sdkSessions.filter((sdk) => sdk.sessionId !== sessionId);
+      sessionStore.setSdkSessions([
+        ...existingSdkSessions,
+        {
+          sessionId,
+          state: result.state as "starting" | "connected" | "running" | "exited",
+          cwd: result.cwd,
+          createdAt: Date.now(),
+          backendType: (result.backendType as BackendType | undefined) || backend,
+          model,
+          permissionMode: mode,
+          resumeSessionAt: effectiveResumeSessionAt,
+          forkSession: effectiveResumeSessionAt ? effectiveForkSession === true : undefined,
+        },
+      ]);
+
       // Assign a random session name
       const existingNames = new Set(useStore.getState().sessionNames.values());
       const sessionName = generateUniqueSessionName(existingNames);
       useStore.getState().setSessionName(sessionId, sessionName);
 
       // Save cwd to recent dirs
-      if (cwd) addRecentDir(cwd);
+      if (effectiveCwd) addRecentDir(effectiveCwd);
 
       // Store the permission mode for this session
       useStore.getState().setPreviousPermissionMode(sessionId, mode);
@@ -364,24 +601,27 @@ export function HomePage() {
       // Wait for WebSocket connection
       await waitForConnection(sessionId);
 
-      const initialMessage = buildInitialMessage(msg);
+      const trimmedMsg = msg.trim();
+      if (trimmedMsg.length > 0) {
+        const initialMessage = buildInitialMessage(trimmedMsg);
 
-      // Send message
-      sendToSession(sessionId, {
-        type: "user_message",
-        content: initialMessage,
-        session_id: sessionId,
-        images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
-      });
+        // Send message
+        sendToSession(sessionId, {
+          type: "user_message",
+          content: initialMessage,
+          session_id: sessionId,
+          images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
+        });
 
-      // Add user message to store
-      useStore.getState().appendMessage(sessionId, {
-        id: `user-${Date.now()}-${++idCounter}`,
-        role: "user",
-        content: initialMessage,
-        images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
-        timestamp: Date.now(),
-      });
+        // Add user message to store
+        useStore.getState().appendMessage(sessionId, {
+          id: `user-${Date.now()}-${++idCounter}`,
+          role: "user",
+          content: initialMessage,
+          images: images.length > 0 ? images.map((img) => ({ media_type: img.mediaType, data: img.base64 })) : undefined,
+          timestamp: Date.now(),
+        });
+      }
 
       // Auto-link Linear issue if one was selected
       if (selectedLinearIssue) {
@@ -404,6 +644,27 @@ export function HomePage() {
       useStore.getState().setCreationError(errMsg);
       setSending(false);
     }
+  }
+
+  async function handleOpenBranchedSession(candidate: ResumeCandidate, shouldFork: boolean) {
+    if (sending) return;
+    setSending(true);
+    setError("");
+    setPullError("");
+    setCwd(candidate.cwd);
+    setUseWorktree(false);
+    setIsNewBranch(false);
+    setSelectedBranch(candidate.gitBranch || "");
+    setResumeSessionAt(candidate.resumeSessionId);
+    setForkSession(shouldFork);
+    await doCreateSession("", {
+      resumeSessionAt: candidate.resumeSessionId,
+      forkSession: shouldFork,
+      cwd: candidate.cwd,
+      branch: candidate.gitBranch,
+      useWorktree: false,
+      createBranch: false,
+    });
   }
 
   async function handlePullAndContinue() {
@@ -512,6 +773,7 @@ export function HomePage() {
           multiple
           onChange={handleFileSelect}
           className="hidden"
+          aria-label="Attach images"
         />
 
         <div className="grid grid-cols-1 gap-3 sm:gap-4 items-start">
@@ -541,7 +803,8 @@ export function HomePage() {
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
-                placeholder="Fix a bug, build a feature, refactor code..."
+                aria-label="Task description"
+              placeholder="Fix a bug, build a feature, refactor code..."
                 rows={4}
                 className="w-full px-4 pt-4 pb-2 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted overflow-y-auto"
                 style={{ minHeight: "100px", maxHeight: "200px" }}
@@ -553,6 +816,7 @@ export function HomePage() {
                 <div className="relative" ref={modeDropdownRef}>
                   <button
                     onClick={() => setShowModeDropdown(!showModeDropdown)}
+                    aria-expanded={showModeDropdown}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cc-muted hover:text-cc-fg rounded-lg hover:bg-cc-hover transition-colors cursor-pointer"
                   >
                     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
@@ -615,7 +879,7 @@ export function HomePage() {
             </div>
 
             {/* Below-card selectors */}
-            <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap">
+          <div className="flex items-center gap-1 sm:gap-2 mt-2 sm:mt-3 px-1 flex-wrap">
           {/* Backend toggle */}
           {backends.length > 1 && (
             <div className="flex items-center bg-cc-hover/50 rounded-lg p-0.5">
@@ -689,6 +953,7 @@ export function HomePage() {
                 }
                 setShowEnvDropdown(!showEnvDropdown);
               }}
+              aria-expanded={showEnvDropdown}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-cc-muted hover:text-cc-fg rounded-md hover:bg-cc-hover transition-colors cursor-pointer"
             >
               <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 opacity-60">
@@ -771,6 +1036,7 @@ export function HomePage() {
           <div className="relative" ref={modelDropdownRef}>
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
+              aria-expanded={showModelDropdown}
               className="flex items-center gap-1.5 px-2 py-1 text-xs text-cc-muted hover:text-cc-fg rounded-md hover:bg-cc-hover transition-colors cursor-pointer"
             >
               <span>{selectedModel.icon}</span>
@@ -796,7 +1062,216 @@ export function HomePage() {
               </div>
             )}
           </div>
+
+          {/* Branch from prior session (Claude only) */}
+          {backend === "claude" && (
+            <button
+              type="button"
+              onClick={() => setShowBranchingControls((v) => !v)}
+              className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors cursor-pointer ${
+                showBranchingControls
+                  ? "text-cc-primary bg-cc-primary/10 hover:bg-cc-primary/15"
+                  : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+              }`}
+              aria-expanded={showBranchingControls}
+              aria-controls="branch-from-session-panel"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5 opacity-70">
+                <path d="M5 3.5a2 2 0 110 4 2 2 0 010-4zm6 5a2 2 0 110 4 2 2 0 010-4z" />
+                <path d="M7 5.5h2.5A1.5 1.5 0 0111 7v1" strokeLinecap="round" />
+              </svg>
+              Branch from session
+            </button>
+          )}
             </div>
+
+            {backend === "claude" && showBranchingControls && (
+              <div
+                id="branch-from-session-panel"
+                className="mt-2 px-3 py-2.5 rounded-lg border border-cc-border bg-cc-card/50 space-y-2"
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void loadResumeCandidates()}
+                    disabled={resumeCandidatesLoading}
+                    className="px-2 py-1 rounded-md text-[11px] bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors disabled:opacity-60 cursor-pointer"
+                  >
+                    {resumeCandidatesLoading ? "Refreshing..." : "Refresh detected sessions"}
+                  </button>
+                  {resumeCandidates.length > 0 && (
+                    <span className="text-[11px] text-cc-muted">
+                      Showing {visibleResumeCandidates.length} of {filteredActiveResumeCandidates.length}{" "}
+                      {normalizedResumeSearchQuery
+                        ? "matching"
+                        : (showingRecentOnly ? "recent" : "detected")} Claude session{filteredActiveResumeCandidates.length !== 1 ? "s" : ""}.
+                    </span>
+                  )}
+                  {!showOlderResumeCandidates && hiddenOlderResumeCount > 0 && recentResumeCandidates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOlderResumeCandidates(true);
+                        setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+                      }}
+                      className="px-2 py-1 rounded-md text-[11px] bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
+                    >
+                      Include older ({hiddenOlderResumeCount})
+                    </button>
+                  )}
+                  {showOlderResumeCandidates && recentResumeCandidates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowOlderResumeCandidates(false);
+                        setVisibleResumeCandidateRows(INITIAL_VISIBLE_SESSION_ROWS);
+                      }}
+                      className="px-2 py-1 rounded-md text-[11px] bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
+                    >
+                      Recent only
+                    </button>
+                  )}
+                </div>
+                <label className="block">
+                  <span className="sr-only">Search sessions</span>
+                  <div className="relative">
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      className="w-3.5 h-3.5 text-cc-muted absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                    >
+                      <circle cx="7" cy="7" r="4.25" />
+                      <path d="M10.25 10.25L14 14" strokeLinecap="round" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={resumeSearchQuery}
+                      onChange={(e) => setResumeSearchQuery(e.target.value)}
+                      placeholder="Search sessions, branch, folder, or ID"
+                      className="w-full bg-cc-card border border-cc-border rounded-md pl-8 pr-2.5 py-1.5 text-xs text-cc-fg placeholder:text-cc-muted focus:outline-none focus:ring-1 focus:ring-cc-primary/40 focus:border-cc-primary/40"
+                    />
+                  </div>
+                </label>
+                <p className="text-[11px] text-cc-muted">
+                  <span className="font-medium text-cc-fg">Fork</span> opens a new session that leaves the original untouched.
+                  <span className="mx-1">•</span>
+                  <span className="font-medium text-cc-fg">Continue</span> opens from the same linear thread.
+                </p>
+                {resumeCandidatesError && (
+                  <p className="text-[11px] text-cc-error">{resumeCandidatesError}</p>
+                )}
+                {!resumeCandidatesLoading && !resumeCandidatesError && filteredActiveResumeCandidates.length === 0 && (
+                  <p className="text-[11px] text-cc-muted">
+                    {normalizedResumeSearchQuery
+                      ? "No sessions match this search."
+                      : "No Claude sessions detected yet."}
+                  </p>
+                )}
+                {visibleResumeCandidates.length > 0 && (
+                  <div className="rounded-md border border-cc-border overflow-hidden bg-cc-card/50">
+                    <div className="hidden sm:grid sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_auto] px-2.5 py-1.5 border-b border-cc-border text-[10px] uppercase tracking-wider text-cc-muted">
+                      <span>Session</span>
+                      <span>Project</span>
+                      <span>Branch</span>
+                      <span>Last active</span>
+                      <span className="text-right">Action</span>
+                    </div>
+                    <div className="divide-y divide-cc-border/50">
+                      {visibleResumeCandidates.map((candidate) => {
+                        const title = getResumeCandidateTitle(candidate);
+                        const project = getResumeCandidateProject(candidate.cwd);
+                        const sourceLabel = candidate.source === "companion" ? "Companion" : "Claude";
+                        const selected = trimmedResumeSessionAt === candidate.resumeSessionId;
+                        return (
+                          <div
+                            key={`${candidate.resumeSessionId}-row-${candidate.sessionId}`}
+                            className="px-2.5 py-2.5 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.7fr)_auto] sm:items-center"
+                          >
+                            <div className="min-w-0">
+                              <p className={`text-xs truncate ${selected ? "text-cc-primary font-medium" : "text-cc-fg"}`}>
+                                {title}
+                              </p>
+                              <div className="mt-0.5 flex items-center gap-1.5 text-[10px]">
+                                <span className="font-mono-code text-cc-muted">{shortSessionId(candidate.resumeSessionId)}</span>
+                                <span className="px-1 py-0.5 rounded bg-cc-hover text-cc-muted">{sourceLabel}</span>
+                              </div>
+                            </div>
+                            <div className="min-w-0 text-[11px] text-cc-muted sm:font-mono-code truncate" title={candidate.cwd}>
+                              <div className="truncate">{project}</div>
+                              <div className="mt-0.5 text-[10px] text-cc-muted/70 truncate" title={candidate.cwd}>
+                                {formatPathTail(candidate.cwd)}
+                              </div>
+                            </div>
+                            <div className="text-[11px] text-cc-muted sm:font-mono-code truncate">
+                              {candidate.gitBranch || "—"}
+                            </div>
+                            <div className="text-[11px] text-cc-muted">
+                              {formatTimeAgo(candidate.createdAt)}
+                            </div>
+                            <div className="sm:text-right flex gap-1.5 sm:justify-end">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResumeSessionAt(candidate.resumeSessionId);
+                                  setForkSession(true);
+                                  void handleOpenBranchedSession(candidate, true);
+                                }}
+                                aria-label={`Fork and open ${title}`}
+                                className={`px-2 py-1 rounded-md text-[11px] border transition-colors cursor-pointer ${
+                                  selected && forkSession
+                                    ? "border-cc-primary/40 bg-cc-primary/10 text-cc-primary"
+                                    : "border-cc-border bg-cc-card text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+                                }`}
+                                title={`Fork and open now\n${candidate.cwd}${candidate.gitBranch ? ` (${candidate.gitBranch})` : ""}\n${candidate.resumeSessionId}`}
+                              >
+                                Fork
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResumeSessionAt(candidate.resumeSessionId);
+                                  setForkSession(false);
+                                  void handleOpenBranchedSession(candidate, false);
+                                }}
+                                aria-label={`Continue and open ${title}`}
+                                className={`px-2 py-1 rounded-md text-[11px] border transition-colors cursor-pointer ${
+                                  selected && !forkSession
+                                    ? "border-cc-primary/40 bg-cc-primary/10 text-cc-primary"
+                                    : "border-cc-border bg-cc-card text-cc-muted hover:text-cc-fg hover:bg-cc-hover"
+                                }`}
+                                title={`Continue and open now\n${candidate.resumeSessionId}`}
+                              >
+                                Continue
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {hasMoreResumeCandidates && (
+                      <div className="px-2.5 py-2 border-t border-cc-border bg-cc-card/40">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setVisibleResumeCandidateRows((count) =>
+                              Math.min(count + LOAD_MORE_SESSION_ROWS, filteredActiveResumeCandidates.length)
+                            )}
+                          className="px-2 py-1 rounded-md text-[11px] bg-cc-hover text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"
+                        >
+                          Load more ({filteredActiveResumeCandidates.length - visibleResumeCandidateRows} remaining)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] text-cc-muted">
+                  Fork/Continue opens the session immediately, then you can type directly in chat.
+                  Send from Home still starts a normal new session with your typed prompt.
+                </p>
+              </div>
+            )}
           </div>
 
           <LinearSection

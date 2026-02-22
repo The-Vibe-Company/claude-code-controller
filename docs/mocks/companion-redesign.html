@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Companion — Redesign Mock</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            'cc-bg': 'var(--cc-bg)',
+            'cc-fg': 'var(--cc-fg)',
+            'cc-primary': 'var(--cc-primary)',
+            'cc-primary-hover': 'var(--cc-primary-hover)',
+            'cc-muted': 'var(--cc-muted)',
+            'cc-border': 'var(--cc-border)',
+            'cc-sidebar': 'var(--cc-sidebar)',
+            'cc-sidebar-footer': 'var(--cc-sidebar-footer)',
+            'cc-card': 'var(--cc-card)',
+            'cc-hover': 'var(--cc-hover)',
+            'cc-active': 'var(--cc-active)',
+            'cc-separator': 'var(--cc-separator)',
+            'cc-user-bubble': 'var(--cc-user-bubble)',
+            'cc-input-bg': 'var(--cc-input-bg)',
+            'cc-code-bg': 'var(--cc-code-bg)',
+            'cc-code-fg': 'var(--cc-code-fg)',
+            'cc-success': 'var(--cc-success)',
+            'cc-error': 'var(--cc-error)',
+            'cc-warning': 'var(--cc-warning)',
+            'codex-teal': '#5BA8A0',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root {
+      --cc-bg: #ffffff;
+      --cc-fg: #141413;
+      --cc-primary: #d97757;
+      --cc-primary-hover: #e08b6b;
+      --cc-muted: #6f6e69;
+      --cc-border: rgba(31,30,29,0.10);
+      --cc-sidebar: #f5f4ef;
+      --cc-sidebar-footer: #edece5;
+      --cc-card: #ffffff;
+      --cc-hover: rgba(31,30,29,0.05);
+      --cc-active: rgba(31,30,29,0.09);
+      --cc-separator: rgba(31,30,29,0.06);
+      --cc-user-bubble: #f0efe8;
+      --cc-input-bg: #ffffff;
+      --cc-code-bg: #1e1e1e;
+      --cc-code-fg: #d4d4d4;
+      --cc-success: #2d7d46;
+      --cc-error: #c53030;
+      --cc-warning: #b7791f;
+    }
+    .dark {
+      --cc-bg: #262624;
+      --cc-fg: #faf9f5;
+      --cc-primary: #d97757;
+      --cc-primary-hover: #e08b6b;
+      --cc-muted: #c2c0b6;
+      --cc-border: rgba(222,220,209,0.15);
+      --cc-sidebar: #262624;
+      --cc-sidebar-footer: #141413;
+      --cc-card: #141413;
+      --cc-hover: rgba(222,220,209,0.06);
+      --cc-active: rgba(222,220,209,0.10);
+      --cc-separator: rgba(222,220,209,0.08);
+      --cc-user-bubble: #30302e;
+      --cc-input-bg: #141413;
+      --cc-code-bg: #141413;
+      --cc-code-fg: #d4d4d4;
+      --cc-success: #48bb78;
+      --cc-error: #fc8181;
+      --cc-warning: #f6e05e;
+    }
+
+    * { box-sizing: border-box; margin: 0; }
+    body { height: 100vh; overflow: hidden; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--cc-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--cc-muted); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.2s ease-out; }
+
+    @keyframes pulse-subtle { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .pulse-subtle { animation: pulse-subtle 1.8s ease-in-out infinite; }
+
+    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+    .streaming-cursor::after { content: '\2588'; animation: blink 1s infinite; color: var(--cc-primary); font-size: 0.8em; margin-left: 2px; }
+
+    .tool-pill { transition: all 0.12s ease; }
+    .tool-pill:hover { background: var(--cc-active) !important; }
+
+    .sidebar-left { transition: width 0.2s ease, opacity 0.15s ease; overflow: hidden; }
+    .sidebar-left.collapsed { width: 0 !important; opacity: 0; border: none !important; padding: 0; }
+    .sidebar-right { transition: width 0.2s ease, opacity 0.15s ease; overflow: hidden; }
+    .sidebar-right.collapsed { width: 0 !important; opacity: 0; border: none !important; padding: 0; }
+
+    .tool-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.2s ease, opacity 0.15s ease, margin 0.2s ease; margin-top: 0; }
+    .tool-detail.open { max-height: 400px; opacity: 1; margin-top: 8px; }
+
+    /* Permission banner pulse ring */
+    @keyframes ring-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(217,119,87,0.3); }
+      70% { box-shadow: 0 0 0 6px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+    .ring-pulse { animation: ring-pulse 2s ease-out infinite; }
+  </style>
+</head>
+<body class="font-sans h-screen flex bg-cc-bg text-cc-fg">
+
+  <!-- ═══════ LEFT SIDEBAR ═══════ -->
+  <aside id="leftSidebar" class="sidebar-left w-56 border-r border-cc-border bg-cc-sidebar shrink-0 flex flex-col">
+    <!-- Header -->
+    <div class="px-3.5 pt-3.5 pb-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-6 h-6 rounded-full bg-cc-primary/15 flex items-center justify-center">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3 h-3 text-cc-primary"><circle cx="8" cy="8" r="3"/></svg>
+        </div>
+        <span class="text-[13px] font-semibold tracking-tight">The Companion</span>
+        <button class="ml-auto w-7 h-7 rounded-lg bg-cc-primary hover:bg-cc-primary-hover text-white flex items-center justify-center transition-colors cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" class="w-3.5 h-3.5"><path d="M8 3v10M3 8h10"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Session list -->
+    <nav class="flex-1 overflow-y-auto px-2 py-1">
+      <div class="px-2 pt-3 pb-1.5">
+        <span class="text-[11px] text-cc-muted/60">companion</span>
+      </div>
+      <!-- Active session -->
+      <div class="group flex items-center gap-2 px-2 py-1.5 rounded-lg bg-cc-active cursor-pointer">
+        <span class="text-[13px] font-medium truncate flex-1">Pure Wren</span>
+        <span class="text-[9px] text-cc-primary/50 font-mono font-medium shrink-0">CC</span>
+        <button class="w-5 h-5 rounded flex items-center justify-center text-cc-muted/30 hover:text-cc-fg opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5"><circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/></svg>
+        </button>
+      </div>
+      <!-- Inactive sessions -->
+      <div class="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-cc-hover cursor-pointer transition-colors">
+        <span class="text-[13px] text-cc-muted truncate flex-1">Kind Eagle</span>
+        <span class="text-[9px] text-codex-teal/40 font-mono font-medium shrink-0">CX</span>
+        <button class="w-5 h-5 rounded flex items-center justify-center text-cc-muted/30 hover:text-cc-fg opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5"><circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/></svg>
+        </button>
+      </div>
+
+      <div class="px-2 pt-4 pb-1.5">
+        <span class="text-[11px] text-cc-muted/60">web</span>
+      </div>
+      <div class="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-cc-hover cursor-pointer transition-colors">
+        <span class="text-[13px] text-cc-muted truncate flex-1">Swift Fox</span>
+        <span class="text-[9px] text-cc-muted/30 font-mono font-medium shrink-0">CC</span>
+        <button class="w-5 h-5 rounded flex items-center justify-center text-cc-muted/30 hover:text-cc-fg opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5"><circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/></svg>
+        </button>
+      </div>
+      <div class="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-cc-hover cursor-pointer transition-colors">
+        <span class="text-[13px] text-cc-muted truncate flex-1">Bold Raven</span>
+        <span class="text-[9px] text-cc-muted/30 font-mono font-medium shrink-0">CC</span>
+        <button class="w-5 h-5 rounded flex items-center justify-center text-cc-muted/30 hover:text-cc-fg opacity-0 group-hover:opacity-100 transition-opacity shrink-0 cursor-pointer">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5"><circle cx="3" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="13" cy="8" r="1.2"/></svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Footer: icon strip -->
+    <div class="px-2.5 py-2 border-t border-cc-border bg-cc-sidebar-footer">
+      <div class="flex items-center justify-between">
+        <!-- Saved Prompts: bookmark -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer group/tip relative" title="Saved Prompts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Prompts</span>
+        </button>
+        <!-- Integrations: plug/connection -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer group/tip relative" title="Integrations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <path d="M12 2v6m0 8v6M6 12H2m20 0h-4" stroke-linecap="round"/>
+            <circle cx="12" cy="12" r="4"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Integrations</span>
+        </button>
+        <!-- Terminal: prompt -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-fg bg-cc-active cursor-pointer group/tip relative" title="Terminal">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <path d="M7 8l4 4-4 4m6 0h4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Terminal</span>
+        </button>
+        <!-- Environments: key/variable -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer group/tip relative" title="Environments">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.78 7.78 5.5 5.5 0 017.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Environments</span>
+        </button>
+        <!-- Scheduler: clock -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer group/tip relative" title="Scheduler">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Scheduler</span>
+        </button>
+        <!-- Settings: gear -->
+        <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer group/tip relative" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-[15px] h-[15px]">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded-md bg-cc-fg text-cc-bg text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none">Settings</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══════ CENTER COLUMN ═══════ -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+    <!-- ─── Top Bar ─── -->
+    <header class="h-11 flex items-center px-4 shrink-0 border-b border-cc-separator bg-cc-bg">
+      <!-- Left: sidebar toggle -->
+      <div class="flex items-center gap-1">
+        <button onclick="toggleLeftSidebar()" class="w-7 h-7 rounded-md flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer" title="Toggle sidebar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-[15px] h-[15px]">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h18v18H3V3z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 3v18"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Center: workspace tabs (flat underline) -->
+      <div class="flex-1 flex items-center justify-center gap-0.5">
+        <button class="px-3 h-full text-[12px] font-medium text-cc-fg border-b-[1.5px] border-cc-primary cursor-pointer flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-cc-success"></span>
+          Pure Wren
+        </button>
+        <button class="px-3 h-full text-[12px] font-medium text-cc-muted hover:text-cc-fg border-b-[1.5px] border-transparent cursor-pointer transition-colors flex items-center gap-1.5">
+          Diffs
+          <span class="text-[9px] rounded-full min-w-[15px] h-[15px] px-1 inline-flex items-center justify-center font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300">3</span>
+        </button>
+        <button class="px-3 h-full text-[12px] font-medium text-cc-muted hover:text-cc-fg border-b-[1.5px] border-transparent cursor-pointer transition-colors">
+          Shell
+        </button>
+      </div>
+
+      <!-- Right: actions -->
+      <div class="flex items-center gap-0.5">
+        <button onclick="toggleRightSidebar()" class="w-7 h-7 rounded-md flex items-center justify-center text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer" title="Context panel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-[15px] h-[15px]">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h18v18H3V3z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 3v18"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ─── Chat area ─── -->
+    <main class="flex-1 flex flex-col min-w-0 min-h-0">
+      <div class="flex-1 overflow-y-auto" id="chatArea">
+        <div class="max-w-3xl mx-auto px-6 py-8">
+
+          <!-- === Message block 1: user + tools + assistant response === -->
+
+          <!-- User message -->
+          <div class="flex justify-end fade-in mb-6">
+            <div class="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-sm bg-cc-user-bubble text-[14px] leading-relaxed">
+              Explain what changed in the last commit and check if there are any type errors
+            </div>
+          </div>
+
+          <!-- Tool group (tightly spaced) -->
+          <div class="space-y-1.5 mb-5">
+            <!-- Read pill -->
+            <div class="fade-in" onclick="toggleTool(this)">
+              <div class="flex items-center gap-2 cursor-pointer group">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-hover text-cc-muted text-[11px] font-medium font-mono">
+                  <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  Read
+                </div>
+                <span class="text-[11px] text-cc-muted/60 font-mono truncate">src/components/MessageFeed.tsx</span>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums shrink-0">480ms</span>
+              </div>
+              <div class="tool-detail ml-1 rounded-xl border border-cc-border overflow-hidden">
+                <div class="px-3 py-2 bg-cc-sidebar text-[10px] text-cc-muted font-mono uppercase tracking-wider border-b border-cc-border flex items-center justify-between">
+                  <span>Read &middot; src/components/MessageFeed.tsx</span>
+                  <span>549 lines</span>
+                </div>
+                <pre class="px-3 py-2.5 text-[11px] font-mono text-cc-code-fg bg-cc-code-bg leading-relaxed max-h-48 overflow-y-auto">import { useEffect, useRef, useMemo } from "react";
+import { useStore } from "../store.js";
+import { MessageBubble } from "./MessageBubble.js";
+// ... 546 more lines</pre>
+              </div>
+            </div>
+
+            <!-- Bash pill -->
+            <div class="fade-in" onclick="toggleTool(this)">
+              <div class="flex items-center gap-2 cursor-pointer group">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-hover text-cc-muted text-[11px] font-medium font-mono">
+                  <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  Bash
+                </div>
+                <span class="text-[11px] text-cc-muted/60 font-mono truncate">git log --oneline -5</span>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums shrink-0">1.2s</span>
+              </div>
+              <div class="tool-detail ml-1 rounded-xl border border-cc-border overflow-hidden">
+                <div class="px-3 py-2 bg-cc-sidebar text-[10px] text-cc-muted font-mono uppercase tracking-wider border-b border-cc-border">
+                  Bash &middot; git log --oneline -5
+                </div>
+                <pre class="px-3 py-2.5 text-[11px] font-mono text-cc-code-fg bg-cc-code-bg leading-relaxed max-h-48 overflow-y-auto">7c6d7b3 feat(web): improve streaming reliability
+5d6337b chore(main): release the-companion 0.58.2
+da805a4 test(a11y): add axe-core accessibility scanning
+3043e1b refactor(server): modularize routes
+b232a2e refactor(frontend): stabilize frontend</pre>
+              </div>
+            </div>
+
+            <!-- Read x3 group pill -->
+            <div class="fade-in" onclick="toggleTool(this)">
+              <div class="flex items-center gap-2 cursor-pointer group">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-hover text-cc-muted text-[11px] font-medium font-mono">
+                  <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  Read
+                  <span class="text-[9px] bg-cc-fg/[0.08] rounded-full px-1.5 py-px text-cc-muted tabular-nums">&times;3</span>
+                </div>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums shrink-0">2.1s</span>
+              </div>
+              <div class="tool-detail ml-1 rounded-xl border border-cc-border overflow-hidden divide-y divide-cc-border">
+                <div class="px-3 py-2 flex items-center gap-2 text-[11px] text-cc-muted font-mono">
+                  <span class="w-1 h-1 rounded-full bg-cc-muted/30"></span>
+                  web/src/store.ts <span class="text-cc-muted/30 ml-auto">420 lines</span>
+                </div>
+                <div class="px-3 py-2 flex items-center gap-2 text-[11px] text-cc-muted font-mono">
+                  <span class="w-1 h-1 rounded-full bg-cc-muted/30"></span>
+                  web/src/ws.ts <span class="text-cc-muted/30 ml-auto">310 lines</span>
+                </div>
+                <div class="px-3 py-2 flex items-center gap-2 text-[11px] text-cc-muted font-mono">
+                  <span class="w-1 h-1 rounded-full bg-cc-muted/30"></span>
+                  web/server/ws-bridge.ts <span class="text-cc-muted/30 ml-auto">680 lines</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bash typecheck pill -->
+            <div class="fade-in" onclick="toggleTool(this)">
+              <div class="flex items-center gap-2 cursor-pointer group">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-hover text-cc-muted text-[11px] font-medium font-mono">
+                  <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  Bash
+                </div>
+                <span class="text-[11px] text-cc-muted/60 font-mono truncate">bun run typecheck</span>
+                <span class="text-[11px] text-cc-success shrink-0">passed</span>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums shrink-0">4.8s</span>
+              </div>
+              <div class="tool-detail ml-1 rounded-xl border border-cc-border overflow-hidden">
+                <div class="px-3 py-2 bg-cc-sidebar text-[10px] text-cc-muted font-mono uppercase tracking-wider border-b border-cc-border">
+                  Bash &middot; bun run typecheck
+                </div>
+                <pre class="px-3 py-2.5 text-[11px] font-mono text-cc-code-fg bg-cc-code-bg leading-relaxed">$ tsc --noEmit
+&#10003; No errors found</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Assistant response (directly on canvas) -->
+          <div class="fade-in space-y-3 mb-8">
+            <p class="text-[14.5px] leading-[1.7]">The last commit (<code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">7c6d7b3</code>) improved streaming reliability with three key changes:</p>
+
+            <ol class="list-decimal pl-5 space-y-1.5 text-[14.5px] leading-[1.7]">
+              <li><strong>Draft message system</strong> &#8212; <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">ws.ts</code> now creates real <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">ChatMessage</code> objects with <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">isStreaming: true</code></li>
+              <li><strong>Session branching</strong> &#8212; new <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">resumeSessionAt</code> and <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">forkSession</code> flags in <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">cli-launcher.ts</code></li>
+              <li><strong>Blinking cursor</strong> &#8212; <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">MarkdownContent</code> gains a <code class="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono text-cc-fg/80">showCursor</code> prop for visual streaming feedback</li>
+            </ol>
+
+            <p class="text-[14.5px] leading-[1.7]">Typecheck passes cleanly &#8212; <strong>no type errors found</strong>.</p>
+          </div>
+
+          <!-- Subagent pill (collapsed) -->
+          <div class="mb-6">
+            <div class="fade-in" onclick="toggleTool(this)">
+              <div class="flex items-center gap-2 cursor-pointer">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-primary/[0.08] text-cc-primary text-[11px] font-medium">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3 h-3"><circle cx="8" cy="8" r="5"/><path d="M8 5v3l2 1" stroke-linecap="round"/></svg>
+                  Explore codebase
+                </div>
+                <span class="text-[10px] text-cc-muted/60 bg-cc-hover rounded-full px-1.5 py-0.5 font-medium">Explore</span>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums">12.4s</span>
+              </div>
+              <div class="tool-detail ml-4 pl-3 border-l-2 border-cc-primary/15 space-y-2.5 py-2">
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cc-hover text-cc-muted text-[11px] font-mono">
+                    <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    Glob
+                  </div>
+                  <span class="text-[11px] text-cc-muted/60 font-mono">**/*.test.tsx</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cc-hover text-cc-muted text-[11px] font-mono">
+                    <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    Grep
+                  </div>
+                  <span class="text-[11px] text-cc-muted/60 font-mono">streaming.*cursor</span>
+                </div>
+                <p class="text-[12.5px] text-cc-muted leading-relaxed">Found 12 test files and 3 references to streaming cursor logic.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- === Message block 2: user + permission + tools + streaming === -->
+
+          <!-- Second user message -->
+          <div class="flex justify-end fade-in mb-6">
+            <div class="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-br-sm bg-cc-user-bubble text-[14px] leading-relaxed">
+              Great. Now run the tests and fix anything broken.
+            </div>
+          </div>
+
+          <!-- Permission request banner -->
+          <div class="mb-4 fade-in">
+            <div class="rounded-xl border border-cc-primary/20 bg-cc-primary/[0.04] p-3.5">
+              <div class="flex items-start gap-3">
+                <div class="w-7 h-7 rounded-lg bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5 ring-pulse">
+                  <svg class="w-3.5 h-3.5 text-cc-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="text-[12px] font-semibold text-cc-fg">Bash</span>
+                    <span class="text-[11px] text-cc-muted">wants to run:</span>
+                  </div>
+                  <code class="text-[12px] font-mono text-cc-fg/80 bg-cc-fg/[0.05] rounded-md px-2 py-1 block">rm -rf node_modules &amp;&amp; bun install &amp;&amp; bun run test</code>
+                  <div class="flex items-center gap-2 mt-3">
+                    <button class="px-3.5 py-1.5 rounded-lg bg-cc-primary text-white text-[12px] font-medium hover:bg-cc-primary-hover transition-colors cursor-pointer">
+                      Approve
+                    </button>
+                    <button class="px-3.5 py-1.5 rounded-lg border border-cc-border text-[12px] font-medium text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer">
+                      Deny
+                    </button>
+                    <button class="px-3 py-1.5 text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer">
+                      Always allow
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tool group (running) -->
+          <div class="space-y-1.5 mb-5">
+            <div class="fade-in">
+              <div class="flex items-center gap-2">
+                <div class="tool-pill flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cc-hover text-cc-muted text-[11px] font-medium font-mono">
+                  <svg class="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  Bash
+                </div>
+                <span class="text-[11px] text-cc-muted/60 font-mono truncate">bun run test</span>
+                <span class="inline-flex items-center gap-1 text-[11px] text-cc-primary shrink-0">
+                  <span class="w-1.5 h-1.5 rounded-full bg-cc-primary pulse-subtle"></span>
+                  running
+                </span>
+                <span class="text-[11px] text-cc-muted/40 tabular-nums shrink-0">8s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Streaming assistant text -->
+          <div class="fade-in mb-8">
+            <p class="text-[14.5px] leading-[1.7] streaming-cursor">Tests are running. I can see 74 test files being processed, with 1,486 tests passing so far. There are 3 pre-existing failures in</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ─── Composer (floating card, two-row) ─── -->
+      <div class="px-6 pb-4 pt-2 bg-gradient-to-t from-[var(--cc-bg)] via-[var(--cc-bg)] to-transparent pointer-events-none">
+        <div class="max-w-3xl mx-auto pointer-events-auto">
+          <div class="bg-cc-input-bg rounded-2xl border border-cc-border shadow-[0_1px_8px_rgba(0,0,0,0.03)] transition-all focus-within:border-cc-primary/25 focus-within:shadow-[0_2px_16px_rgba(217,119,87,0.06)]">
+            <!-- Textarea row -->
+            <div class="px-4 pt-3 pb-1.5">
+              <textarea rows="1" placeholder="Type a message...  ( / for commands, @ for files )" class="w-full resize-none text-[14px] outline-none placeholder:text-cc-muted/40 bg-transparent leading-relaxed" style="min-height: 24px; max-height: 160px;"></textarea>
+            </div>
+            <!-- Bottom controls row -->
+            <div class="px-3 pb-2.5 flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <!-- Mode toggle -->
+                <button class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-cc-muted border border-cc-border hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer">
+                  <svg viewBox="0 0 16 16" class="w-3 h-3">
+                    <path d="M2.5 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                    <path d="M8.5 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                  </svg>
+                  agent
+                </button>
+                <!-- Model indicator -->
+                <span class="text-[10px] text-cc-muted/50 font-mono">opus-4</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <!-- Save prompt -->
+                <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted/60 hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer" title="Save as prompt">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5">
+                    <path d="M4 2.75h8A1.25 1.25 0 0113.25 4v9.25L8 10.5l-5.25 2.75V4A1.25 1.25 0 014 2.75z"/>
+                  </svg>
+                </button>
+                <!-- Image upload -->
+                <button class="w-7 h-7 rounded-lg flex items-center justify-center text-cc-muted/60 hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer" title="Upload image">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5">
+                    <rect x="2" y="2" width="12" height="12" rx="2"/>
+                    <circle cx="5.5" cy="5.5" r="1" fill="currentColor" stroke="none"/>
+                    <path d="M2 11l3-3 2 2 3-4 4 5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <!-- Send -->
+                <button class="w-7 h-7 rounded-xl bg-cc-primary flex items-center justify-center text-white hover:bg-cc-primary-hover transition-colors cursor-pointer shadow-[0_2px_8px_rgba(217,119,87,0.2)]">
+                  <svg viewBox="0 0 16 16" fill="currentColor" class="w-3 h-3">
+                    <path d="M3 2l11 6-11 6V9.5l7-1.5-7-1.5V2z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- Keyboard hint -->
+          <div class="flex justify-center mt-1.5">
+            <span class="text-[10px] text-cc-muted/30">Enter to send &middot; Shift+Enter for new line</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════ RIGHT PANEL ═══════ -->
+  <aside id="rightSidebar" class="sidebar-right w-72 shrink-0 flex flex-col overflow-y-auto border-l border-cc-border bg-cc-bg">
+    <div class="p-3.5 space-y-3">
+
+      <!-- Context header -->
+      <div class="flex items-center justify-between">
+        <span class="text-[13px] font-semibold">Context</span>
+        <div class="flex items-center gap-1">
+          <button onclick="toggleRightSidebar()" class="w-6 h-6 rounded flex items-center justify-center text-cc-muted hover:text-cc-fg transition-colors cursor-pointer" title="Close panel">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- CLAUDE.md button -->
+      <button class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-cc-border hover:bg-cc-hover transition-colors cursor-pointer text-left group">
+        <div class="w-7 h-7 rounded-lg bg-cc-primary/10 flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5 text-cc-primary">
+            <path d="M4 1.5a.5.5 0 01.5-.5h7a.5.5 0 01.354.146l2 2A.5.5 0 0114 3.5v11a.5.5 0 01-.5.5h-11a.5.5 0 01-.5-.5v-13z"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[12px] font-medium">CLAUDE.md</div>
+          <div class="text-[10px] text-cc-muted truncate">Project instructions loaded</div>
+        </div>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="w-3.5 h-3.5 text-cc-muted/40 group-hover:text-cc-muted transition-colors shrink-0">
+          <path d="M6 4l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <!-- Session info card -->
+      <div class="rounded-xl bg-cc-card shadow-[0_1px_3px_rgba(0,0,0,0.03),0_0_0_1px_var(--cc-border)] p-3">
+        <div class="flex items-center gap-2 mb-2.5">
+          <span class="text-[10px] font-semibold uppercase tracking-widest text-cc-muted/70">Session</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-cc-muted">Branch</span>
+            <span class="text-[11px] font-mono font-medium">main</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-cc-muted">Model</span>
+            <span class="text-[11px] font-mono font-medium">opus-4</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] text-cc-muted">Mode</span>
+            <span class="text-[11px] font-medium">agent</span>
+          </div>
+        </div>
+        <button class="mt-2.5 text-[11px] text-cc-primary hover:underline cursor-pointer">Link Linear issue</button>
+      </div>
+
+      <!-- MCP Servers card -->
+      <div class="rounded-xl bg-cc-card shadow-[0_1px_3px_rgba(0,0,0,0.03),0_0_0_1px_var(--cc-border)] p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-semibold uppercase tracking-widest text-cc-muted/70">MCP Servers</span>
+          <button class="text-cc-muted/50 hover:text-cc-fg transition-colors cursor-pointer">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="w-3 h-3"><path d="M8 3v10M3 8h10"/></svg>
+          </button>
+        </div>
+        <div class="space-y-px">
+          <div class="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md text-[11px]">
+            <span class="w-1.5 h-1.5 rounded-full bg-cc-success shrink-0"></span>
+            <span class="flex-1 truncate">perplexity-ask</span>
+          </div>
+          <div class="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md text-[11px]">
+            <span class="w-1.5 h-1.5 rounded-full bg-cc-success shrink-0"></span>
+            <span class="flex-1 truncate">context7</span>
+          </div>
+          <div class="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md text-[11px]">
+            <span class="w-1.5 h-1.5 rounded-full bg-cc-success shrink-0"></span>
+            <span class="flex-1 truncate">exa</span>
+          </div>
+          <div class="flex items-center gap-2.5 px-1.5 py-1.5 rounded-md text-[11px] text-cc-muted/60">
+            <span class="w-1.5 h-1.5 rounded-full bg-cc-muted/30 shrink-0"></span>
+            <span class="flex-1 truncate">claude.ai Ref</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tasks card -->
+      <div class="rounded-xl bg-cc-card shadow-[0_1px_3px_rgba(0,0,0,0.03),0_0_0_1px_var(--cc-border)] p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[10px] font-semibold uppercase tracking-widest text-cc-muted/70">Tasks</span>
+          <span class="text-[10px] text-cc-muted/60 tabular-nums">1 / 3</span>
+        </div>
+        <div class="space-y-0.5">
+          <div class="flex items-start gap-2 px-1.5 py-1.5 rounded-md">
+            <svg class="w-3.5 h-3.5 text-cc-success mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            <span class="text-[11px] text-cc-muted/50 line-through">Read last commit changes</span>
+          </div>
+          <div class="flex items-start gap-2 px-1.5 py-1.5 rounded-md bg-cc-hover">
+            <svg class="w-3.5 h-3.5 text-cc-primary mt-0.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            <span class="text-[11px] font-medium">Running test suite</span>
+          </div>
+          <div class="flex items-start gap-2 px-1.5 py-1.5 rounded-md">
+            <div class="w-3.5 h-3.5 rounded-full border border-cc-border mt-0.5 shrink-0"></div>
+            <span class="text-[11px] text-cc-muted/60">Fix failing tests</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ─── Theme toggle (floating) ─── -->
+  <button onclick="document.documentElement.classList.toggle('dark')" class="fixed bottom-4 right-4 w-9 h-9 rounded-full bg-cc-card border border-cc-border shadow-md flex items-center justify-center text-cc-muted hover:text-cc-fg transition-colors cursor-pointer z-50" title="Toggle dark mode">
+    <svg class="w-3.5 h-3.5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+    <svg class="w-3.5 h-3.5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+  </button>
+
+  <script>
+    function toggleLeftSidebar() {
+      document.getElementById('leftSidebar').classList.toggle('collapsed');
+    }
+    function toggleRightSidebar() {
+      document.getElementById('rightSidebar').classList.toggle('collapsed');
+    }
+    function toggleTool(el) {
+      const detail = el.querySelector('.tool-detail');
+      if (detail) detail.classList.toggle('open');
+    }
+
+    // Auto-resize textarea
+    document.querySelector('textarea').addEventListener('input', function() {
+      this.style.height = '24px';
+      this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+    });
+  </script>
+
+</body>
+</html>

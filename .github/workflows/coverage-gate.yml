@@ -20,6 +20,6 @@ jobs:
         working-directory: web
         run: bun install
 
-      - name: Run coverage gate on PR changes (min 80%)
+      - name: Run coverage gate (enforces thresholds from vitest.config.ts)
         working-directory: web
-        run: bun run test -- --coverage --changed=origin/${{ github.base_ref }}
+        run: bun run test -- --coverage

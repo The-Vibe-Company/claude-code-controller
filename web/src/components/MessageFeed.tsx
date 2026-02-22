@@ -1,14 +1,24 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useStore } from "../store.js";
+import { api } from "../api.js";
 import { MessageBubble } from "./MessageBubble.js";
 import { getToolIcon, getToolLabel, getPreview, ToolIcon } from "./ToolBlock.js";
-import type { ChatMessage, ContentBlock } from "../types.js";
+import type { ChatMessage, ContentBlock, SdkSessionInfo } from "../types.js";
 import { formatElapsed, formatTokenCount } from "../utils/format.js";
 
 const FEED_PAGE_SIZE = 100;
+const RESUME_HISTORY_PAGE_SIZE = 40;
+const SCROLL_TOP_PREFETCH_PX = 120;
 const savedDistanceFromBottomBySession = new Map<string, number>();
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+const EMPTY_SDK_SESSIONS: SdkSessionInfo[] = [];
+
+function formatResumeSourcePath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return path;
+  return parts.slice(-2).join("/");
+}
 
 // ─── Message-level grouping ─────────────────────────────────────────────────
 
@@ -305,7 +315,7 @@ function SubagentContainer({ group }: { group: SubagentGroup }) {
 
   return (
     <div className="animate-[fadeSlideIn_0.2s_ease-out]">
-      <div className="ml-9 border-l-2 border-cc-primary/20 pl-4">
+      <div className="ml-10 border-l-2 border-cc-primary/20 pl-4">
         <button
           onClick={() => setOpen(!open)}
           className="w-full flex items-center gap-2 py-1.5 text-left cursor-pointer mb-1"
@@ -345,8 +355,8 @@ function SubagentContainer({ group }: { group: SubagentGroup }) {
 
 function AssistantAvatar() {
   return (
-    <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-cc-primary">
+    <div className="w-7 h-7 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-cc-primary">
         <circle cx="8" cy="8" r="3" />
       </svg>
     </div>
@@ -357,7 +367,7 @@ function AssistantAvatar() {
 
 export function MessageFeed({ sessionId }: { sessionId: string }) {
   const messages = useStore((s) => s.messages.get(sessionId) ?? EMPTY_MESSAGES);
-  const streamingText = useStore((s) => s.streaming.get(sessionId));
+  const sdkSession = useStore((s) => (s.sdkSessions || EMPTY_SDK_SESSIONS).find((session) => session.sessionId === sessionId));
   const streamingStartedAt = useStore((s) => s.streamingStartedAt.get(sessionId));
   const streamingOutputTokens = useStore((s) => s.streamingOutputTokens.get(sessionId));
   const sessionStatus = useStore((s) => s.sessionStatus.get(sessionId));
@@ -367,14 +377,54 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
   const isNearBottom = useRef(true);
   const [elapsed, setElapsed] = useState(0);
   const [visibleCount, setVisibleCount] = useState(FEED_PAGE_SIZE);
+  const [resumeHistoryMessages, setResumeHistoryMessages] = useState<ChatMessage[]>([]);
+  const [resumeHistoryCursor, setResumeHistoryCursor] = useState(0);
+  const [resumeHistoryHasMore, setResumeHistoryHasMore] = useState(false);
+  const [resumeHistoryLoaded, setResumeHistoryLoaded] = useState(false);
+  const [resumeHistoryLoading, setResumeHistoryLoading] = useState(false);
+  const [resumeHistoryError, setResumeHistoryError] = useState("");
+  const resumeHistoryMessageIdsRef = useRef<Set<string>>(new Set());
   const chatTabReentryTick = useStore((s) => s.chatTabReentryTickBySession.get(sessionId) ?? 0);
+  const hasStreamingAssistant = useMemo(
+    () => messages.some((m) => m.role === "assistant" && m.isStreaming),
+    [messages],
+  );
+  const resumeSourceSessionId = useMemo(() => {
+    if (sdkSession?.backendType === "codex") return "";
+    return (sdkSession?.resumeSessionAt || "").trim();
+  }, [sdkSession?.backendType, sdkSession?.resumeSessionAt]);
+  const canLoadResumeHistory = resumeSourceSessionId.length > 0;
+  const resumeModeLabel = sdkSession?.forkSession ? "Forked from" : "Continuing from";
+  const mergedMessages = useMemo(() => {
+    if (resumeHistoryMessages.length === 0) return messages;
+    const deduped: ChatMessage[] = [];
+    const seen = new Set<string>();
+    for (const msg of resumeHistoryMessages) {
+      if (seen.has(msg.id)) continue;
+      seen.add(msg.id);
+      deduped.push(msg);
+    }
+    for (const msg of messages) {
+      if (seen.has(msg.id)) continue;
+      seen.add(msg.id);
+      deduped.push(msg);
+    }
+    return deduped;
+  }, [resumeHistoryMessages, messages]);
 
-  const grouped = useMemo(() => groupMessages(messages), [messages]);
+  const grouped = useMemo(() => groupMessages(mergedMessages), [mergedMessages]);
 
-  // Reset visible count when switching sessions
+  // Reset paging/transcript state when switching sessions.
   useEffect(() => {
     setVisibleCount(FEED_PAGE_SIZE);
-  }, [sessionId]);
+    setResumeHistoryMessages([]);
+    setResumeHistoryCursor(0);
+    setResumeHistoryHasMore(false);
+    setResumeHistoryLoaded(false);
+    setResumeHistoryLoading(false);
+    setResumeHistoryError("");
+    resumeHistoryMessageIdsRef.current = new Set();
+  }, [sessionId, resumeSourceSessionId]);
 
   const totalEntries = grouped.length;
   const hasMore = totalEntries > visibleCount;
@@ -393,6 +443,74 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
       }
     });
   }, []);
+
+  const loadResumeHistoryPage = useCallback(async (
+    options: { preserveScroll?: boolean } = {},
+  ) => {
+    if (!canLoadResumeHistory || !resumeSourceSessionId || resumeHistoryLoading) return;
+
+    const container = containerRef.current;
+    const previousHeight = container?.scrollHeight ?? 0;
+    const cursor = resumeHistoryLoaded ? resumeHistoryCursor : 0;
+
+    setResumeHistoryLoading(true);
+    setResumeHistoryError("");
+    try {
+      const page = await api.getClaudeSessionHistory(resumeSourceSessionId, {
+        cursor,
+        limit: RESUME_HISTORY_PAGE_SIZE,
+      });
+
+      const incoming = page.messages.map((msg): ChatMessage => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        contentBlocks: msg.role === "assistant" ? msg.contentBlocks : undefined,
+        timestamp: msg.timestamp || Date.now(),
+        model: msg.role === "assistant" ? msg.model : undefined,
+        stopReason: msg.role === "assistant" ? msg.stopReason : undefined,
+      }));
+
+      const uniqueIncoming: ChatMessage[] = [];
+      for (const msg of incoming) {
+        if (resumeHistoryMessageIdsRef.current.has(msg.id)) continue;
+        resumeHistoryMessageIdsRef.current.add(msg.id);
+        uniqueIncoming.push(msg);
+      }
+
+      setResumeHistoryMessages((prev) => [...uniqueIncoming, ...prev]);
+      setResumeHistoryCursor(page.nextCursor);
+      setResumeHistoryHasMore(page.hasMore);
+      setResumeHistoryLoaded(true);
+
+      if (uniqueIncoming.length > 0) {
+        setVisibleCount((count) => count + uniqueIncoming.length);
+      }
+
+      if (options.preserveScroll !== false && container) {
+        requestAnimationFrame(() => {
+          const newHeight = container.scrollHeight;
+          container.scrollTop += newHeight - previousHeight;
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setResumeHistoryError(message || "Failed to load previous history");
+      if (!resumeHistoryLoaded) {
+        setResumeHistoryMessages([]);
+        setResumeHistoryCursor(0);
+        setResumeHistoryHasMore(false);
+      }
+    } finally {
+      setResumeHistoryLoading(false);
+    }
+  }, [
+    canLoadResumeHistory,
+    resumeSourceSessionId,
+    resumeHistoryLoading,
+    resumeHistoryLoaded,
+    resumeHistoryCursor,
+  ]);
 
   // Tick elapsed time every second while generating
   useEffect(() => {
@@ -413,6 +531,16 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
       el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     const distanceFromBottom = Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
     savedDistanceFromBottomBySession.set(sessionId, distanceFromBottom);
+
+    if (
+      canLoadResumeHistory
+      && resumeHistoryLoaded
+      && resumeHistoryHasMore
+      && !resumeHistoryLoading
+      && el.scrollTop <= SCROLL_TOP_PREFETCH_PX
+    ) {
+      void loadResumeHistoryPage({ preserveScroll: true });
+    }
   }
 
   const scrollToBottomInstant = useCallback(() => {
@@ -463,9 +591,9 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
     if (isNearBottom.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages.length, streamingText]);
+  }, [messages]);
 
-  if (messages.length === 0 && !streamingText) {
+  if (mergedMessages.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 select-none px-6">
         <div className="w-14 h-14 rounded-2xl bg-cc-card border border-cc-border flex items-center justify-center">
@@ -475,10 +603,31 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
           </svg>
         </div>
         <div className="text-center">
-          <p className="text-sm text-cc-fg font-medium mb-1">Start a conversation</p>
-          <p className="text-xs text-cc-muted leading-relaxed">
-            Send a message to begin working with The Companion.
-          </p>
+          {canLoadResumeHistory ? (
+            <>
+              <p className="text-sm text-cc-fg font-medium mb-1">This session has prior Claude context</p>
+              <p className="text-xs text-cc-muted leading-relaxed mb-3">
+                {resumeModeLabel} {resumeSourceSessionId.slice(0, 8)}. Load earlier messages into this chat when needed.
+              </p>
+              <button
+                onClick={() => void loadResumeHistoryPage({ preserveScroll: false })}
+                disabled={resumeHistoryLoading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cc-fg bg-cc-card border border-cc-border rounded-lg hover:bg-cc-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {resumeHistoryLoading ? "Loading..." : "Load previous history"}
+              </button>
+              {resumeHistoryError && (
+                <p className="text-xs text-cc-error mt-2">{resumeHistoryError}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-cc-fg font-medium mb-1">Start a conversation</p>
+              <p className="text-xs text-cc-muted leading-relaxed">
+                Send a message to begin working with The Companion.
+              </p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -489,9 +638,44 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto px-3 sm:px-4 py-4 sm:py-6"
+        className="h-full overflow-y-auto px-4 sm:px-6 py-5 sm:py-8"
       >
-        <div className="max-w-3xl mx-auto space-y-3 sm:space-y-5">
+        <div className="max-w-3xl mx-auto space-y-5 sm:space-y-7">
+          {canLoadResumeHistory && !resumeHistoryLoaded && (
+            <div className="rounded-xl border border-cc-border bg-cc-card p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-cc-fg">{resumeModeLabel} existing Claude thread</p>
+                  <p className="text-[11px] text-cc-muted mt-1">
+                    {resumeSourceSessionId} {sdkSession?.cwd ? `· ${formatResumeSourcePath(sdkSession.cwd)}` : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => void loadResumeHistoryPage({ preserveScroll: true })}
+                  disabled={resumeHistoryLoading}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cc-fg bg-cc-card border border-cc-border rounded-lg hover:bg-cc-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {resumeHistoryLoading ? "Loading..." : "Load previous history"}
+                </button>
+              </div>
+              {resumeHistoryError && (
+                <p className="text-xs text-cc-error mt-2">{resumeHistoryError}</p>
+              )}
+            </div>
+          )}
+
+          {canLoadResumeHistory && resumeHistoryLoaded && (
+            <div className="flex justify-center">
+              <p className="text-[11px] text-cc-muted">
+                {resumeHistoryHasMore
+                  ? (resumeHistoryLoading
+                    ? "Loading older transcript..."
+                    : "Scroll to top to load older transcript")
+                  : "Loaded all available prior transcript"}
+              </p>
+            </div>
+          )}
+
           {hasMore && (
             <div className="flex justify-center pb-2">
               <button
@@ -508,8 +692,8 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
           <FeedEntries entries={visibleEntries} />
 
           {/* Tool progress indicator */}
-          {toolProgress && toolProgress.size > 0 && !streamingText && (
-            <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
+          {toolProgress && toolProgress.size > 0 && !hasStreamingAssistant && (
+            <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-10">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-cc-primary animate-pulse" />
               {Array.from(toolProgress.values()).map((p, i) => (
                 <span key={i} className="flex items-center gap-1">
@@ -521,28 +705,9 @@ export function MessageFeed({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          {/* Streaming indicator */}
-          {streamingText && (
-            <div className="animate-[fadeSlideIn_0.2s_ease-out]">
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-cc-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 text-cc-primary">
-                    <path d="M8 1v14M1 8h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <pre className="font-serif-assistant text-[15px] text-cc-fg whitespace-pre-wrap break-words leading-relaxed">
-                    {streamingText}
-                    <span className="inline-block w-0.5 h-4 bg-cc-primary ml-0.5 align-middle animate-[pulse-dot_0.8s_ease-in-out_infinite]" />
-                  </pre>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Generation stats bar */}
           {sessionStatus === "running" && elapsed > 0 && (
-            <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-9">
+            <div className="flex items-center gap-1.5 text-[11px] text-cc-muted font-mono-code pl-10">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-cc-primary animate-pulse" />
               <span>Generating...</span>
               <span className="text-cc-muted/60">(</span>

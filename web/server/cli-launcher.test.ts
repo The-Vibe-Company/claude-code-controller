@@ -158,6 +158,7 @@ describe("launch", () => {
     expect(cmdAndArgs).toContain("--output-format");
     expect(cmdAndArgs).toContain("stream-json");
     expect(cmdAndArgs).toContain("--input-format");
+    expect(cmdAndArgs).toContain("--include-partial-messages");
     expect(cmdAndArgs).toContain("--verbose");
 
     // Headless prompt
@@ -235,6 +236,21 @@ describe("launch", () => {
       [],
     );
     expect(toolFlags).toEqual(["Read", "Write", "Bash"]);
+  });
+
+  it("passes branching flags when resumeSessionAt/forkSession are provided", () => {
+    // These flags enable starting a new branch of work from a prior session point.
+    launcher.launch({
+      cwd: "/tmp",
+      resumeSessionAt: "prior-session-123",
+      forkSession: true,
+    });
+
+    const [cmdAndArgs] = mockSpawn.mock.calls[0];
+    const resumeAtIdx = cmdAndArgs.indexOf("--resume-session-at");
+    expect(resumeAtIdx).toBeGreaterThan(-1);
+    expect(cmdAndArgs[resumeAtIdx + 1]).toBe("prior-session-123");
+    expect(cmdAndArgs).toContain("--fork-session");
   });
 
   it("resolves binary path via resolveBinary when not absolute", () => {

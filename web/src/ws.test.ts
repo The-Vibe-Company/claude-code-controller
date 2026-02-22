@@ -326,6 +326,82 @@ describe("handleMessage: assistant", () => {
     expect(state.sessionStatus.get("s1")).toBe("running");
   });
 
+  it("replaces a streaming draft message instead of appending a second assistant bubble", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "Partial answer" } },
+      parent_tool_use_id: null,
+    });
+
+    let msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("assistant");
+    expect(msgs[0].isStreaming).toBe(true);
+    expect(msgs[0].content).toBe("Partial answer");
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-final-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [{ type: "text", text: "Final answer" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe("msg-final-1");
+    expect(msgs[0].content).toBe("Final answer");
+    expect(msgs[0].isStreaming).toBeUndefined();
+  });
+
+  it("upserts assistant updates when Claude reuses the same message id", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-shared-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [{ type: "thinking", thinking: "Thinking step" }],
+        stop_reason: null,
+        usage: { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    fireMessage({
+      type: "assistant",
+      message: {
+        id: "msg-shared-1",
+        type: "message",
+        role: "assistant",
+        model: "claude-opus-4-20250514",
+        content: [{ type: "text", text: "Final answer text" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+      },
+      parent_tool_use_id: null,
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe("msg-shared-1");
+    expect(msgs[0].contentBlocks?.map((b) => b.type)).toEqual(["thinking", "text"]);
+    expect(msgs[0].content).toContain("Final answer text");
+  });
+
   it("tracks changed files using session cwd for relative tool paths", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
@@ -351,11 +427,10 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed?.has("/home/user/web/server/index.ts")).toBe(true);
+    expect(useStore.getState().changedFilesTick.get("s1")).toBe(1);
   });
 
-  it("ignores changed files outside the session cwd", () => {
+  it("does not bump changedFilesTick for files outside session cwd", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
@@ -380,11 +455,10 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed).toBeUndefined();
+    expect(useStore.getState().changedFilesTick.get("s1")).toBeUndefined();
   });
 
-  it("tracks changed files with absolute paths when inside cwd", () => {
+  it("bumps changedFilesTick for absolute paths when inside cwd", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
 
@@ -409,8 +483,7 @@ describe("handleMessage: assistant", () => {
       parent_tool_use_id: null,
     });
 
-    const changed = useStore.getState().changedFiles.get("s1");
-    expect(changed?.has("/home/user/README.md")).toBe(true);
+    expect(useStore.getState().changedFilesTick.get("s1")).toBe(1);
   });
 });
 
@@ -572,6 +645,37 @@ describe("handleMessage: result", () => {
     expect(state.sessionStatus.get("s1")).toBe("idle");
   });
 
+  it("clears transient streaming draft bubble when a turn ends without a final assistant message", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "Partial output" } },
+      parent_tool_use_id: null,
+    });
+    expect(useStore.getState().messages.get("s1")).toHaveLength(1);
+
+    fireMessage({
+      type: "result",
+      data: {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 1000,
+        duration_api_ms: 800,
+        num_turns: 1,
+        total_cost_usd: 0.05,
+        stop_reason: "end_turn",
+        usage: { input_tokens: 100, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+        uuid: "u1",
+        session_id: "s1",
+      },
+    });
+
+    expect(useStore.getState().messages.get("s1")).toEqual([]);
+  });
+
   it("appends a system error message when result has errors", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
@@ -671,6 +775,56 @@ describe("handleMessage: status_change", () => {
     fireMessage({ type: "status_change", status: "running" });
 
     expect(useStore.getState().sessionStatus.get("s1")).toBe("running");
+  });
+});
+
+// ===========================================================================
+// handleMessage: system_event
+// ===========================================================================
+describe("handleMessage: system_event", () => {
+  it("appends compact/task/files events as system chat messages", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "system_event",
+      timestamp: 1500,
+      event: {
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "auto", pre_tokens: 2048 },
+        uuid: "u-compact",
+        session_id: "s1",
+      },
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].content).toContain("Context compacted");
+    expect(msgs[0].timestamp).toBe(1500);
+  });
+
+  it("ignores noisy hook_progress events in chat", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "system_event",
+      event: {
+        subtype: "hook_progress",
+        hook_id: "hk-1",
+        hook_name: "lint",
+        hook_event: "post_tool_use",
+        stdout: "running",
+        stderr: "",
+        output: "running",
+        uuid: "u-hook-progress",
+        session_id: "s1",
+      },
+    });
+
+    const msgs = useStore.getState().messages.get("s1") || [];
+    expect(msgs).toHaveLength(0);
   });
 });
 
@@ -845,6 +999,51 @@ describe("handleMessage: message_history", () => {
     expect(useStore.getState().messages.get("s1")).toHaveLength(2);
   });
 
+  it("merges assistant history entries that share a message id", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        {
+          type: "assistant",
+          message: {
+            id: "msg-shared-history-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "thinking", thinking: "Planning..." }],
+            stop_reason: null,
+            usage: { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 1000,
+        },
+        {
+          type: "assistant",
+          message: {
+            id: "msg-shared-history-1",
+            type: "message",
+            role: "assistant",
+            model: "claude-opus-4-20250514",
+            content: [{ type: "text", text: "Final from history" }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+          },
+          parent_tool_use_id: null,
+          timestamp: 1001,
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].id).toBe("msg-shared-history-1");
+    expect(msgs[0].contentBlocks?.map((b) => b.type)).toEqual(["thinking", "text"]);
+    expect(msgs[0].content).toContain("Final from history");
+  });
+
   it("preserves original timestamps from history instead of using Date.now()", () => {
     wsModule.connectSession("s1");
     fireMessage({ type: "session_init", session: makeSession("s1") });
@@ -873,6 +1072,51 @@ describe("handleMessage: message_history", () => {
     const msgs = useStore.getState().messages.get("s1")!;
     expect(msgs[0].timestamp).toBe(42000);
     expect(msgs[1].timestamp).toBe(43000);
+  });
+
+  it("reconstructs persisted system events from history and skips hook_progress", () => {
+    wsModule.connectSession("s1");
+    fireMessage({ type: "session_init", session: makeSession("s1") });
+
+    fireMessage({
+      type: "message_history",
+      messages: [
+        {
+          type: "system_event",
+          timestamp: 45000,
+          event: {
+            subtype: "task_notification",
+            task_id: "task-1",
+            status: "completed",
+            output_file: "/tmp/out.txt",
+            summary: "Done",
+            uuid: "u-task",
+            session_id: "s1",
+          },
+        },
+        {
+          type: "system_event",
+          timestamp: 46000,
+          event: {
+            subtype: "hook_progress",
+            hook_id: "hk-1",
+            hook_name: "lint",
+            hook_event: "post_tool_use",
+            stdout: "running",
+            stderr: "",
+            output: "running",
+            uuid: "u-hook-progress",
+            session_id: "s1",
+          },
+        },
+      ],
+    });
+
+    const msgs = useStore.getState().messages.get("s1")!;
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].content).toContain("Task completed: task-1");
+    expect(msgs[0].timestamp).toBe(45000);
   });
 });
 

@@ -171,7 +171,7 @@ export function SessionTerminalDock({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 bg-cc-bg">
+      <div className="flex-1 min-h-0" style={{ background: "var(--terminal-bg, #141413)" }}>
         {quickTerminalTabs.map((tab) => (
           <div key={tab.id} className={activeQuickTerminalTabId === tab.id ? "h-full" : "hidden"}>
             <TerminalView

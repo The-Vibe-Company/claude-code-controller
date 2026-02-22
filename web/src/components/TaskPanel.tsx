@@ -4,6 +4,7 @@ import { api, type UsageLimits, type GitHubPRInfo, type LinearIssue, type Linear
 import type { TaskItem } from "../types.js";
 import { McpSection } from "./McpPanel.js";
 import { LinearLogo } from "./LinearLogo.js";
+import { ClaudeConfigBrowser } from "./ClaudeConfigBrowser.js";
 import { SECTION_DEFINITIONS } from "./task-panel-sections.js";
 import { formatResetTime, formatCodexResetTime, formatWindowDuration, formatTokenCount } from "../utils/format.js";
 import { timeAgo } from "../utils/time-ago.js";
@@ -563,6 +564,7 @@ function LinearIssueSection({ sessionId }: { sessionId: string }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search issues..."
+                aria-label="Search Linear issues"
                 className="flex-1 text-[11px] bg-transparent border border-cc-border rounded-md px-2 py-1.5 text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
               />
               <button
@@ -731,6 +733,7 @@ function LinearIssueSection({ sessionId }: { sessionId: string }) {
           onChange={(e) => setCommentText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendComment(); } }}
           placeholder="Add a comment..."
+          aria-label="Add a comment"
           className="flex-1 text-[11px] bg-transparent border border-cc-border rounded-md px-2 py-1.5 text-cc-fg placeholder:text-cc-muted focus:outline-none focus:border-cc-primary/50"
         />
         <button
@@ -1032,6 +1035,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
               setTaskPanelOpen(false);
             }
           }}
+          aria-label="Close panel"
           className="flex items-center justify-center w-6 h-6 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
         >
           <svg
@@ -1051,6 +1055,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
       ) : (
         <>
           <div data-testid="task-panel-content" className="min-h-0 flex-1 overflow-y-auto">
+            <ClaudeConfigBrowser sessionId={sessionId} />
             {applicableSections
               .filter((id) => config.enabled[id] !== false)
               .map((sectionId) => {

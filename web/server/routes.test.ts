@@ -94,6 +94,35 @@ vi.mock("./linear-project-manager.js", () => ({
   _resetForTest: vi.fn(),
 }));
 
+const mockDiscoverClaudeSessions = vi.hoisted(() => vi.fn(
+  (_options?: { limit?: number }) =>
+    [] as Array<{
+      sessionId: string;
+      cwd: string;
+      gitBranch?: string;
+      slug?: string;
+      lastActivityAt: number;
+      sourceFile: string;
+    }>
+));
+vi.mock("./claude-session-discovery.js", () => ({
+  discoverClaudeSessions: mockDiscoverClaudeSessions,
+}));
+
+const mockGetClaudeSessionHistoryPage = vi.hoisted(() => vi.fn(
+  (_options?: { sessionId: string; limit?: number; cursor?: number }) =>
+    null as {
+      sourceFile: string;
+      nextCursor: number;
+      hasMore: boolean;
+      totalMessages: number;
+      messages: Array<{ id: string; role: "user" | "assistant"; content: string; timestamp: number }>;
+    } | null
+));
+vi.mock("./claude-session-history.js", () => ({
+  getClaudeSessionHistoryPage: mockGetClaudeSessionHistoryPage,
+}));
+
 const mockGetUsageLimits = vi.hoisted(() => vi.fn());
 const mockUpdateCheckerState = vi.hoisted(() => ({
   currentVersion: "0.22.1",
@@ -218,6 +247,8 @@ let terminalManager: { getInfo: ReturnType<typeof vi.fn>; spawn: ReturnType<type
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockDiscoverClaudeSessions.mockReturnValue([]);
+  mockGetClaudeSessionHistoryPage.mockReturnValue(null);
   mockUpdateCheckerState.currentVersion = "0.22.1";
   mockUpdateCheckerState.latestVersion = null;
   mockUpdateCheckerState.lastChecked = 0;
@@ -285,6 +316,27 @@ describe("POST /api/sessions/create", () => {
     expect(json).toMatchObject({ sessionId: "session-1", state: "starting", cwd: "/test" });
     expect(launcher.launch).toHaveBeenCalledWith(
       expect.objectContaining({ model: "claude-sonnet-4-6", cwd: "/test" }),
+    );
+  });
+
+  it("passes launch branching controls through to launcher", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/test",
+        resumeSessionAt: "  prior-session-123  ",
+        forkSession: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/test",
+        resumeSessionAt: "prior-session-123",
+        forkSession: true,
+      }),
     );
   });
 
@@ -851,6 +903,92 @@ describe("GET /api/sessions/:id", () => {
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json).toEqual({ error: "Session not found" });
+  });
+});
+
+describe("GET /api/claude/sessions/discover", () => {
+  it("returns discovered Claude sessions and forwards limit", async () => {
+    mockDiscoverClaudeSessions.mockReturnValue([
+      {
+        sessionId: "session-123",
+        cwd: "/repo",
+        gitBranch: "feature/branch",
+        slug: "calm-mountain",
+        lastActivityAt: 12345,
+        sourceFile: "/Users/test/.claude/projects/repo/session-123.jsonl",
+      },
+    ]);
+
+    const res = await app.request("/api/claude/sessions/discover?limit=250", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(mockDiscoverClaudeSessions).toHaveBeenCalledWith({ limit: 250 });
+    const json = await res.json();
+    expect(json).toEqual({
+      sessions: [
+        {
+          sessionId: "session-123",
+          cwd: "/repo",
+          gitBranch: "feature/branch",
+          slug: "calm-mountain",
+          lastActivityAt: 12345,
+          sourceFile: "/Users/test/.claude/projects/repo/session-123.jsonl",
+        },
+      ],
+    });
+  });
+});
+
+describe("GET /api/claude/sessions/:id/history", () => {
+  it("returns paged Claude transcript history and forwards cursor/limit", async () => {
+    // Validate route wiring so frontend pagination requests reach the loader with the same cursor/limit.
+    mockGetClaudeSessionHistoryPage.mockReturnValue({
+      sourceFile: "/Users/test/.claude/projects/repo/session-123.jsonl",
+      nextCursor: 80,
+      hasMore: true,
+      totalMessages: 140,
+      messages: [
+        {
+          id: "resume-session-123-user-u1",
+          role: "user",
+          content: "Prior prompt",
+          timestamp: 1,
+        },
+        {
+          id: "resume-session-123-assistant-a1",
+          role: "assistant",
+          content: "Prior answer",
+          timestamp: 2,
+        },
+      ],
+    });
+
+    const res = await app.request("/api/claude/sessions/session-123/history?limit=40&cursor=40", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    expect(mockGetClaudeSessionHistoryPage).toHaveBeenCalledWith({
+      sessionId: "session-123",
+      limit: 40,
+      cursor: 40,
+    });
+    const json = await res.json();
+    expect(json).toMatchObject({
+      nextCursor: 80,
+      hasMore: true,
+      totalMessages: 140,
+    });
+    expect(json.messages).toHaveLength(2);
+  });
+
+  it("returns 404 when transcript history does not exist", async () => {
+    // Validate explicit not-found semantics so UI can render a clear empty/error state.
+    mockGetClaudeSessionHistoryPage.mockReturnValue(null);
+
+    const res = await app.request("/api/claude/sessions/missing/history", { method: "GET" });
+
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json).toEqual({ error: "Claude session history not found" });
   });
 });
 
@@ -2903,8 +3041,8 @@ describe("GET /api/sessions/:id/usage-limits", () => {
   it("returns mapped Codex rate limits for a codex session", async () => {
     bridge.getSession.mockReturnValue({ backendType: "codex" });
     bridge.getCodexRateLimits.mockReturnValue({
-      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
-      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 * 1000 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 * 1000 },
     });
 
     const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
@@ -2932,6 +3070,28 @@ describe("GET /api/sessions/:id/usage-limits", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
+  });
+
+  it("maps Codex rate limits when bridge still returns second-based timestamps", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "codex" });
+    bridge.getCodexRateLimits.mockReturnValue({
+      // Backward-compat coverage for pre-normalized payloads from bridge/session state.
+      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+    });
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.five_hour).toEqual({
+      utilization: 25,
+      resets_at: new Date(1730947200 * 1000).toISOString(),
+    });
+    expect(json.seven_day).toEqual({
+      utilization: 10,
+      resets_at: new Date(1731552000 * 1000).toISOString(),
+    });
   });
 
   it("handles codex rate limits with null secondary", async () => {
@@ -3016,6 +3176,29 @@ describe("POST /api/sessions/create-stream", () => {
     const doneData = JSON.parse(doneEvent!.data);
     expect(doneData.sessionId).toBe("session-1");
     expect(doneData.cwd).toBe("/test");
+  });
+
+  it("passes launch branching controls through to launcher", async () => {
+    const res = await app.request("/api/sessions/create-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/test",
+        resumeSessionAt: "prior-session-456",
+        forkSession: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    await parseSSE(res);
+
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/test",
+        resumeSessionAt: "prior-session-456",
+        forkSession: true,
+      }),
+    );
   });
 
   it("emits git progress events when branch is specified", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -8,6 +8,7 @@ import {
   createTerminalConnection,
   type TerminalConnection,
 } from "../terminal-ws.js";
+import { TerminalAccessoryBar } from "./TerminalAccessoryBar.js";
 
 interface TerminalViewProps {
   cwd: string;
@@ -42,6 +43,7 @@ export function TerminalView({
   const fitRef = useRef<FitAddon | null>(null);
   const connectionRef = useRef<TerminalConnection | null>(null);
   const terminalIdRef = useRef<string | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
   const darkMode = useStore((s) => s.darkMode);
 
   // Main effect: create xterm + spawn PTY — only depends on cwd
@@ -50,78 +52,97 @@ export function TerminalView({
 
     let cancelled = false;
 
-    const xterm = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily:
-        "'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace",
-      theme: getTerminalTheme(useStore.getState().darkMode),
-    });
+    const FONT_FAMILY =
+      "'MesloLGS Nerd Font Mono', 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace";
+    const FONT_SIZE = window.innerWidth < 640 ? 11 : 13;
 
-    const fit = new FitAddon();
-    xterm.loadAddon(fit);
-    xterm.open(terminalRef.current);
+    function init() {
+      if (cancelled || !terminalRef.current) return;
 
-    xtermRef.current = xterm;
-    fitRef.current = fit;
-
-    // Spawn terminal on server then connect WebSocket
-    api
-      .spawnTerminal(cwd, xterm.cols, xterm.rows, { containerId })
-      .then(({ terminalId }) => {
-        if (cancelled) return;
-        useStore.getState().setTerminalId(terminalId);
-        terminalIdRef.current = terminalId;
-
-        connectionRef.current = createTerminalConnection(
-          terminalId,
-          {
-            onData: (data) => xterm.write(data),
-            onExit: (exitCode) => {
-              xterm.writeln(`\r\n[Process exited with code ${exitCode}]`);
-            },
-            onError: (errMsg) => {
-              xterm.writeln(`\r\n[${errMsg}]`);
-            },
-            onOpen: () => {
-              // WebSocket is now open — send the actual fitted dimensions
-              // (ResizeObserver may have fired before the socket was ready)
-              fit.fit();
-              connectionRef.current?.sendResize(xterm.cols, xterm.rows);
-            },
-          },
-        );
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        xterm.writeln(`\r\n[Failed to start terminal: ${err.message}]`);
+      const xterm = new Terminal({
+        cursorBlink: true,
+        fontSize: FONT_SIZE,
+        fontFamily: FONT_FAMILY,
+        theme: getTerminalTheme(useStore.getState().darkMode),
       });
 
-    // Forward xterm input to server
-    const inputDisposable = xterm.onData((data) => connectionRef.current?.sendInput(data));
+      const fit = new FitAddon();
+      xterm.loadAddon(fit);
+      xterm.open(terminalRef.current);
 
-    // Handle resize — also handles initial sizing once layout is ready
-    const container = terminalRef.current;
-    const resizeObserver = new ResizeObserver(() => {
-      fit.fit();
-      connectionRef.current?.sendResize(xterm.cols, xterm.rows);
-    });
-    resizeObserver.observe(container);
+      xtermRef.current = xterm;
+      fitRef.current = fit;
+
+      // Spawn terminal on server then connect WebSocket
+      api
+        .spawnTerminal(cwd, xterm.cols, xterm.rows, { containerId })
+        .then(({ terminalId }) => {
+          if (cancelled) return;
+          useStore.getState().setTerminalId(terminalId);
+          terminalIdRef.current = terminalId;
+
+          connectionRef.current = createTerminalConnection(
+            terminalId,
+            {
+              onData: (data) => xterm.write(data),
+              onExit: (exitCode) => {
+                xterm.writeln(`\r\n[Process exited with code ${exitCode}]`);
+              },
+              onError: (errMsg) => {
+                xterm.writeln(`\r\n[${errMsg}]`);
+              },
+              onOpen: () => {
+                // WebSocket is now open — send the actual fitted dimensions
+                // (ResizeObserver may have fired before the socket was ready)
+                fit.fit();
+                connectionRef.current?.sendResize(xterm.cols, xterm.rows);
+              },
+            },
+          );
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          xterm.writeln(`\r\n[Failed to start terminal: ${err.message}]`);
+        });
+
+      // Forward xterm input to server
+      const inputDisposable = xterm.onData((data) => connectionRef.current?.sendInput(data));
+
+      // Handle resize — also handles initial sizing once layout is ready
+      const container = terminalRef.current!;
+      const resizeObserver = new ResizeObserver(() => {
+        fit.fit();
+        connectionRef.current?.sendResize(xterm.cols, xterm.rows);
+      });
+      resizeObserver.observe(container);
+
+      // Stash disposables so cleanup can reach them
+      cleanupRef.current = () => {
+        resizeObserver.disconnect();
+        inputDisposable.dispose();
+        connectionRef.current?.disconnect();
+        connectionRef.current = null;
+        xterm.dispose();
+        xtermRef.current = null;
+        fitRef.current = null;
+        const terminalId = terminalIdRef.current;
+        terminalIdRef.current = null;
+        if (terminalId) {
+          api.killTerminal(terminalId).catch(() => {});
+        }
+      };
+    }
+
+    // Wait for the Nerd Font to be ready so xterm gets correct metrics from the start.
+    // Falls back after 2s to avoid blocking forever if the font fails to load.
+    const fontReady = document.fonts.load(`${FONT_SIZE}px ${FONT_FAMILY.split(",")[0]}`);
+    const timeout = new Promise<void>((r) => setTimeout(r, 2000));
+    Promise.race([fontReady, timeout]).then(init);
 
     return () => {
       cancelled = true;
-      resizeObserver.disconnect();
-      inputDisposable.dispose();
-      connectionRef.current?.disconnect();
-      connectionRef.current = null;
-      xterm.dispose();
-      xtermRef.current = null;
-      fitRef.current = null;
-      const terminalId = terminalIdRef.current;
-      terminalIdRef.current = null;
-      if (terminalId) {
-        api.killTerminal(terminalId).catch(() => {});
-      }
+      cleanupRef.current?.();
+      cleanupRef.current = null;
     };
   }, [cwd, containerId]);
 
@@ -139,6 +160,20 @@ export function TerminalView({
     fitRef.current.fit();
     connectionRef.current?.sendResize(xtermRef.current.cols, xtermRef.current.rows);
   }, [visible]);
+
+  // Callbacks for the mobile accessory bar
+  const writeToTerminal = useCallback((data: string) => {
+    connectionRef.current?.sendInput(data);
+  }, []);
+
+  const pasteToTerminal = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) connectionRef.current?.sendInput(text);
+    } catch {
+      // Clipboard API not available or permission denied — silently ignore
+    }
+  }, []);
 
   const terminalFrame = (
     <div
@@ -186,10 +221,15 @@ export function TerminalView({
     </div>
   );
 
+  const accessoryBar = (
+    <TerminalAccessoryBar onWrite={writeToTerminal} onPaste={pasteToTerminal} />
+  );
+
   if (embedded) {
     return (
       <div className={`h-full ${visible ? "" : "hidden"}`}>
         {terminalFrame}
+        {accessoryBar}
       </div>
     );
   }
@@ -197,6 +237,7 @@ export function TerminalView({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       {terminalFrame}
+      {accessoryBar}
     </div>
   );
 }

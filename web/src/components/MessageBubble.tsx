@@ -33,9 +33,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
               ))}
             </div>
           )}
-          <pre className="text-[13px] sm:text-[14px] whitespace-pre-wrap break-words font-sans-ui leading-relaxed">
-            {message.content}
-          </pre>
+          <div className="text-[13px] sm:text-[14px] leading-relaxed break-words">
+            <MarkdownContent text={message.content} />
+          </div>
         </div>
       </div>
     );
@@ -107,7 +107,7 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
       <div className="flex items-start gap-3">
         <AssistantAvatar />
         <div className="flex-1 min-w-0">
-          <MarkdownContent text={message.content} />
+          <MarkdownContent text={message.content} showCursor={!!message.isStreaming} />
         </div>
       </div>
     );
@@ -144,7 +144,7 @@ function AssistantAvatar() {
   );
 }
 
-function MarkdownContent({ text }: { text: string }) {
+function MarkdownContent({ text, showCursor = false }: { text: string; showCursor?: boolean }) {
   return (
     <div className="markdown-body text-[14px] sm:text-[15px] text-cc-fg leading-relaxed overflow-hidden">
       <Markdown
@@ -212,7 +212,7 @@ function MarkdownContent({ text }: { text: string }) {
             }
 
             return (
-              <code className="px-1 py-0.5 rounded bg-cc-code-bg/30 text-[13px] font-mono-code text-cc-primary">
+              <code className="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-[13px] font-mono-code text-cc-fg/80">
                 {children}
               </code>
             );
@@ -242,6 +242,12 @@ function MarkdownContent({ text }: { text: string }) {
       >
         {text}
       </Markdown>
+      {showCursor && (
+        <span
+          data-testid="assistant-stream-cursor"
+          className="inline-block w-0.5 h-4 bg-cc-primary ml-0.5 align-middle animate-[pulse-dot_0.8s_ease-in-out_infinite]"
+        />
+      )}
     </div>
   );
 }
@@ -408,7 +414,7 @@ function ThinkingBlock({ text }: { text: string }) {
                   ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>,
                   li: ({ children }) => <li>{children}</li>,
                   code: ({ children }) => (
-                    <code className="px-1 py-0.5 rounded bg-cc-code-bg/40 text-cc-primary font-mono-code text-[12px]">
+                    <code className="px-1.5 py-0.5 rounded-md bg-cc-fg/[0.06] text-cc-fg/80 font-mono-code text-[12px]">
                       {children}
                     </code>
                   ),

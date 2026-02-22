@@ -509,6 +509,65 @@ describe("CLI handlers", () => {
     expect(calls).toContainEqual(expect.objectContaining({ type: "status_change", status: "compacting" }));
   });
 
+  it("handleCLIMessage: forwards compact_boundary as system_event and persists it", () => {
+    const cli = makeCliSocket("s1");
+    const browser = makeBrowserSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "system",
+      subtype: "compact_boundary",
+      compact_metadata: { trigger: "auto", pre_tokens: 4096 },
+      uuid: "uuid-compact",
+      session_id: "s1",
+    }));
+
+    const session = bridge.getSession("s1")!;
+    expect(session.messageHistory).toHaveLength(1);
+    expect(session.messageHistory[0]).toMatchObject({
+      type: "system_event",
+      event: {
+        subtype: "compact_boundary",
+      },
+    });
+
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    const forwarded = calls.find((c: any) => c.type === "system_event");
+    expect(forwarded).toBeDefined();
+    expect(forwarded.event.subtype).toBe("compact_boundary");
+  });
+
+  it("handleCLIMessage: forwards hook_progress as system_event without persisting history", () => {
+    const cli = makeCliSocket("s1");
+    const browser = makeBrowserSocket("s1");
+    bridge.handleCLIOpen(cli, "s1");
+    bridge.handleBrowserOpen(browser, "s1");
+    browser.send.mockClear();
+
+    bridge.handleCLIMessage(cli, JSON.stringify({
+      type: "system",
+      subtype: "hook_progress",
+      hook_id: "hk-1",
+      hook_name: "lint",
+      hook_event: "post_tool_use",
+      stdout: "running",
+      stderr: "",
+      output: "running",
+      uuid: "uuid-hook-progress",
+      session_id: "s1",
+    }));
+
+    const session = bridge.getSession("s1")!;
+    expect(session.messageHistory).toHaveLength(0);
+
+    const calls = browser.send.mock.calls.map(([arg]: [string]) => JSON.parse(arg));
+    const forwarded = calls.find((c: any) => c.type === "system_event");
+    expect(forwarded).toBeDefined();
+    expect(forwarded.event.subtype).toBe("hook_progress");
+  });
+
   it("handleCLIClose: nulls cliSocket and broadcasts cli_disconnected", () => {
     const cli = makeCliSocket("s1");
     const browser = makeBrowserSocket("s1");

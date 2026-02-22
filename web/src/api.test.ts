@@ -109,6 +109,53 @@ describe("listSessions", () => {
   });
 });
 
+describe("discoverClaudeSessions", () => {
+  it("sends GET to /api/claude/sessions/discover with limit", async () => {
+    const payload = {
+      sessions: [
+        {
+          sessionId: "ac5b80ba-2927-4f20-84c2-6bbaf9afdeb3",
+          cwd: "/Users/skolte/Github-Private/companion",
+          gitBranch: "main",
+          slug: "snazzy-baking-tarjan",
+          lastActivityAt: 1234,
+          sourceFile: "/Users/skolte/.claude/projects/-Users-skolte-Github-Private-companion/ac5b80ba-2927-4f20-84c2-6bbaf9afdeb3.jsonl",
+        },
+      ],
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(payload));
+
+    const result = await api.discoverClaudeSessions(250);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/claude/sessions/discover?limit=250");
+    expect(opts).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+});
+
+describe("getClaudeSessionHistory", () => {
+  it("sends GET to /api/claude/sessions/:id/history with cursor and limit", async () => {
+    const payload = {
+      sourceFile: "/Users/skolte/.claude/projects/repo/session-1.jsonl",
+      nextCursor: 40,
+      hasMore: true,
+      totalMessages: 120,
+      messages: [],
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(payload));
+
+    const result = await api.getClaudeSessionHistory("session-1", { cursor: 20, limit: 20 });
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("/api/claude/sessions/session-1/history?cursor=20&limit=20");
+    expect(opts).toBeUndefined();
+    expect(result).toEqual(payload);
+  });
+});
+
 // ===========================================================================
 // killSession
 // ===========================================================================

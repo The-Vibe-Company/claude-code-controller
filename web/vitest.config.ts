@@ -8,12 +8,10 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "text-summary"],
       thresholds: {
-        global: {
-          statements: 80,
-          branches: 80,
-          functions: 80,
-          lines: 80,
-        },
+        statements: 65,
+        branches: 55,
+        functions: 60,
+        lines: 65,
       },
     },
     include: ["server/**/*.test.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],

@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
+/* Meslo LGS Nerd Font Mono — terminal font with powerline & devicon glyphs */
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  src: url("/fonts/MesloLGSNerdFontMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "MesloLGS Nerd Font Mono";
+  src: url("/fonts/MesloLGSNerdFontMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   /* Light Mode (default) */
-  --color-cc-bg: #F5F5F0;
-  --color-cc-fg: #1a1a18;
+  --color-cc-bg: #ffffff;
+  --color-cc-fg: #141413;
   --color-cc-card: #FFFFFF;
-  --color-cc-primary: #ae5630;
-  --color-cc-primary-hover: #c4643a;
-  --color-cc-user-bubble: #DDD9CE;
-  --color-cc-border: rgba(0,0,0,0.15);
-  --color-cc-muted: #7d796e;
-  --color-cc-sidebar: #EDEAE2;
+  --color-cc-primary: #d97757;
+  --color-cc-primary-hover: #e08b6b;
+  --color-cc-user-bubble: #f0efe8;
+  --color-cc-border: rgba(31,30,29,0.10);
+  --color-cc-muted: #6f6e69;
+  --color-cc-sidebar: #f5f4ef;
   --color-cc-input-bg: #FFFFFF;
   --color-cc-code-bg: #1e1e1e;
   --color-cc-code-fg: #d4d4d4;
-  --color-cc-hover: rgba(0,0,0,0.07);
-  --color-cc-active: rgba(0,0,0,0.12);
+  --color-cc-hover: rgba(31,30,29,0.05);
+  --color-cc-active: rgba(31,30,29,0.09);
   --color-cc-success: #2d7d46;
   --color-cc-error: #c53030;
   --color-cc-warning: #b7791f;
-  --color-cc-sidebar-footer: #E5E2DA;
-  --color-cc-separator: rgba(0,0,0,0.08);
+  --color-cc-sidebar-footer: #edece5;
+  --color-cc-separator: rgba(31,30,29,0.06);
 }
 
 @keyframes fadeSlideIn {
@@ -105,25 +121,25 @@
 
 /* Dark mode overrides */
 .dark {
-  --color-cc-bg: #2b2a27;
-  --color-cc-fg: #eeeeee;
-  --color-cc-card: #1f1e1b;
-  --color-cc-primary: #ae5630;
-  --color-cc-primary-hover: #c4643a;
-  --color-cc-user-bubble: #393937;
-  --color-cc-border: rgba(255,255,255,0.08);
-  --color-cc-muted: #8a8780;
-  --color-cc-sidebar: #252422;
-  --color-cc-input-bg: #1f1e1b;
+  --color-cc-bg: #262624;
+  --color-cc-fg: #faf9f5;
+  --color-cc-card: #141413;
+  --color-cc-primary: #d97757;
+  --color-cc-primary-hover: #e08b6b;
+  --color-cc-user-bubble: #30302e;
+  --color-cc-border: rgba(222,220,209,0.15);
+  --color-cc-muted: #c2c0b6;
+  --color-cc-sidebar: #262624;
+  --color-cc-input-bg: #141413;
   --color-cc-code-bg: #141413;
   --color-cc-code-fg: #d4d4d4;
-  --color-cc-hover: rgba(255,255,255,0.04);
-  --color-cc-active: rgba(255,255,255,0.07);
+  --color-cc-hover: rgba(222,220,209,0.06);
+  --color-cc-active: rgba(222,220,209,0.10);
   --color-cc-success: #48bb78;
   --color-cc-error: #fc8181;
   --color-cc-warning: #f6e05e;
-  --color-cc-sidebar-footer: #1f1e1b;
-  --color-cc-separator: rgba(255,255,255,0.05);
+  --color-cc-sidebar-footer: #141413;
+  --color-cc-separator: rgba(222,220,209,0.08);
 }
 
 /* Scrollbar styling */
@@ -159,6 +175,26 @@
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* Global focus-visible ring — ensures keyboard users always see focus.
+   Wrapped in @layer base so Tailwind utilities (e.g. outline-none) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-cc-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Eliminate 300ms tap delay on interactive elements */
 button,
 [role="button"],
@@ -167,6 +203,19 @@ input,
 textarea,
 select {
   touch-action: manipulation;
+}
+
+/* ─── Safe-area insets for iOS standalone PWA (requires viewport-fit=cover) ─ */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 640px) {
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* ─── DiffViewer ──────────────────────────────────────────────────────────── */
@@ -202,7 +251,7 @@ select {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: rgba(0,0,0,0.15);
+  background: rgba(31,30,29,0.15);
   font-size: 11px;
   border-bottom: 1px solid var(--color-cc-border);
   position: sticky;
@@ -210,13 +259,13 @@ select {
   z-index: 1;
 }
 .dark .diff-file-header {
-  background: rgba(255,255,255,0.04);
+  background: rgba(222,220,209,0.06);
 }
 .diff-hunk-header {
   padding: 4px 12px;
   color: var(--color-cc-primary);
   font-size: 11px;
-  background: rgba(174, 86, 48, 0.06);
+  background: rgba(217, 119, 87, 0.06);
 }
 .diff-line {
   display: flex;
@@ -278,4 +327,10 @@ select {
 }
 .dark .diff-word-del {
   background: rgba(252, 129, 129, 0.2);
+}
+
+/* ─── xterm.js gap fix ──────────────────────────────────────────────────── */
+/* xterm renders whole rows only; stretch the viewport to fill leftover pixels */
+.xterm .xterm-viewport {
+  height: 100% !important;
 }
