@@ -37,7 +37,8 @@ export function formatResetTime(resetsAt: string): string {
  * Returns "now" if the timestamp is in the past.
  */
 export function formatCodexResetTime(resetsAtMs: number): string {
-  const diffMs = resetsAtMs - Date.now();
+  const normalized = resetsAtMs > 0 && resetsAtMs < 1_000_000_000_000 ? resetsAtMs * 1000 : resetsAtMs;
+  const diffMs = normalized - Date.now();
   if (diffMs <= 0) return "now";
   const days = Math.floor(diffMs / 86_400_000);
   const hours = Math.floor((diffMs % 86_400_000) / 3_600_000);
