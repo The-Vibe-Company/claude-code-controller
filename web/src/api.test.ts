@@ -102,9 +102,8 @@ describe("listSessions", () => {
     const result = await api.listSessions();
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/sessions");
-    expect(opts).toBeUndefined();
     expect(result).toEqual(sessions);
   });
 });
@@ -128,9 +127,8 @@ describe("discoverClaudeSessions", () => {
     const result = await api.discoverClaudeSessions(250);
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/claude/sessions/discover?limit=250");
-    expect(opts).toBeUndefined();
     expect(result).toEqual(payload);
   });
 });
@@ -149,9 +147,8 @@ describe("getClaudeSessionHistory", () => {
     const result = await api.getClaudeSessionHistory("session-1", { cursor: 20, limit: 20 });
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const [url] = mockFetch.mock.calls[0];
     expect(url).toBe("/api/claude/sessions/session-1/history?cursor=20&limit=20");
-    expect(opts).toBeUndefined();
     expect(result).toEqual(payload);
   });
 });

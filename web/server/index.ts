@@ -30,6 +30,7 @@ import { CronScheduler } from "./cron-scheduler.js";
 import { startPeriodicCheck, setServiceMode } from "./update-checker.js";
 import { imagePullManager } from "./image-pull-manager.js";
 import { isRunningAsService } from "./service.js";
+import { getToken, verifyToken } from "./auth-manager.js";
 import type { SocketData } from "./ws-bridge.js";
 import type { ServerWebSocket } from "bun";
 
@@ -149,6 +150,10 @@ const server = Bun.serve<SocketData>({
     // ── Browser WebSocket — connects to a specific session ─────────────
     const browserMatch = url.pathname.match(/^\/ws\/browser\/([a-f0-9-]+)$/);
     if (browserMatch) {
+      const wsToken = url.searchParams.get("token");
+      if (!verifyToken(wsToken)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
       const sessionId = browserMatch[1];
       const upgraded = server.upgrade(req, {
         data: { kind: "browser" as const, sessionId },
@@ -160,6 +165,10 @@ const server = Bun.serve<SocketData>({
     // ── Terminal WebSocket — embedded terminal PTY connection ─────────
     const termMatch = url.pathname.match(/^\/ws\/terminal\/([a-f0-9-]+)$/);
     if (termMatch) {
+      const wsToken = url.searchParams.get("token");
+      if (!verifyToken(wsToken)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
       const terminalId = termMatch[1];
       const upgraded = server.upgrade(req, {
         data: { kind: "terminal" as const, terminalId },
@@ -206,7 +215,14 @@ const server = Bun.serve<SocketData>({
   },
 });
 
+const authToken = getToken();
 console.log(`Server running on http://localhost:${server.port}`);
+console.log();
+console.log(`  Auth token: ${authToken}`);
+if (process.env.COMPANION_AUTH_TOKEN) {
+  console.log("  (using COMPANION_AUTH_TOKEN env var)");
+}
+console.log();
 console.log(`  CLI WebSocket:     ws://localhost:${server.port}/ws/cli/:sessionId`);
 console.log(`  Browser WebSocket: ws://localhost:${server.port}/ws/browser/:sessionId`);
 

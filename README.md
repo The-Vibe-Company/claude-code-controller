@@ -77,6 +77,24 @@ Claude Code / Codex CLI
 
 The bridge uses the CLI `--sdk-url` websocket path and NDJSON events.
 
+## Authentication
+
+The server auto-generates an auth token on first start, stored at `~/.companion/auth.json`. You can also manage tokens manually:
+
+```bash
+# Show the current token (or auto-generate one)
+cd web && bun run generate-token
+
+# Force-regenerate a new token
+cd web && bun run generate-token --force
+```
+
+Or set a token via environment variable (takes priority over the file):
+
+```bash
+COMPANION_AUTH_TOKEN="my-secret-token" bunx the-companion
+```
+
 ## Development
 ```bash
 make dev

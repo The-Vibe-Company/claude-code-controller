@@ -1,5 +1,13 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
+// Mock auth-manager so all test requests pass the auth middleware
+vi.mock("./auth-manager.js", () => ({
+  verifyToken: vi.fn(() => true),
+  getToken: vi.fn(() => "test-token-for-routes"),
+  getLanAddress: vi.fn(() => "192.168.1.100"),
+  _resetForTest: vi.fn(),
+}));
+
 // Mock env-manager and git-utils modules before any imports
 vi.mock("./env-manager.js", () => ({
   listEnvs: vi.fn(() => []),

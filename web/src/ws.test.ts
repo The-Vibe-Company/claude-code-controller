@@ -103,7 +103,7 @@ describe("connectSession", () => {
   it("creates a WebSocket with the correct URL", () => {
     wsModule.connectSession("s1");
 
-    expect(lastWs.url).toBe("ws://localhost:3456/ws/browser/s1");
+    expect(lastWs.url).toBe("ws://localhost:3456/ws/browser/s1?token=");
     expect(useStore.getState().connectionStatus.get("s1")).toBe("connecting");
   });
 

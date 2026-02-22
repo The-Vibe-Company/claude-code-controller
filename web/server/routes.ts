@@ -31,6 +31,8 @@ import { registerSystemRoutes } from "./routes/system-routes.js";
 import { registerLinearRoutes } from "./routes/linear-routes.js";
 import { discoverClaudeSessions } from "./claude-session-discovery.js";
 import { getClaudeSessionHistoryPage } from "./claude-session-history.js";
+import { verifyToken, getToken, getLanAddress } from "./auth-manager.js";
+import QRCode from "qrcode";
 
 const UPDATE_CHECK_STALE_MS = 5 * 60 * 1000;
 const ROUTES_DIR = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +55,47 @@ export function createRoutes(
   cronScheduler?: import("./cron-scheduler.js").CronScheduler,
 ) {
   const api = new Hono();
+
+  // ─── Auth endpoints (exempt from auth middleware) ──────────────────
+
+  api.post("/auth/verify", async (c) => {
+    const body = await c.req.json().catch(() => ({} as { token?: string }));
+    if (verifyToken(body.token)) {
+      return c.json({ ok: true });
+    }
+    return c.json({ error: "Invalid token" }, 401);
+  });
+
+  api.get("/auth/qr", async (c) => {
+    // QR endpoint requires auth — only authenticated users can generate QR for mobile
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!verifyToken(token)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+
+    const port = Number(process.env.PORT) || (process.env.NODE_ENV === "production" ? 3456 : 3457);
+    const lanIp = getLanAddress();
+    const authToken = getToken();
+    const loginUrl = `http://${lanIp}:${port}?token=${authToken}`;
+    const qrDataUrl = await QRCode.toDataURL(loginUrl, { width: 256, margin: 2 });
+    return c.json({ qrDataUrl, loginUrl });
+  });
+
+  // ─── Auth middleware (protects all routes below) ───────────────────
+
+  api.use("/*", async (c, next) => {
+    // Skip auth for the verify endpoint (handled above)
+    if (c.req.path === "/auth/verify") {
+      return next();
+    }
+    const authHeader = c.req.header("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!verifyToken(token)) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    return next();
+  });
 
   // ─── SDK Sessions (--sdk-url) ─────────────────────────────────────
 
@@ -865,6 +908,239 @@ export function createRoutes(
       return c.json({ error: result.error || "Relaunch failed" }, status);
     }
     return c.json({ ok: true });
+  });
+
+  // Kill a background process spawned by a session
+  api.post("/sessions/:id/processes/:taskId/kill", async (c) => {
+    const sessionId = c.req.param("id");
+    const taskId = c.req.param("taskId");
+
+    // Validate taskId to prevent command injection (hex string from Claude Code)
+    if (!/^[a-f0-9]+$/i.test(taskId)) {
+      return c.json({ error: "Invalid task ID format" }, 400);
+    }
+
+    const session = launcher.getSession(sessionId);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session.pid) return c.json({ error: "Session PID unknown" }, 503);
+
+    try {
+      const { execSync } = await import("node:child_process");
+      // The taskId appears in the output file path of the background process,
+      // so pkill -f matches it reliably
+      if (session.containerId) {
+        containerManager.execInContainer(
+          session.containerId,
+          ["sh", "-c", `pkill -f '${taskId}' 2>/dev/null; true`],
+          5_000,
+        );
+      } else {
+        execSync(`pkill -f '${taskId}' 2>/dev/null; true`, {
+          timeout: 5_000,
+          encoding: "utf-8",
+        });
+      }
+      return c.json({ ok: true, taskId });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ error: `Kill failed: ${msg}` }, 500);
+    }
+  });
+
+  // Kill all background processes for a session
+  api.post("/sessions/:id/processes/kill-all", async (c) => {
+    const sessionId = c.req.param("id");
+    const body = await c.req.json().catch(() => ({} as { taskIds?: string[] }));
+    const taskIds = Array.isArray(body.taskIds) ? body.taskIds : [];
+
+    const session = launcher.getSession(sessionId);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+    if (!session.pid) return c.json({ error: "Session PID unknown" }, 503);
+
+    const results: { taskId: string; ok: boolean; error?: string }[] = [];
+    const { execSync } = await import("node:child_process");
+
+    for (const taskId of taskIds) {
+      if (!/^[a-f0-9]+$/i.test(taskId)) {
+        results.push({ taskId, ok: false, error: "Invalid task ID" });
+        continue;
+      }
+      try {
+        if (session.containerId) {
+          containerManager.execInContainer(
+            session.containerId,
+            ["sh", "-c", `pkill -f '${taskId}' 2>/dev/null; true`],
+            5_000,
+          );
+        } else {
+          execSync(`pkill -f '${taskId}' 2>/dev/null; true`, {
+            timeout: 5_000,
+            encoding: "utf-8",
+          });
+        }
+        results.push({ taskId, ok: true });
+      } catch (e) {
+        results.push({ taskId, ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+
+    return c.json({ ok: true, results });
+  });
+
+  // Scan for dev-related processes listening on TCP ports
+  const DEV_COMMANDS = new Set([
+    "node", "bun", "deno", "ts-node", "tsx",
+    "python", "python3", "uvicorn", "gunicorn", "flask",
+    "ruby", "rails", "puma",
+    "go", "air",
+    "java", "gradle", "mvn",
+    "cargo",
+    "php", "php-fpm",
+    "dotnet",
+    "vite", "next", "nuxt", "remix", "astro",
+    "webpack", "esbuild", "rollup", "parcel",
+    "tsc",
+  ]);
+  // System/IDE processes to exclude even if they listen on a port
+  const EXCLUDE_COMMANDS = new Set([
+    "launchd", "mDNSResponder", "rapportd", "systemd",
+    "sshd", "cupsd", "httpd", "nginx", "postgres", "mysqld",
+    "Cursor", "Code", "Electron", "WindowServer", "BetterDisplay",
+    "com.docker", "Docker", "docker-proxy", "vpnkit",
+    "Dropbox", "Creative Cloud", "zoom.us",
+    "ControlCenter", "Finder", "loginwindow", "SystemUIServer",
+  ]);
+
+  api.get("/sessions/:id/processes/system", async (c) => {
+    const sessionId = c.req.param("id");
+    const session = launcher.getSession(sessionId);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+
+    try {
+      let raw: string;
+      if (session.containerId) {
+        raw = containerManager.execInContainer(
+          session.containerId,
+          ["sh", "-c", "lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null || ss -tlnp 2>/dev/null || true"],
+          5_000,
+        );
+      } else {
+        raw = execSync("lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null || true", {
+          timeout: 5_000,
+          encoding: "utf-8",
+        });
+      }
+
+      // Parse lsof output: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
+      const lines = raw.trim().split("\n").slice(1); // skip header
+      const pidMap = new Map<number, { command: string; ports: Set<number> }>();
+
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 9) continue;
+        const command = parts[0];
+        const pid = parseInt(parts[1], 10);
+        const name = parts[parts.length - 1]; // e.g., "*:3000" or "127.0.0.1:8080"
+
+        if (isNaN(pid)) continue;
+        if (EXCLUDE_COMMANDS.has(command)) continue;
+
+        const portMatch = name.match(/:(\d+)\s*$/);
+        if (!portMatch) continue;
+        const port = parseInt(portMatch[1], 10);
+
+        const existing = pidMap.get(pid);
+        if (existing) {
+          existing.ports.add(port);
+        } else {
+          pidMap.set(pid, { command, ports: new Set([port]) });
+        }
+      }
+
+      // Get full command line for each PID
+      const processes: { pid: number; command: string; fullCommand: string; ports: number[] }[] = [];
+
+      for (const [pid, info] of pidMap) {
+        // Skip if command isn't dev-related (check both exact name and prefix)
+        const lowerCmd = info.command.toLowerCase();
+        const isDev = DEV_COMMANDS.has(lowerCmd)
+          || DEV_COMMANDS.has(info.command)
+          || [...DEV_COMMANDS].some((d) => lowerCmd.startsWith(d));
+
+        if (!isDev) continue;
+
+        let fullCommand = info.command;
+        try {
+          if (session.containerId) {
+            fullCommand = containerManager.execInContainer(
+              session.containerId,
+              ["ps", "-p", String(pid), "-o", "args="],
+              2_000,
+            ).trim();
+          } else {
+            fullCommand = execSync(`ps -p ${pid} -o args= 2>/dev/null || true`, {
+              timeout: 2_000,
+              encoding: "utf-8",
+            }).trim();
+          }
+        } catch {
+          // Fall back to short command name
+        }
+
+        processes.push({
+          pid,
+          command: info.command,
+          fullCommand: fullCommand || info.command,
+          ports: [...info.ports].sort((a, b) => a - b),
+        });
+      }
+
+      // Sort by port (lowest first)
+      processes.sort((a, b) => (a.ports[0] || 0) - (b.ports[0] || 0));
+
+      return c.json({ ok: true, processes });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ error: `Scan failed: ${msg}` }, 500);
+    }
+  });
+
+  // Kill a system process by PID
+  api.post("/sessions/:id/processes/system/:pid/kill", async (c) => {
+    const sessionId = c.req.param("id");
+    const pidStr = c.req.param("pid");
+    const pid = parseInt(pidStr, 10);
+
+    if (isNaN(pid) || pid <= 0) {
+      return c.json({ error: "Invalid PID" }, 400);
+    }
+
+    const session = launcher.getSession(sessionId);
+    if (!session) return c.json({ error: "Session not found" }, 404);
+
+    // Safety: don't allow killing the Companion server or Claude CLI process itself
+    if (pid === process.pid) {
+      return c.json({ error: "Cannot kill the Companion server" }, 403);
+    }
+    if (session.pid === pid) {
+      return c.json({ error: "Use the session kill endpoint to terminate Claude" }, 403);
+    }
+
+    try {
+      if (session.containerId) {
+        containerManager.execInContainer(
+          session.containerId,
+          ["kill", "-TERM", String(pid)],
+          5_000,
+        );
+      } else {
+        process.kill(pid, "SIGTERM");
+      }
+      return c.json({ ok: true, pid });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ error: `Kill failed: ${msg}` }, 500);
+    }
   });
 
   api.delete("/sessions/:id", async (c) => {

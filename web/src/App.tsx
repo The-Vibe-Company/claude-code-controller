@@ -4,6 +4,7 @@ import { connectSession } from "./ws.js";
 import { api } from "./api.js";
 import { capturePageView } from "./analytics.js";
 import { parseHash, navigateToSession } from "./utils/routing.js";
+import { LoginPage } from "./components/LoginPage.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ChatView } from "./components/ChatView.js";
 import { TopBar } from "./components/TopBar.js";
@@ -25,6 +26,7 @@ const PromptsPage = lazy(() => import("./components/PromptsPage.js").then((m) =>
 const EnvManager = lazy(() => import("./components/EnvManager.js").then((m) => ({ default: m.EnvManager })));
 const CronManager = lazy(() => import("./components/CronManager.js").then((m) => ({ default: m.CronManager })));
 const TerminalPage = lazy(() => import("./components/TerminalPage.js").then((m) => ({ default: m.TerminalPage })));
+const ProcessPanel = lazy(() => import("./components/ProcessPanel.js").then((m) => ({ default: m.ProcessPanel })));
 
 function LazyFallback() {
   return (
@@ -42,6 +44,7 @@ function useHash() {
 }
 
 export default function App() {
+  const isAuthenticated = useStore((s) => s.isAuthenticated);
   const darkMode = useStore((s) => s.darkMode);
   const currentSessionId = useStore((s) => s.currentSessionId);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
@@ -151,6 +154,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auth gate: show login page when not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   if (route.page === "playground") {
     return <Suspense fallback={<LazyFallback />}><Playground /></Suspense>;
   }
@@ -236,9 +244,11 @@ export default function App() {
                         onClosePanel={() => useStore.getState().setActiveTab("chat")}
                       />
                     )
-                    : activeTab === "editor" && editorTabEnabled
-                      ? <SessionEditorPane sessionId={currentSessionId} />
-                      : (
+                    : activeTab === "processes"
+                      ? <Suspense fallback={<LazyFallback />}><ProcessPanel sessionId={currentSessionId} /></Suspense>
+                      : activeTab === "editor" && editorTabEnabled
+                        ? <SessionEditorPane sessionId={currentSessionId} />
+                        : (
                         <SessionTerminalDock sessionId={currentSessionId} suppressPanel>
                           {activeTab === "diff"
                             ? <DiffPanel sessionId={currentSessionId} />

@@ -17,7 +17,7 @@ interface MockStoreState {
   taskPanelOpen: boolean;
   setTaskPanelOpen: ReturnType<typeof vi.fn>;
   editorTabEnabled: boolean;
-  activeTab: "chat" | "diff" | "terminal" | "editor";
+  activeTab: "chat" | "diff" | "terminal" | "processes" | "editor";
   setActiveTab: ReturnType<typeof vi.fn>;
   markChatTabReentry: ReturnType<typeof vi.fn>;
   quickTerminalOpen: boolean;
@@ -27,6 +27,7 @@ interface MockStoreState {
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
   gitChangedFilesCount: Map<string, number>;
+  sessionProcesses: Map<string, { status: string }[]>;
 }
 
 let storeState: MockStoreState;
@@ -51,6 +52,7 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
     gitChangedFilesCount: new Map(),
+    sessionProcesses: new Map(),
     ...overrides,
   };
 }
