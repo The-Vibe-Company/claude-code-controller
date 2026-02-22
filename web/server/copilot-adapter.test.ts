@@ -257,7 +257,36 @@ describe("CopilotAdapter", () => {
     expect(adapter.getAcpSessionId()).toBe("loaded-session-id");
   });
 
-  // ── User message → session/prompt ────────────────────────────────────────
+  it("falls back to session/new when session/load fails with 'not found'", async () => {
+    // When a Copilot session is relaunched after a CLI restart, the previously stored
+    // ACP session ID may no longer exist. The adapter must silently fall back to
+    // session/new and continue initializing rather than failing entirely.
+    const adapter = new CopilotAdapter(proc as never, "test-session", {
+      cwd: "/home/user",
+      acpSessionId: "stale-acp-session-id",
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    // Respond to initialize
+    stdout.push(JSON.stringify({ id: 1, jsonrpc: "2.0", result: {} }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    // Respond to session/load with an error (session not found)
+    stdout.push(JSON.stringify({ id: 2, jsonrpc: "2.0", error: { code: -32001, message: "Resource not found: Session stale-acp-session-id not found" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 20));
+    // Respond to the fallback session/new
+    stdout.push(JSON.stringify({ id: 3, jsonrpc: "2.0", result: { sessionId: "new-acp-session-fallback" } }) + "\n");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Adapter must have recovered and assigned the new session ID
+    expect(adapter.getAcpSessionId()).toBe("new-acp-session-fallback");
+
+    const lines = parseNdjsonLines(stdin.chunks) as Array<Record<string, unknown>>;
+    // Must have sent session/load first, then session/new as fallback
+    expect(lines.find((l) => l.method === "session/load")).toBeDefined();
+    expect(lines.find((l) => l.method === "session/new")).toBeDefined();
+  });
+
+
 
   it("sends session/prompt when receiving a user_message", async () => {
     // User messages from the browser must be translated to session/prompt JSON-RPC calls.

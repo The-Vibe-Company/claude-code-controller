@@ -363,12 +363,25 @@ export class CopilotAdapter {
       // Step 2: Create new ACP session or resume existing one
       const cwd = this.options.cwd || process.cwd();
       if (this.options.acpSessionId) {
-        await this.transport.call("session/load", {
-          sessionId: this.options.acpSessionId,
-          mcpServers: [],
-          cwd,
-        });
-        this.acpSessionId = this.options.acpSessionId;
+        try {
+          await this.transport.call("session/load", {
+            sessionId: this.options.acpSessionId,
+            mcpServers: [],
+            cwd,
+          });
+          this.acpSessionId = this.options.acpSessionId;
+        } catch (loadErr) {
+          // Session no longer exists in the CLI (e.g. after a CLI restart).
+          // Fall back to creating a fresh session instead of failing entirely.
+          const loadMsg = loadErr instanceof Error ? loadErr.message : String(loadErr);
+          console.warn(`[copilot-adapter] session/load failed (${loadMsg}), starting new session`);
+          const result = await this.transport.call("session/new", {
+            mcpServers: [],
+            cwd,
+            ...(this.options.model ? { model: this.options.model } : {}),
+          }) as { sessionId: string; models?: unknown };
+          this.acpSessionId = result.sessionId;
+        }
       } else {
         const result = await this.transport.call("session/new", {
           mcpServers: [],
