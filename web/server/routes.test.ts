@@ -2897,8 +2897,8 @@ describe("GET /api/sessions/:id/usage-limits", () => {
   it("returns mapped Codex rate limits for a codex session", async () => {
     bridge.getSession.mockReturnValue({ backendType: "codex" });
     bridge.getCodexRateLimits.mockReturnValue({
-      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
-      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 * 1000 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 * 1000 },
     });
 
     const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
@@ -2926,6 +2926,28 @@ describe("GET /api/sessions/:id/usage-limits", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ five_hour: null, seven_day: null, extra_usage: null });
+  });
+
+  it("maps Codex rate limits when bridge still returns second-based timestamps", async () => {
+    bridge.getSession.mockReturnValue({ backendType: "codex" });
+    bridge.getCodexRateLimits.mockReturnValue({
+      // Backward-compat coverage for pre-normalized payloads from bridge/session state.
+      primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 },
+      secondary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 },
+    });
+
+    const res = await app.request("/api/sessions/s1/usage-limits", { method: "GET" });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.five_hour).toEqual({
+      utilization: 25,
+      resets_at: new Date(1730947200 * 1000).toISOString(),
+    });
+    expect(json.seven_day).toEqual({
+      utilization: 10,
+      resets_at: new Date(1731552000 * 1000).toISOString(),
+    });
   });
 
   it("handles codex rate limits with null secondary", async () => {

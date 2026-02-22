@@ -33,11 +33,15 @@ export function registerSystemRoutes(
     if (session?.backendType === "codex") {
       const rl = deps.wsBridge.getCodexRateLimits(sessionId);
       if (!rl) return c.json(empty);
+      const toEpochMs = (value: number): number => (
+        value > 0 && value < 1_000_000_000_000 ? value * 1000 : value
+      );
       const mapLimit = (l: { usedPercent: number; windowDurationMins: number; resetsAt: number } | null) => {
         if (!l) return null;
+        const resetsAtMs = toEpochMs(l.resetsAt);
         return {
           utilization: l.usedPercent,
-          resets_at: l.resetsAt ? new Date(l.resetsAt * 1000).toISOString() : null,
+          resets_at: resetsAtMs ? new Date(resetsAtMs).toISOString() : null,
         };
       };
       return c.json({

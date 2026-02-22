@@ -1728,8 +1728,8 @@ describe("CodexAdapter", () => {
 
     const rl = adapter.getRateLimits();
     expect(rl).toBeDefined();
-    expect(rl!.primary).toEqual({ usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 });
-    expect(rl!.secondary).toEqual({ usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 });
+    expect(rl!.primary).toEqual({ usedPercent: 25, windowDurationMins: 300, resetsAt: 1730947200 * 1000 });
+    expect(rl!.secondary).toEqual({ usedPercent: 10, windowDurationMins: 10080, resetsAt: 1731552000 * 1000 });
   });
 
   it("updates rate limits on account/rateLimits/updated notification", async () => {
@@ -1756,7 +1756,7 @@ describe("CodexAdapter", () => {
 
     const rl = adapter.getRateLimits();
     expect(rl).toBeDefined();
-    expect(rl!.primary).toEqual({ usedPercent: 50, windowDurationMins: 300, resetsAt: 1730947200 });
+    expect(rl!.primary).toEqual({ usedPercent: 50, windowDurationMins: 300, resetsAt: 1730947200 * 1000 });
     expect(rl!.secondary).toBeNull();
   });
 
