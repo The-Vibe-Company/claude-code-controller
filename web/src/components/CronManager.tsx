@@ -79,7 +79,7 @@ interface JobFormData {
   recurring: boolean;
   schedule: string;
   oneTimeDate: string;
-  backendType: "claude" | "codex";
+  backendType: "claude" | "codex" | "copilot";
   model: string;
   cwd: string;
 }
@@ -668,7 +668,7 @@ function JobForm({
         <button
           onClick={() => {
             const next = form.backendType === "claude" ? "codex" : "claude";
-            update({ backendType: next as "claude" | "codex", model: getDefaultModel(next as "claude" | "codex") });
+            update({ backendType: next as "claude" | "codex" | "copilot", model: getDefaultModel(next as "claude" | "codex" | "copilot") });
           }}
           className={`px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
             form.backendType === "codex"
