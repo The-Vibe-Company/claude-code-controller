@@ -25,6 +25,7 @@ const PromptsPage = lazy(() => import("./components/PromptsPage.js").then((m) =>
 const EnvManager = lazy(() => import("./components/EnvManager.js").then((m) => ({ default: m.EnvManager })));
 const CronManager = lazy(() => import("./components/CronManager.js").then((m) => ({ default: m.CronManager })));
 const TerminalPage = lazy(() => import("./components/TerminalPage.js").then((m) => ({ default: m.TerminalPage })));
+const FilesPanel = lazy(() => import("./components/FilesPanel.js"));
 
 function LazyFallback() {
   return (
@@ -170,7 +171,7 @@ export default function App() {
         className={`
           fixed md:relative z-40 md:z-auto
           h-full shrink-0 transition-all duration-200
-          ${sidebarOpen ? "w-[260px] translate-x-0" : "w-0 -translate-x-full md:w-0 md:-translate-x-full"}
+          ${sidebarOpen ? "w-full md:w-[260px] translate-x-0" : "w-0 -translate-x-full md:w-0 md:-translate-x-full"}
           overflow-hidden
         `}
       >
@@ -236,9 +237,11 @@ export default function App() {
                         onClosePanel={() => useStore.getState().setActiveTab("chat")}
                       />
                     )
-                    : activeTab === "editor" && editorTabEnabled
-                      ? <SessionEditorPane sessionId={currentSessionId} />
-                      : (
+                    : activeTab === "files"
+                        ? <Suspense fallback={<LazyFallback />}><FilesPanel sessionId={currentSessionId} /></Suspense>
+                        : activeTab === "editor" && editorTabEnabled
+                          ? <SessionEditorPane sessionId={currentSessionId} />
+                          : (
                         <SessionTerminalDock sessionId={currentSessionId} suppressPanel>
                           {activeTab === "diff"
                             ? <DiffPanel sessionId={currentSessionId} />
@@ -293,7 +296,7 @@ export default function App() {
             className={`
               fixed lg:relative z-40 lg:z-auto right-0 top-0
               h-full shrink-0 transition-all duration-200
-              ${taskPanelOpen ? "w-[320px] translate-x-0" : "w-0 translate-x-full lg:w-0 lg:translate-x-full"}
+              ${taskPanelOpen ? "w-full lg:w-[320px] translate-x-0" : "w-0 translate-x-full lg:w-0 lg:translate-x-full"}
               overflow-hidden
             `}
           >

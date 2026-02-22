@@ -113,7 +113,7 @@ interface AppState {
   taskPanelConfigMode: boolean;
   homeResetKey: number;
   editorTabEnabled: boolean;
-  activeTab: "chat" | "diff" | "terminal" | "editor";
+  activeTab: "chat" | "diff" | "terminal" | "files" | "editor";
   chatTabReentryTickBySession: Map<string, number>;
   diffPanelSelectedFile: Map<string, string>;
 
@@ -196,7 +196,7 @@ interface AppState {
   setEditorTabEnabled: (enabled: boolean) => void;
 
   // Diff panel actions
-  setActiveTab: (tab: "chat" | "diff" | "terminal" | "editor") => void;
+  setActiveTab: (tab: "chat" | "diff" | "terminal" | "files" | "editor") => void;
   markChatTabReentry: (sessionId: string) => void;
   setDiffPanelSelectedFile: (sessionId: string, filePath: string | null) => void;
 

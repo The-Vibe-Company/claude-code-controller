@@ -1021,7 +1021,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
   });
 
   return (
-    <aside className="w-[320px] h-full flex flex-col overflow-hidden bg-cc-card border-l border-cc-border">
+    <aside className="w-full lg:w-[320px] h-full flex flex-col overflow-hidden bg-cc-card border-l border-cc-border">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-cc-border">
         <span className="text-sm font-semibold text-cc-fg tracking-tight">
@@ -1036,7 +1036,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
             }
           }}
           aria-label="Close panel"
-          className="flex items-center justify-center w-6 h-6 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
+          className="flex items-center justify-center w-8 h-8 rounded-lg text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer"
         >
           <svg
             viewBox="0 0 16 16"
@@ -1071,7 +1071,7 @@ export function TaskPanel({ sessionId }: { sessionId: string }) {
           </div>
 
           {/* Settings button at bottom */}
-          <div className="shrink-0 border-t border-cc-border px-4 py-2">
+          <div className="shrink-0 border-t border-cc-border px-4 py-2 pb-safe">
             <button
               onClick={() => useStore.getState().setTaskPanelConfigMode(true)}
               className="flex items-center gap-1.5 text-[11px] text-cc-muted hover:text-cc-fg transition-colors cursor-pointer"

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { useStore } from "../store.js";
 import { parseHash } from "../utils/routing.js";
 
-type WorkspaceTab = "chat" | "diff" | "terminal" | "editor";
+type WorkspaceTab = "chat" | "diff" | "terminal" | "files" | "editor";
 
 export function TopBar() {
   const hash = useSyncExternalStore(
@@ -72,7 +72,7 @@ export function TopBar() {
   const showWorkspaceControls = !!(currentSessionId && isSessionView);
   const showContextToggle = route.page === "session" && !!currentSessionId;
   const workspaceTabs = useMemo(() => {
-    const tabs: WorkspaceTab[] = ["chat", "diff", "terminal"];
+    const tabs: WorkspaceTab[] = ["chat", "diff", "terminal", "files"];
     if (editorTabEnabled) tabs.push("editor");
     return tabs;
   }, [editorTabEnabled]);
@@ -84,6 +84,12 @@ export function TopBar() {
         openQuickTerminal({ ...defaultTerminalOpts, reuseIfExists: true });
       }
       setActiveTab("terminal");
+      return;
+    }
+
+    if (tab === "files") {
+      if (!cwd) return;
+      setActiveTab("files");
       return;
     }
 
@@ -128,7 +134,7 @@ export function TopBar() {
       <div className="h-full flex items-center gap-1 min-w-0">
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer shrink-0"
+          className="flex items-center justify-center w-8 h-8 rounded-md text-cc-muted hover:text-cc-fg hover:bg-cc-hover transition-colors cursor-pointer shrink-0"
           aria-label="Toggle sidebar"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-[15px] h-[15px]">
@@ -191,6 +197,21 @@ export function TopBar() {
               >
                 Shell
               </button>
+              <button
+                onClick={() => activateWorkspaceTab("files")}
+                disabled={!cwd}
+                className={`h-full px-3 text-[12px] font-medium transition-colors flex items-center border-b-[1.5px] ${
+                  !cwd
+                    ? "text-cc-muted/50 border-transparent cursor-not-allowed"
+                    : activeTab === "files"
+                      ? "text-cc-fg border-cc-primary cursor-pointer"
+                      : "text-cc-muted hover:text-cc-fg border-transparent cursor-pointer"
+                }`}
+                title={!cwd ? "Files unavailable while session is reconnecting" : "Project files"}
+                aria-label="Files tab"
+              >
+                Files
+              </button>
               {editorTabEnabled && (
                 <button
                   onClick={() => activateWorkspaceTab("editor")}
@@ -215,7 +236,7 @@ export function TopBar() {
           {showContextToggle && (
             <button
               onClick={() => setTaskPanelOpen(!taskPanelOpen)}
-              className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors cursor-pointer ${
+              className={`flex items-center justify-center w-8 h-8 rounded-md transition-colors cursor-pointer ${
                 taskPanelOpen
                   ? "text-cc-primary bg-cc-active"
                   : "text-cc-muted hover:text-cc-fg hover:bg-cc-hover"

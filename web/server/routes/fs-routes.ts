@@ -152,6 +152,39 @@ export function registerFsRoutes(api: Hono): void {
     }
   });
 
+  api.get("/fs/raw", async (c) => {
+    const filePath = c.req.query("path");
+    if (!filePath) return c.json({ error: "path required" }, 400);
+    const absPath = resolve(filePath);
+    try {
+      const info = await stat(absPath);
+      if (info.size > 10 * 1024 * 1024) {
+        return c.json({ error: "File too large (>10MB)" }, 413);
+      }
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "File not found" }, 404);
+    }
+    try {
+      const buffer = await readFile(absPath);
+      const ext = absPath.split(".").pop()?.toLowerCase() ?? "";
+      const mimeMap: Record<string, string> = {
+        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+        gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+        avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
+        tiff: "image/tiff", tif: "image/tiff",
+      };
+      const contentType = mimeMap[ext] || "application/octet-stream";
+      return new Response(buffer, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "private, max-age=60",
+        },
+      });
+    } catch (e: unknown) {
+      return c.json({ error: e instanceof Error ? e.message : "Cannot read file" }, 404);
+    }
+  });
+
   api.put("/fs/write", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { path: filePath, content } = body;
