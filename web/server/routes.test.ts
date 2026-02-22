@@ -738,6 +738,45 @@ describe("POST /api/sessions/create", () => {
     // CLI should NOT have been launched
     expect(launcher.launch).not.toHaveBeenCalled();
   });
+
+  it("passes resume and forkSession to launcher when provided", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/test",
+        resume: "existing-session-id",
+        forkSession: true,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resume: "existing-session-id",
+        forkSession: true,
+      }),
+    );
+  });
+
+  it("passes resume without forkSession when only resume is provided", async () => {
+    const res = await app.request("/api/sessions/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: "/test",
+        resume: "existing-session-id",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(launcher.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resume: "existing-session-id",
+        forkSession: undefined,
+      }),
+    );
+  });
 });
 
 describe("GET /api/sessions", () => {
