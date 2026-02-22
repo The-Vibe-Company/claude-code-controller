@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.59.0](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.58.2...the-companion-v0.59.0) (2026-02-22)
+
+
+### Features
+
+* **diff:** use git diff as source of truth; show A/M/D status icons and deleted files ([#385](https://github.com/The-Vibe-Company/companion/issues/385)) ([d1e0db5](https://github.com/The-Vibe-Company/companion/commit/d1e0db5f9b94bd5fe055455bf6b4f69714e350f5))
+* **web:** improve streaming reliability and session branching controls ([#381](https://github.com/The-Vibe-Company/companion/issues/381)) ([200ab34](https://github.com/The-Vibe-Company/companion/commit/200ab34f42969e09c1a1e9bbb0ba6df44b791a6e))
+
+
+### Bug Fixes
+
+* **codex:** normalize rate-limit reset timestamps ([#386](https://github.com/The-Vibe-Company/companion/issues/386)) ([f361696](https://github.com/The-Vibe-Company/companion/commit/f3616960e48dcddccc48c956621c819568157e49))
+
 ## [0.58.2](https://github.com/The-Vibe-Company/companion/compare/the-companion-v0.58.1...the-companion-v0.58.2) (2026-02-21)
 
 
