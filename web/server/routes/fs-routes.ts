@@ -4,6 +4,10 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Hono } from "hono";
 
+function shellEscapeArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function execCaptureStdout(
   command: string,
   options: { cwd: string; encoding: "utf-8"; timeout: number },
@@ -231,6 +235,86 @@ export function registerFsRoutes(api: Hono): void {
     }
   });
 
+  /** List all files changed vs git base (name-status), including untracked new files.
+   *  base="default-branch" (default): comprehensive — committed changes on this branch vs origin
+   *  plus uncommitted local changes.
+   *  base="last-commit": only uncommitted changes vs HEAD plus untracked files. */
+  api.get("/fs/changed-files", (c) => {
+    const cwd = c.req.query("cwd");
+    if (!cwd) return c.json({ error: "cwd required" }, 400);
+    const base = c.req.query("base"); // "last-commit" | "default-branch" | undefined
+    const resolvedCwd = resolve(cwd);
+    try {
+      const repoRoot = execSync("git rev-parse --show-toplevel", {
+        cwd: resolvedCwd,
+        encoding: "utf-8",
+        timeout: 5000,
+      }).trim();
+
+      // Map from abs path → status ("A", "M", "D"). Later writes win, but "A" is preserved.
+      const fileMap = new Map<string, string>();
+
+      const applyNameStatus = (nameStatus: string) => {
+        for (const line of nameStatus.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const parts = trimmed.split("\t");
+          const statusChar = parts[0][0];
+          if (statusChar === "R" && parts[2]) {
+            if (!fileMap.has(join(repoRoot, parts[1]))) fileMap.set(join(repoRoot, parts[1]), "D");
+            fileMap.set(join(repoRoot, parts[2]), "A");
+          } else {
+            const abs = join(repoRoot, parts[1] || "");
+            if (!abs || abs === repoRoot) continue;
+            // Preserve "A" — don't downgrade to "M"
+            if (!(fileMap.get(abs) === "A" && statusChar === "M")) {
+              fileMap.set(abs, statusChar);
+            }
+          }
+        }
+      };
+
+      if (base !== "last-commit") {
+        // default-branch (or unset): committed changes on this branch vs origin base
+        const diffBases = resolveBranchDiffBases(repoRoot);
+        for (const b of diffBases) {
+          try {
+            applyNameStatus(execCaptureStdout(`git diff ${shellEscapeArg(b)}...HEAD --name-status`, {
+              cwd: repoRoot, encoding: "utf-8", timeout: 5000,
+            }));
+            break;
+          } catch { /* try next */ }
+        }
+      }
+
+      // Always include uncommitted changes (staged + unstaged vs HEAD)
+      try {
+        applyNameStatus(execCaptureStdout("git diff HEAD --name-status", {
+          cwd: repoRoot, encoding: "utf-8", timeout: 5000,
+        }));
+      } catch { /* fresh repo */ }
+
+      // Always include untracked files not yet staged
+      try {
+        const untracked = execSync("git ls-files --others --exclude-standard", {
+          cwd: repoRoot, encoding: "utf-8", timeout: 5000,
+        }).trim();
+        for (const rel of untracked.split("\n")) {
+          if (rel.trim()) {
+            const abs = join(repoRoot, rel.trim());
+            if (!fileMap.has(abs)) fileMap.set(abs, "A");
+          }
+        }
+      } catch { /* ignore */ }
+
+      const files = [...fileMap.entries()].map(([path, status]) => ({ path, status }));
+      return c.json({ files });
+    } catch {
+      return c.json({ files: [] });
+    }
+  });
+
+  /** Find CLAUDE.md files for a project (root + .claude/) */
   api.get("/fs/claude-md", async (c) => {
     const cwd = c.req.query("cwd");
     if (!cwd) return c.json({ error: "cwd required" }, 400);

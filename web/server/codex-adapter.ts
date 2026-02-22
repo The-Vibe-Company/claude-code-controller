@@ -1801,9 +1801,24 @@ export class CodexAdapter {
   private updateRateLimits(data: Record<string, unknown>): void {
     const rl = data?.rateLimits as Record<string, unknown> | undefined;
     if (!rl) return;
+    const toEpochMs = (value: unknown): number => {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+        return 0;
+      }
+      return value < 1_000_000_000_000 ? value * 1000 : value;
+    };
+    const normalizeLimit = (raw: unknown): { usedPercent: number; windowDurationMins: number; resetsAt: number } | null => {
+      if (!raw || typeof raw !== "object") return null;
+      const limit = raw as Record<string, unknown>;
+      return {
+        usedPercent: typeof limit.usedPercent === "number" ? limit.usedPercent : 0,
+        windowDurationMins: typeof limit.windowDurationMins === "number" ? limit.windowDurationMins : 0,
+        resetsAt: toEpochMs(limit.resetsAt),
+      };
+    };
     this._rateLimits = {
-      primary: rl.primary as { usedPercent: number; windowDurationMins: number; resetsAt: number } | null,
-      secondary: rl.secondary as { usedPercent: number; windowDurationMins: number; resetsAt: number } | null,
+      primary: normalizeLimit(rl.primary),
+      secondary: normalizeLimit(rl.secondary),
     };
     // Forward rate limits to browser for UI display
     this.emit({

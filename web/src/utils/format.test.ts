@@ -86,6 +86,13 @@ describe("formatCodexResetTime", () => {
     const result = formatCodexResetTime(Date.now() + 2 * 86_400_000 + 5 * 3_600_000);
     expect(result).toMatch(/^\d+d \d+h$/);
   });
+
+  it("accepts epoch-seconds input for future timestamps", () => {
+    // Compatibility coverage: codex rate-limit payloads may still be second-based.
+    const futureSeconds = Math.floor((Date.now() + 45 * 60_000) / 1000);
+    expect(formatCodexResetTime(futureSeconds)).toMatch(/^\d+m$/);
+  });
+
 });
 
 describe("formatWindowDuration", () => {

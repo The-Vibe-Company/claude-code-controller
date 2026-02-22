@@ -26,7 +26,7 @@ interface MockStoreState {
   resetQuickTerminal: ReturnType<typeof vi.fn>;
   sessions: Map<string, { cwd?: string; is_containerized?: boolean }>;
   sdkSessions: { sessionId: string; cwd?: string; containerId?: string }[];
-  changedFiles: Map<string, Set<string>>;
+  gitChangedFilesCount: Map<string, number>;
 }
 
 let storeState: MockStoreState;
@@ -50,7 +50,7 @@ function resetStore(overrides: Partial<MockStoreState> = {}) {
     resetQuickTerminal: vi.fn(),
     sessions: new Map([["s1", { cwd: "/repo" }]]),
     sdkSessions: [],
-    changedFiles: new Map(),
+    gitChangedFilesCount: new Map(),
     ...overrides,
   };
 }
@@ -69,13 +69,9 @@ beforeEach(() => {
 
 describe("TopBar", () => {
   it("shows diff badge count only for files within cwd", () => {
+    // gitChangedFilesCount is set by DiffPanel after filtering to cwd scope
     resetStore({
-      changedFiles: new Map([
-        [
-          "s1",
-          new Set(["/repo/src/a.ts", "/repo/src/b.ts", "/Users/stan/.claude/plans/plan.md"]),
-        ],
-      ]),
+      gitChangedFilesCount: new Map([["s1", 2]]),
     });
 
     render(<TopBar />);
@@ -85,7 +81,7 @@ describe("TopBar", () => {
 
   it("uses theme-safe classes for the diff badge in dark mode", () => {
     resetStore({
-      changedFiles: new Map([["s1", new Set(["/repo/src/a.ts"])]]),
+      gitChangedFilesCount: new Map([["s1", 1]]),
     });
     render(<TopBar />);
     const badge = screen.getByText("1");
@@ -95,11 +91,8 @@ describe("TopBar", () => {
     expect(badge.className).not.toContain("bg-cc-warning");
   });
 
-  it("hides diff badge when all changed files are out of scope", () => {
-    resetStore({
-      changedFiles: new Map([["s1", new Set(["/Users/stan/.claude/plans/plan.md"])]]),
-    });
-
+  it("hides diff badge when no changed files", () => {
+    // gitChangedFilesCount not set (or 0) → no badge
     render(<TopBar />);
     expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
