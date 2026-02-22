@@ -555,11 +555,11 @@ export function Composer({ sessionId }: { sessionId: string }) {
             </div>
           )}
 
-          <div className="flex items-end gap-2 px-2.5 py-2">
+          <div className="flex items-end gap-2 px-2.5 py-2 flex-wrap sm:flex-nowrap">
             <button
               onClick={toggleMode}
               disabled={!isConnected}
-              className={`mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold transition-all border select-none shrink-0 ${
+              className={`mb-0.5 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-semibold transition-all border select-none shrink-0 order-2 sm:order-none ${
                 !isConnected
                   ? "opacity-30 cursor-not-allowed text-cc-muted border-transparent"
                   : isPlan
@@ -579,7 +579,7 @@ export function Composer({ sessionId }: { sessionId: string }) {
                   <path d="M8.5 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
               )}
-              <span>{modeLabel}</span>
+              <span className="hidden sm:inline">{modeLabel}</span>
             </button>
 
             <textarea
@@ -596,12 +596,12 @@ export function Composer({ sessionId }: { sessionId: string }) {
                 : "Waiting for CLI connection..."}
               disabled={!isConnected}
               rows={1}
-              className="flex-1 min-w-0 px-2 py-1.5 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto"
+              className="flex-1 min-w-0 px-2 py-1.5 text-base sm:text-sm bg-transparent resize-none focus:outline-none text-cc-fg font-sans-ui placeholder:text-cc-muted disabled:opacity-50 overflow-y-auto basis-full sm:basis-auto order-1 sm:order-none"
               style={{ minHeight: "36px", maxHeight: "200px" }}
             />
 
             {/* Right: image + send/stop */}
-            <div className="mb-0.5 flex items-center gap-1.5 shrink-0">
+            <div className="mb-0.5 flex items-center gap-1.5 shrink-0 order-3 sm:order-none ml-auto sm:ml-0">
               <button
                 onClick={() => {
                   const defaultName = text.trim().slice(0, 32);
